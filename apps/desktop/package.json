@@ -1,0 +1,45 @@
+{
+  "name": "@neon/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Neon Video Studio desktop app (Electrobun main process + React renderer)",
+  "scripts": {
+    "prepare:electrobun": "electrobun prepare",
+    "dev:renderer": "vite --port 5173 --strictPort",
+    "dev": "electrobun prepare && vite build && electrobun dev",
+    "dev:hmr": "electrobun prepare && vite build && electrobun dev",
+    "start": "electrobun prepare && vite build && electrobun dev",
+    "build": "electrobun prepare && vite build",
+    "build:app": "electrobun prepare && vite build && electrobun build --env=stable",
+    "build:canary": "electrobun prepare && vite build && electrobun build --env=canary",
+    "typecheck": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json",
+    "test": "echo 'desktop is covered by the end-to-end CLI smoke test (pnpm smoke)'"
+  },
+  "dependencies": {
+    "@neon/core": "workspace:*",
+    "@neon/icon-kit": "workspace:*",
+    "@neon/p2p": "workspace:*",
+    "@neon/remotion-workspace": "workspace:*",
+    "@neon/render": "workspace:*",
+    "@remotion/player": "4.0.515",
+    "lucide-react": "^1.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "remotion": "4.0.515",
+    "y-protocols": "^1.0.6",
+    "y-webrtc": "^10.3.0",
+    "y-websocket": "^3.0.0",
+    "yjs": "^13.6.27"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electrobun": "2.0.1",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0"
+  }
+}

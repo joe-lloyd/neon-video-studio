@@ -1,0 +1,22 @@
+# dependencies / toolchains
+node_modules/
+.hutch/
+.cottontail-tmp/
+hutch.lock
+
+# build output
+dist/
+build/
+artifacts/
+*.tsbuildinfo
+.remotion-bundle/
+apps/desktop/icons/preview/
+
+# local data
+renders/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+*.local

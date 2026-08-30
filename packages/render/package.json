@@ -1,0 +1,27 @@
+{
+  "name": "@neon/render",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Remotion render pipeline: Node worker (bundle → selectComposition → renderMedia), spawn helper, headless asset server",
+  "exports": {
+    ".": "./src/index.ts",
+    "./worker": "./src/worker.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.ts",
+    "build": "echo '@neon/render is consumed as TypeScript source'"
+  },
+  "dependencies": {
+    "@neon/core": "workspace:*",
+    "@neon/remotion-workspace": "workspace:*",
+    "@remotion/bundler": "4.0.515",
+    "@remotion/renderer": "4.0.515",
+    "remotion": "4.0.515"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

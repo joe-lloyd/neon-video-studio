@@ -1,0 +1,29 @@
+{
+  "name": "@neon/p2p",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Yjs sync layer: y-websocket-compatible sync server, y-webrtc-compatible signaling server, LAN discovery beacon, browser peer session",
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server/index.ts",
+    "./browser": "./src/browser/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.ts",
+    "build": "echo '@neon/p2p is consumed as TypeScript source'"
+  },
+  "dependencies": {
+    "@neon/core": "workspace:*",
+    "lib0": "^0.2.100",
+    "y-protocols": "^1.0.6",
+    "y-webrtc": "^10.3.0",
+    "y-websocket": "^3.0.0",
+    "yjs": "^13.6.27"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

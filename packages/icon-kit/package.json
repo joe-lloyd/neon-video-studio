@@ -1,0 +1,27 @@
+{
+  "name": "@neon/icon-kit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "High-visibility neon icons: Lucide strokes with bloom, plus the Neon logo mark",
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "echo 'no unit tests (visual package)'",
+    "build": "echo '@neon/icon-kit is consumed as TypeScript source'"
+  },
+  "dependencies": {
+    "@neon/core": "workspace:*",
+    "lucide-react": "^1.0.0"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "react": "^19.1.0",
+    "typescript": "^5.9.0"
+  }
+}

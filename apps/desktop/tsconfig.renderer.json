@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "electrobun/view": [".hutch/devkit/api/browser/index.ts", "src/renderer/lib/electrobun-stub.ts"]
+    }
+  },
+  "include": ["src/renderer", "src/shared"]
+}

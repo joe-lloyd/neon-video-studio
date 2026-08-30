@@ -1,0 +1,26 @@
+{
+  "name": "@neon/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "neon-cli — headless / agent interface to Neon Video Studio (drives the running desktop app over its local control API, or renders headlessly)",
+  "bin": {
+    "neon-cli": "./src/main.ts"
+  },
+  "exports": {
+    ".": "./src/client.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.ts",
+    "build": "echo '@neon/cli runs directly on Node ≥22.18 via type stripping'"
+  },
+  "dependencies": {
+    "@neon/core": "workspace:*",
+    "@neon/render": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

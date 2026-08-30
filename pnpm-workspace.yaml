@@ -1,0 +1,16 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# Supply-chain hardening: only resolve package versions published at least 7 days ago
+# (10080 minutes). Hypersolid's baseline is 3 days (4320); 7 days is stricter and was the
+# explicit project requirement.
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude: []
+
+# Workspace packages are always consumed via the workspace: protocol.
+linkWorkspacePackages: true
+preferWorkspacePackages: true
+
+# No dependency is allowed to run lifecycle scripts (pnpm 10 default is "none", made explicit).
+onlyBuiltDependencies: []
