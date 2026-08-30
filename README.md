@@ -47,7 +47,7 @@ Releases are built by CI for macOS (arm64/x64), Windows and Linux. The mac build
 install script clears the Gatekeeper quarantine flag and ad‑hoc signs the bundle:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install-mac.sh | REPO=<owner>/<repo> bash
+curl -fsSL https://raw.githubusercontent.com/joe-lloyd/neon-video-studio/main/scripts/install-mac.sh | bash
 ```
 
 or from a local checkout: `pnpm --filter @neon/desktop build:app && scripts/install-mac.sh --local`.

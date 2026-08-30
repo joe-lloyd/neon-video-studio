@@ -7,3 +7,4 @@
 - The Remotion render worker (`packages/render/src/worker.ts`) must run under **Node**, not Bun.
 - Time is always integer frames at project fps; parse user input with `parseTimecode()` from `@neon/core`.
 - Every mutation goes through `ProjectDoc` (packages/core/src/doc.ts) so CRDT sync, undo and the CLI stay consistent. Use `ORIGIN_LOCAL` for UI edits (undoable) and `ORIGIN_API` for CLI/agent edits.
+- AI features live in `packages/ai` (engines are subprocesses: ffmpeg, whisper-cli, `~/.neon-video/tools/neon-vision`); jobs run in `apps/desktop/src/main/ai-manager.ts`. whisper.cpp: never pass `-nt` (it degrades JSON timestamps).

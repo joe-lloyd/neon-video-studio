@@ -7,7 +7,7 @@
 #   scripts/install-mac.sh v0.2.0         # specific tag
 #   scripts/install-mac.sh --local        # copy apps/desktop/build/stable-*/ from this checkout
 set -euo pipefail
-REPO="${REPO:-joelloyd/video-editor}"
+REPO="${REPO:-joe-lloyd/neon-video-studio}"
 APP_NAME="Neon Video Studio"
 DEST="${DEST:-/Applications}"
 ARCH=$(uname -m); [ "$ARCH" = "arm64" ] && LABEL="macos-arm64" || LABEL="macos-x64"
