@@ -24,7 +24,7 @@ import { EventHub } from './events.ts';
 import { AiManager } from './ai-manager.ts';
 import type { Bootstrap, DesktopRPC } from '../shared/rpc.ts';
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.1';
 const DEV_SERVER_URL = 'http://localhost:5173';
 
 async function resolveViewUrl(port: number, token: string): Promise<{ url: string; isDev: boolean }> {
