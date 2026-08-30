@@ -1,6 +1,6 @@
 {
   "name": "@neon/desktop",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Neon Video Studio desktop app (Electrobun main process + React renderer)",
