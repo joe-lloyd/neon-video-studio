@@ -117,6 +117,12 @@ commands in **AI → engines** / `ai status`). The Vision helper compiles itself
 |---|
 | ![matte](docs/screenshots/ai-matte-frame.png) |
 
+## Docs
+
+- **[CLI reference](docs/cli.md)** — every command with examples and agent recipes
+- **[FX packs](docs/fx-packs.md)** — build your own animated React components (any npm library works)
+- **[Feedback log](FEEDBACK.md)** — running list of requests and their status
+
 ## Drive it from the terminal (or from an AI)
 
 ```bash

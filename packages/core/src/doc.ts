@@ -541,6 +541,38 @@ export class ProjectDoc {
     }, origin);
   }
 
+  /**
+   * Split the audio of a video clip onto an audio track: creates an audio clip with the same
+   * asset/timing/volume on the first free audio track and mutes the video clip.
+   */
+  detachAudio(clipId: string, origin?: unknown): Clip {
+    const clip = this.getClip(clipId);
+    if (!clip) throw new Error(`Clip ${clipId} not found`);
+    if (clip.kind !== 'video') throw new Error('Detach audio works on video clips');
+    return this.transact(() => {
+      const track = this.ensureTrack('audio');
+      const audio: Clip = {
+        id: newId('clip'),
+        kind: 'audio',
+        trackId: track.id,
+        name: `${clip.name} (audio)`,
+        startFrame: clip.startFrame,
+        durationFrames: clip.durationFrames,
+        assetId: clip.assetId,
+        trimBefore: clip.trimBefore,
+        volume: clip.volume,
+        fit: 'contain',
+        fadeIn: clip.fadeIn,
+        fadeOut: clip.fadeOut,
+        ...(clip.volumeKeyframes ? { volumeKeyframes: clip.volumeKeyframes.map((k) => ({ ...k })) } : {}),
+      };
+      this.clips.set(audio.id, clipToMap(audio));
+      this.updateClip(clipId, { volume: 0, volumeKeyframes: null }, origin);
+      this.touch();
+      return audio;
+    }, origin);
+  }
+
   /** Point clips at a different asset (e.g. the denoised / matted derivative). */
   replaceClipAsset(clipIds: string[], assetId: string, origin?: unknown): void {
     if (!this.assets.has(assetId)) throw new Error(`Asset ${assetId} not found`);

@@ -119,3 +119,18 @@ test('repairTimestamps spreads collapsed tails up to the audio duration', () => 
   assert.ok(out[4]!.e <= 5);
   assert.ok(out[2]!.s >= 2.2);
 });
+
+
+import { buildEnhanceFilter } from '../src/enhance.ts';
+import { setupCommands } from '../src/setup.ts';
+
+test('enhance filter chain', () => {
+  const f = buildEnhanceFilter({ lufs: -16, denoise: true, strength: 0.5, rnnoiseModel: '/m/std.rnnn' });
+  assert.ok(f.startsWith('highpass=f=75'));
+  assert.ok(f.includes("arnndn=m='/m/std.rnnn':mix=0.55"));
+  assert.ok(f.includes('deesser'));
+  assert.ok(f.endsWith('loudnorm=I=-16:TP=-1.5:LRA=11'));
+  const g = buildEnhanceFilter({ lufs: -14, denoise: false, strength: 0.5 });
+  assert.ok(!g.includes('arnndn') && !g.includes('afftdn'));
+  assert.ok(setupCommands('base.en')[0] === 'brew install whisper-cpp');
+});

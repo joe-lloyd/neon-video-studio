@@ -21,6 +21,9 @@ import {
   type RoomInfo,
 } from '@neon/core';
 import { PeerSession, type SessionSnapshot } from '@neon/p2p/browser';
+import { registerAllPacks } from '@neon/remotion-workspace/packs';
+
+registerAllPacks();
 import type { Bridge } from './bridge.ts';
 import type { RoomState } from '../../shared/rpc.ts';
 
@@ -74,6 +77,13 @@ export interface UiState {
   aiCaps: AiCapabilities | null;
   /** Word range selected in the Script panel (inclusive indexes). */
   scriptSelection: { assetId: string; from: number; to: number } | null;
+  /** Right sidebar width in px (drag its left edge). */
+  sidebarWidth: number;
+  /** Project overview / start page. */
+  showStart: boolean;
+  recentProjects: { path: string; name: string; updatedAt: string; current: boolean }[];
+  /** Voice-over recording state. */
+  recording: { startFrame: number; startedAt: number } | null;
 }
 
 export interface PlayheadState {
@@ -116,6 +126,10 @@ export class Editor {
     aiJobs: [],
     aiCaps: null,
     scriptSelection: null,
+    sidebarWidth: 320,
+    showStart: true,
+    recentProjects: [],
+    recording: null,
   });
   readonly playhead = createStore<PlayheadState>({ frame: 0, playing: false });
   /** Set by the Preview component so the editor can drive the Remotion Player. */
@@ -180,6 +194,7 @@ export class Editor {
     bridge.request('listRenders', {}).then((jobs) => this.ui.set({ renders: jobs })).catch(() => undefined);
     bridge.request('aiJobs', {}).then((jobs) => this.ui.set({ aiJobs: jobs })).catch(() => undefined);
     void this.loadAiStatus();
+    void this.refreshRecentProjects();
     // Media diagnostics: WKWebView surfaces <video>/<audio> failures only on the element, so
     // capture them here and forward to the main-process log.
     const mediaLog = (e: Event) => {
@@ -280,6 +295,127 @@ export class Editor {
         return { flash: next };
       });
     }, ms + 50);
+  }
+
+  // ---- projects overview ------------------------------------------------------------------
+
+  async refreshRecentProjects(): Promise<void> {
+    try {
+      this.ui.set({ recentProjects: await this.bridge.request('recentProjects', {}) });
+    } catch {
+      /* http mode without support */
+    }
+  }
+
+  async openProjectPath(path: string): Promise<void> {
+    try {
+      await this.bridge.request('openProject', { path });
+      this.ui.set({ showStart: false });
+    } catch (err) {
+      this.toast('error', (err as Error).message);
+    }
+  }
+
+  async createProject(opts: { name?: string; fps?: number; width?: number; height?: number; dir?: string }): Promise<void> {
+    try {
+      await this.bridge.request('newProjectAt', opts);
+      this.ui.set({ showStart: false });
+      void this.refreshRecentProjects();
+    } catch (err) {
+      this.toast('error', (err as Error).message);
+    }
+  }
+
+  // ---- voice-over recording ---------------------------------------------------------------
+
+  private mediaRecorder: MediaRecorder | null = null;
+  private recordedChunks: Blob[] = [];
+
+  async startVoiceOver(): Promise<void> {
+    if (this.ui.get().recording) return;
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false } });
+    } catch (err) {
+      this.toast('error', `Microphone unavailable: ${(err as Error).message}. Grant mic access to Neon Video Studio in System Settings → Privacy.`);
+      return;
+    }
+    const mime = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
+    const recorder = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 192_000 } : undefined);
+    this.recordedChunks = [];
+    recorder.ondataavailable = (e) => e.data.size && this.recordedChunks.push(e.data);
+    const startFrame = this.playhead.get().frame;
+    recorder.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      void this.finishVoiceOver(startFrame, mime);
+    };
+    this.mediaRecorder = recorder;
+    recorder.start(250);
+    this.ui.set({ recording: { startFrame, startedAt: Date.now() } });
+    this.noteUiAction('vo.record', `Recording voice-over from frame ${startFrame}`);
+    // Roll the timeline so you can speak to the picture (wear headphones or mute the preview).
+    this.player?.play();
+  }
+
+  stopVoiceOver(): void {
+    if (!this.mediaRecorder) return;
+    this.player?.pause();
+    this.mediaRecorder.stop();
+    this.mediaRecorder = null;
+  }
+
+  private async finishVoiceOver(startFrame: number, mime: string): Promise<void> {
+    this.ui.set({ recording: null });
+    const blob = new Blob(this.recordedChunks, { type: mime || 'audio/mp4' });
+    this.recordedChunks = [];
+    if (blob.size < 2000) {
+      this.toast('error', 'Recording was empty');
+      return;
+    }
+    try {
+      // A dedicated VO track keeps takes out of the music lane.
+      let track = this.project.get().project.tracks.find((t) => t.kind === 'audio' && t.name === 'VO');
+      track ??= this.doc.addTrack('audio', 'VO', ORIGIN_LOCAL);
+      const ext = blob.type.includes('mp4') ? 'm4a' : 'webm';
+      const name = `voiceover-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}.${ext}`;
+      const b = this.bridge.bootstrap;
+      const res = await fetch(`http://127.0.0.1:${b.port}/api/assets/upload?name=${encodeURIComponent(name)}&at=${startFrame}&track=${encodeURIComponent(track.id)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${b.token}`, 'Content-Type': blob.type || 'application/octet-stream' },
+        body: blob,
+      });
+      const json = (await res.json()) as { ok: boolean; data?: { clip?: { id: string } }; error?: { message: string } };
+      if (!json.ok) throw new Error(json.error?.message ?? 'upload failed');
+      if (json.data?.clip) {
+        this.select([json.data.clip.id]);
+        this.flashClips([json.data.clip.id]);
+      }
+      this.seek(startFrame);
+      this.toast('success', `Voice-over placed on ${track.name} at frame ${startFrame}`);
+    } catch (err) {
+      this.toast('error', `Voice-over import failed: ${(err as Error).message}`);
+    }
+  }
+
+  detachAudio(clipId: string): void {
+    this.bridge
+      .request('detachAudio', { id: clipId })
+      .then(() => this.noteUiAction('timeline.detach', 'Detached audio to an audio track', [clipId]))
+      .catch((err: Error) => this.toast('error', err.message));
+  }
+
+  /** Zoom keeping `anchorFrame` at the same x position within the lanes viewport. */
+  zoomAt(factor: number, anchorFrame: number, lanes: HTMLElement | null): void {
+    const prev = this.ui.get().pxPerFrame;
+    const px = Math.min(40, Math.max(0.05, prev * factor));
+    if (px === prev) return;
+    let scrollLeft: number | null = null;
+    if (lanes) {
+      const offset = anchorFrame * prev - lanes.scrollLeft;
+      scrollLeft = Math.max(0, anchorFrame * px - offset);
+    }
+    this.ui.set({ pxPerFrame: px });
+    if (lanes && scrollLeft !== null) requestAnimationFrame(() => (lanes.scrollLeft = scrollLeft!));
   }
 
   // ---- AI ------------------------------------------------------------------------------

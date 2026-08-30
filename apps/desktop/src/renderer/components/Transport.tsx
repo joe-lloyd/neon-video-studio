@@ -1,7 +1,32 @@
+import { useEffect, useState } from 'react';
 import { framesToTimecode } from '@neon/core';
 import { Magnet, NeonIcon, Pause, Play, Redo2, Scissors, SkipBack, SkipForward, Trash2, Undo2, Volume2, VolumeX, ZoomIn, ZoomOut, Maximize2 } from '@neon/icon-kit';
 import { useEditor } from '../lib/context.ts';
 import { useSelector, useStoreValue } from '../lib/store.ts';
+
+function RecordButton() {
+  const editor = useEditor();
+  const recording = useSelector(editor.ui, (u) => u.recording);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!recording) return;
+    const t = setInterval(() => tick((n) => n + 1), 500);
+    return () => clearInterval(t);
+  }, [recording]);
+  const seconds = recording ? Math.floor((Date.now() - recording.startedAt) / 1000) : 0;
+  return (
+    <>
+      <button
+        className={`btn icon record${recording ? ' armed' : ''}`}
+        title={recording ? 'Stop recording (drops the take on the VO track)' : 'Record voice-over from the playhead (wear headphones or mute the preview)'}
+        onClick={() => (recording ? editor.stopVoiceOver() : void editor.startVoiceOver())}
+      >
+        <span className="rec-dot" />
+      </button>
+      {recording ? <span className="rec-time">{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}</span> : null}
+    </>
+  );
+}
 
 export function Transport() {
   const editor = useEditor();
@@ -19,6 +44,7 @@ export function Transport() {
         <NeonIcon icon={playing ? Pause : Play} size={16} tone="magenta" glow={2} />
       </button>
       <button className="btn icon ghost" title="Go to end (End)" onClick={() => editor.seek(Math.max(0, durationFrames - 1))}><NeonIcon icon={SkipForward} size={16} /></button>
+      <RecordButton />
       <span className="timecode">{framesToTimecode(frame, fps)}</span>
       <span className="timecode total mono">/ {framesToTimecode(durationFrames, fps)}</span>
       <span className="spacer" />

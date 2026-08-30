@@ -81,16 +81,14 @@ export function Timeline() {
   // ---- scrubbing ---------------------------------------------------------------------
   const scrub = (e: ReactPointerEvent<HTMLElement>) => {
     editor.player?.pause();
-    const target = e.currentTarget;
-    target.setPointerCapture(e.pointerId);
     editor.seek(frameAt(e.clientX));
     const move = (ev: PointerEvent) => editor.seek(frameAt(ev.clientX));
     const up = () => {
-      target.removeEventListener('pointermove', move);
-      target.removeEventListener('pointerup', up);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
     };
-    target.addEventListener('pointermove', move);
-    target.addEventListener('pointerup', up);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
   };
 
   // ---- clip drag / trim --------------------------------------------------------------
@@ -100,8 +98,8 @@ export function Timeline() {
     const track = tracks.find((t) => t.id === clip.trackId);
     if (track?.locked) return;
     if (!selection.includes(clip.id)) editor.select([clip.id], e.shiftKey);
-    const el = e.currentTarget;
-    el.setPointerCapture(e.pointerId);
+    // Window-level tracking (not element pointer capture): WKWebView drops capture when React
+    // re-renders the clip mid-drag, which froze vertical moves between FX tracks.
     const state: Drag = { kind: 'move', id: clip.id, originX: e.clientX, originStart: clip.startFrame, startFrame: clip.startFrame, trackId: clip.trackId, duration: clip.durationFrames, clipKind: clip.kind };
     setDrag(state);
     let latest = state;
@@ -129,14 +127,16 @@ export function Timeline() {
       setSnapLine(line);
     };
     const up = () => {
-      el.removeEventListener('pointermove', move);
-      el.removeEventListener('pointerup', up);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
       setDrag(null);
       setSnapLine(null);
       if (latest.startFrame !== clip.startFrame || latest.trackId !== clip.trackId) editor.moveClip(clip.id, latest.startFrame, latest.trackId);
     };
-    el.addEventListener('pointermove', move);
-    el.addEventListener('pointerup', up);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   };
 
   const beginTrim = (e: ReactPointerEvent<HTMLDivElement>, clip: Clip, edge: 'start' | 'end') => {
@@ -145,8 +145,6 @@ export function Timeline() {
     const track = tracks.find((t) => t.id === clip.trackId);
     if (track?.locked) return;
     editor.select([clip.id]);
-    const el = e.currentTarget;
-    el.setPointerCapture(e.pointerId);
     const clipEnd = clip.startFrame + clip.durationFrames;
     const state: Drag = { kind: 'trim', id: clip.id, edge, originX: e.clientX, frame: edge === 'start' ? clip.startFrame : clipEnd, clipStart: clip.startFrame, clipEnd };
     setDrag(state);
@@ -162,14 +160,16 @@ export function Timeline() {
       setSnapLine(frame);
     };
     const up = () => {
-      el.removeEventListener('pointermove', move);
-      el.removeEventListener('pointerup', up);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
       setDrag(null);
       setSnapLine(null);
       if (latest.frame !== state.frame) editor.trimClip(clip.id, edge, latest.frame);
     };
-    el.addEventListener('pointermove', move);
-    el.addEventListener('pointerup', up);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   };
 
   // ---- drops from panels -------------------------------------------------------------
@@ -205,9 +205,12 @@ export function Timeline() {
   }, [playhead, pxPerFrame, lanesRef]);
 
   const onWheel = (e: React.WheelEvent) => {
+    // Trackpad pinches arrive as many ctrlKey+wheel events; scale by the actual delta so the
+    // zoom follows the gesture instead of exploding, and anchor the frame under the cursor.
     if (e.altKey || e.metaKey || e.ctrlKey) {
       e.preventDefault();
-      editor.zoomBy(e.deltaY < 0 ? 1.15 : 0.87);
+      const factor = Math.exp(-Math.max(-30, Math.min(30, e.deltaY)) * 0.006);
+      editor.zoomAt(factor, frameAt(e.clientX), lanesRef.current);
     }
   };
 
@@ -252,7 +255,7 @@ export function Timeline() {
           {tracks.map((track) => (
             <div
               key={track.id}
-              className={`lane${track.locked ? ' locked' : ''}${dropTrack === track.id ? ' drop-target' : ''}`}
+              className={`lane${track.locked ? ' locked' : ''}${dropTrack === track.id ? ' drop-target' : ''}${drag?.kind === 'move' && drag.trackId === track.id ? ' drag-over' : ''}`}
               style={{ height: ROW_H }}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -319,6 +322,43 @@ function TrackHeader({ track }: { track: Track }) {
   );
 }
 
+function VolumeBar({ clip }: { clip: Clip & { kind: 'video' | 'audio' | 'image' } }) {
+  const editor = useEditor();
+  const [chip, setChip] = useState<{ x: number; y: number; volume: number } | null>(null);
+  if (clip.kind === 'image') return null;
+  // volume 0..2 maps bottom..top of the clip body (unity sits mid-height).
+  const topPct = (1 - Math.min(2, Math.max(0, clip.volume)) / 2) * 100;
+  return (
+    <>
+      <div
+        className={`vol-line${chip ? ' active' : ''}`}
+        style={{ top: `${topPct}%` }}
+        title={`Volume ${(clip.volume * 100).toFixed(0)}% — drag to change`}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          const lane = (e.currentTarget.closest('.clip') as HTMLElement).getBoundingClientRect();
+          const apply = (clientY: number) => {
+            const rel = Math.min(1, Math.max(0, (clientY - lane.top) / lane.height));
+            const volume = Math.round((1 - rel) * 2 * 20) / 20;
+            editor.updateClip(clip.id, { volume });
+            return volume;
+          };
+          setChip({ x: e.clientX, y: e.clientY, volume: apply(e.clientY) });
+          const move = (ev: PointerEvent) => setChip({ x: ev.clientX, y: ev.clientY, volume: apply(ev.clientY) });
+          const up = () => {
+            setChip(null);
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+          };
+          window.addEventListener('pointermove', move);
+          window.addEventListener('pointerup', up);
+        }}
+      />
+      {chip ? <span className="vol-chip" style={{ left: chip.x + 12, top: chip.y - 24 }}>{Math.round(chip.volume * 100)}%{chip.volume === 0 ? ' (muted)' : ''}</span> : null}
+    </>
+  );
+}
+
 function ClipView({ clip, drag, pxPerFrame, fps, selected, flashing, onMove, onTrim }: {
   clip: Clip;
   drag: Drag | null;
@@ -355,6 +395,7 @@ function ClipView({ clip, drag, pxPerFrame, fps, selected, flashing, onMove, onT
       {clip.kind !== 'component' && clip.volumeKeyframes
         ? clip.volumeKeyframes.filter((k) => k.gain < 0.99).map((k, i) => <span key={i} className="vol-dot" style={{ left: k.frame * pxPerFrame }} />)
         : null}
+      {clip.kind !== 'component' ? <VolumeBar clip={clip} /> : null}
       <span className="clip-name">{clip.name}</span>
       {clip.kind !== 'component' && clip.reframe ? <span className="clip-badge" title="auto-reframed">◱</span> : null}
       {clip.kind !== 'component' && clip.volumeKeyframes?.length ? <span className="clip-badge" title="volume automation">∿</span> : null}

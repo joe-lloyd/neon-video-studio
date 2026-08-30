@@ -183,3 +183,19 @@ test('transcripts round-trip and undo covers them', () => {
   const copy = ProjectDoc.fromJSON(pd.toJSON());
   assert.deepEqual(copy.toJSON().transcripts, pd.toJSON().transcripts);
 });
+
+
+test('detachAudio creates a linked audio clip and mutes the video', () => {
+  const pd = fresh();
+  pd.addAsset(asset(HASH_A, 120));
+  const v = pd.insertClip({ kind: 'video', assetId: HASH_A, startFrame: 30 });
+  const a = pd.detachAudio(v.id);
+  assert.equal(a.kind, 'audio');
+  assert.equal(a.startFrame, 30);
+  assert.equal(a.durationFrames, v.durationFrames);
+  assert.equal((a as { assetId?: string }).assetId, HASH_A);
+  const video = pd.getClip(v.id)!;
+  if (video.kind !== 'component') assert.equal(video.volume, 0);
+  const audioTrack = pd.toJSON().tracks.find((t) => t.id === a.trackId)!;
+  assert.equal(audioTrack.kind, 'audio');
+});

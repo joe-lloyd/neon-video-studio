@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@neon/core": "workspace:*",
+    "@neon/remotion-workspace": "workspace:*",
     "@neon/render": "workspace:*"
   },
   "devDependencies": {

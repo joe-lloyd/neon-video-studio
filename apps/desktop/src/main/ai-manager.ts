@@ -23,6 +23,8 @@ import {
 import {
   DEFAULT_FILLERS,
   SETUP_HINTS,
+  enhanceVoice,
+  runSetup,
   analyseBreaths,
   analyseSilences,
   breathKeyframes,
@@ -263,6 +265,10 @@ export class AiManager {
         return this.opBreaths(job, params);
       case 'denoise':
         return this.opDenoise(job, params);
+      case 'enhance':
+        return this.opEnhance(job, params);
+      case 'setup':
+        return this.opSetup(job, params);
       case 'matte':
         return this.opMatte(job, params);
       case 'reframe':
@@ -363,6 +369,47 @@ export class AiManager {
     } finally {
       await rm(dir, { recursive: true, force: true }).catch(() => undefined);
     }
+  }
+
+  private async opEnhance(job: AiJob, params: Params) {
+    const target = await this.resolveTarget(params);
+    const paths = await this.paths();
+    const info = await probe(paths.ffprobe, target.file);
+    if (!info.hasAudio) throw new Error(`${target.asset.name} has no audio track`);
+    const dir = await mkdtemp(join(tmpdir(), 'neon-enhance-'));
+    try {
+      const stem = basename(target.asset.name).replace(/\.[^.]+$/, '');
+      const out = join(dir, `${stem}-enhanced${info.hasVideo ? (extname(target.asset.name).toLowerCase() === '.mov' ? '.mov' : '.mp4') : '.m4a'}`);
+      this.progress(job, 0.1, 'Enhancing voice (EQ → de-ess → compress → loudness)…');
+      const r = await enhanceVoice(target.file, out, {
+        paths,
+        lufs: Number(params.lufs ?? -16),
+        denoise: params.denoise !== false,
+        strength: Number(params.strength ?? 0.5),
+        hasVideo: info.hasVideo,
+        durationSeconds: info.durationSeconds,
+        onProgress: (p) => this.progress(job, 0.1 + p * 0.8),
+      });
+      const asset = await this.importDerived(job, target.asset, out, [`enhance:${Number(params.lufs ?? -16)}LUFS`]);
+      if (target.clips.length) this.ctx.store.doc.replaceClipAsset(target.clips.map((c) => c.id), asset.id, ORIGIN_API);
+      return { filter: r.filter, lufs: Number(params.lufs ?? -16), newAssetId: asset.id, clipsUpdated: target.clips.length };
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
+  private async opSetup(job: AiJob, params: Params) {
+    this.progress(job, 0.02, 'Installing speech/denoise engines…');
+    const result = await runSetup({
+      whisper: params.whisper !== false,
+      rnnoise: params.rnnoise !== false,
+      model: (params.model as 'tiny.en' | 'base.en' | 'small.en') ?? 'base.en',
+      onProgress: (p, message) => this.progress(job, p, message),
+      onLog: (line) => this.log(job, line),
+    });
+    this.tools = null; // re-detect
+    const caps = await this.capabilities(true);
+    return { ...result, whisperReady: caps.whisper.available, rnnoiseReady: caps.rnnoise.available };
   }
 
   private async opMatte(job: AiJob, params: Params) {
@@ -530,6 +577,10 @@ function summarize(op: AiOperation, result: unknown): string {
       return `Attenuated ${String(r.breaths)} breath/mouth-noise event(s) by ${String(r.reductionDb)} dB`;
     case 'denoise':
       return `Denoised with ${String(r.engine)} → new asset ${String(r.newAssetId).slice(0, 8)}…`;
+    case 'enhance':
+      return `Voice enhanced to ${String(r.lufs)} LUFS → new asset ${String(r.newAssetId).slice(0, 8)}…`;
+    case 'setup':
+      return `Engines installed: ${((r.installed as string[]) ?? []).join(', ') || 'nothing new'}${((r.skipped as string[]) ?? []).length ? ` (already had ${(r.skipped as string[]).length})` : ''}`;
     case 'matte':
       return `Background removed (${String(r.mode)}) → alpha asset ${String(r.newAssetId).slice(0, 8)}…`;
     case 'reframe':

@@ -309,3 +309,17 @@ export const UiControlRequestSchema = z.object({
   select: z.array(z.string()).optional(),
   dialog: z.enum(['render', 'room', 'shortcuts', 'none']).optional(),
 });
+
+export const AiEnhanceRequestSchema = AiTargetSchema.extend({
+  /** Target integrated loudness (EBU R128). */
+  lufs: z.number().min(-36).max(-8).default(-16),
+  denoise: z.boolean().default(true),
+  strength: z.number().min(0).max(1).default(0.5),
+});
+export const AiSetupRequestSchema = z.object({
+  /** Which engines to install. */
+  whisper: z.boolean().default(true),
+  rnnoise: z.boolean().default(true),
+  model: z.enum(['tiny.en', 'base.en', 'small.en']).default('base.en'),
+});
+export const DetachAudioRequestSchema = z.object({ id: z.string().min(1) });

@@ -69,6 +69,25 @@ export function SidePanels() {
   const panel = useSelector(editor.ui, (u) => u.panel);
   return (
     <aside className="side">
+      <div
+        className="side-resize"
+        title="Drag to resize"
+        onPointerDown={(e) => {
+          const startX = e.clientX;
+          const startW = editor.ui.get().sidebarWidth;
+          const el = e.currentTarget;
+          el.classList.add('active');
+          el.setPointerCapture(e.pointerId);
+          const move = (ev: PointerEvent) => editor.ui.set({ sidebarWidth: Math.min(560, Math.max(260, startW + (startX - ev.clientX))) });
+          const up = () => {
+            el.classList.remove('active');
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+          };
+          window.addEventListener('pointermove', move);
+          window.addEventListener('pointerup', up);
+        }}
+      />
       <div className="panel" style={{ flex: 1 }}>
         <div className="side-tabs">
           {TABS.map((t) => (
@@ -375,8 +394,13 @@ function InspectorPanel() {
             ))}
           </>
         )}
-        <div className="row" style={{ marginTop: 8 }}>
+        <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
           <button className="btn sm" onClick={() => editor.seek(clip.startFrame)}>Go to start</button>
+          {clip.kind === 'video' ? (
+            <button className="btn sm" title="Copy the audio to an audio track and mute this clip's own sound" onClick={() => editor.detachAudio(clip.id)}>
+              Detach audio
+            </button>
+          ) : null}
           <button className="btn sm danger" onClick={() => editor.deleteSelection()}><NeonIcon icon={Trash2} size={13} tone="red" /> Delete</button>
         </div>
       </div>

@@ -35,7 +35,7 @@ export interface RenderJob {
   log: string[];
 }
 
-export type AiOperation = 'transcribe' | 'fillers' | 'silence' | 'breaths' | 'denoise' | 'matte' | 'reframe' | 'broll' | 'clean' | 'transcript-cut';
+export type AiOperation = 'transcribe' | 'fillers' | 'silence' | 'breaths' | 'denoise' | 'enhance' | 'matte' | 'reframe' | 'broll' | 'clean' | 'transcript-cut' | 'setup';
 export type AiJobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface AiJob {
@@ -175,6 +175,8 @@ export const API_ROUTES = {
   preview: '/api/preview',
   ui: '/api/ui',
   timelineCut: '/api/timeline/cut',
+  timelineDetach: '/api/timeline/detach',
+  assetsUpload: '/api/assets/upload',
   ai: '/api/ai',
   aiStatus: '/api/ai/status',
   aiJobs: '/api/ai/jobs',

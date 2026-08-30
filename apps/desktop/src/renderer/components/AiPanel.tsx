@@ -55,6 +55,24 @@ export function AiPanel() {
           <p className="hint">Detecting engines…</p>
         )}
 
+        {caps && !caps.whisper.available ? (
+          <div className="callout-install" style={{ border: '1px solid rgba(255,184,0,.5)', borderRadius: 6, padding: '10px 12px', marginBottom: 12 }}>
+            <p className="hint" style={{ marginBottom: 8 }}><b style={{ color: 'var(--warning)' }}>Speech recognition is not installed.</b> Transcription, filler removal, B-roll and the Script editor need whisper.cpp (~150 MB, one time, fully local).</p>
+            <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+              <button className="btn sm magenta" disabled={busy} onClick={() => run('setup', { model: 'base.en' })}>Install automatically</button>
+              <button
+                className="btn sm ghost"
+                onClick={() => {
+                  const cmd = (caps as unknown as { hints?: Record<string, string> }).hints?.whisper ?? 'brew install whisper-cpp && curl -L -o ~/.neon-video/models/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin';
+                  void navigator.clipboard.writeText(cmd);
+                  editor.toast('success', 'Install command copied — paste it into a terminal');
+                }}
+              >
+                Copy command instead
+              </button>
+            </div>
+          </div>
+        ) : null}
         {!media ? (
           <div className="empty">
             <strong>Select a video or audio clip</strong>
@@ -103,6 +121,12 @@ export function AiPanel() {
                   <option value="afftdn">afftdn (spectral)</option>
                   <option value="deepfilter">DeepFilterNet</option>
                 </select>
+              </div>
+              <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                <button className="btn sm cyan" disabled={busy} title="High-pass → de-ess → compress → loudness normalise to -16 LUFS" onClick={() => run('enhance', { lufs: -16 })}>
+                  <NeonIcon icon={AudioLines} size={13} tone="cyan" glow={2} /> Enhance voice
+                </button>
+                <span className="hint">clarity + broadcast loudness</span>
               </div>
               <button className="btn magenta" style={{ width: '100%', justifyContent: 'center', marginTop: 8 }} disabled={busy} onClick={() => run('clean', { fillers: hasSpeechEngine, silences: true, breaths: true, denoise: false })}>
                 <NeonIcon icon={Sparkles} size={13} tone="magenta" /> Clean up voice (all of the above)

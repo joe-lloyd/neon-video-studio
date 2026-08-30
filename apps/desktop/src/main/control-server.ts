@@ -25,6 +25,9 @@ import {
   AiSilenceRequestSchema,
   AiBreathsRequestSchema,
   AiDenoiseRequestSchema,
+  AiEnhanceRequestSchema,
+  AiSetupRequestSchema,
+  DetachAudioRequestSchema,
   AiMatteRequestSchema,
   AiReframeRequestSchema,
   AiBrollRequestSchema,
@@ -170,6 +173,30 @@ async function start(ctx: MainContext, scope: Scope, hostname: string, port: num
           if (scope === 'lan') return new Response('not found', { status: 404 });
           if (!authorized(req, url)) throw new HttpError(401, 'UNAUTHORIZED', 'Missing or invalid bearer token');
           if (path === API_ROUTES.events && req.method === 'GET') return eventStream(ctx, req, url);
+          // Binary media upload (voice-over recordings, agent-generated files):
+          //   POST /api/assets/upload?name=take.m4a[&at=frames][&track=id] with the file as the body.
+          if (path === API_ROUTES.assetsUpload && req.method === 'POST') {
+            const name = (url.searchParams.get('name') ?? 'upload.bin').replace(/[^\w.\- ]/g, '_');
+            const at = url.searchParams.get('at');
+            const trackId = url.searchParams.get('track') ?? undefined;
+            const { mkdtemp: mkTmp, rm: rmTmp, writeFile: writeTmp } = await import('node:fs/promises');
+            const { tmpdir: osTmp } = await import('node:os');
+            const { join: joinPath } = await import('node:path');
+            const dir = await mkTmp(joinPath(osTmp(), 'neon-upload-'));
+            try {
+              const file = joinPath(dir, name);
+              await writeTmp(file, new Uint8Array(await req.arrayBuffer()));
+              const result = await ctx.assets.import(file, {
+                insertAt: at !== null ? Math.max(0, Math.round(Number(at))) : undefined,
+                trackId,
+                origin: ORIGIN_API,
+              });
+              ctx.events.activity('ui', 'assets.upload', `Recorded/uploaded “${result.asset.name}”${result.clip ? ` and placed it at frame ${result.clip.startFrame}` : ''}`, { assetIds: [result.asset.id], clipIds: result.clip ? [result.clip.id] : [] });
+              return ok(result);
+            } finally {
+              await rmTmp(dir, { recursive: true, force: true }).catch(() => undefined);
+            }
+          }
           const body = req.method === 'POST' ? ((await req.json().catch(() => ({}))) as unknown) : {};
           const result = await handleApi(ctx, req.method, path, body);
           if (req.method === 'POST') recordActivity(ctx, path, body, result);
@@ -310,7 +337,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     return t;
   }
   if (key === `POST ${API_ROUTES.aiTranscript}/cut`) return ctx.ai.start('transcript-cut', TranscriptCutRequestSchema.parse(body));
-  const aiOp = /^POST \/api\/ai\/(transcribe|fillers|silence|breaths|denoise|matte|reframe|broll|clean)$/.exec(key);
+  const aiOp = /^POST \/api\/ai\/(transcribe|fillers|silence|breaths|denoise|enhance|matte|reframe|broll|clean|setup)$/.exec(key);
   if (aiOp) {
     const op = aiOp[1] as AiOperation;
     const schemas: Record<string, { parse(v: unknown): unknown }> = {
@@ -319,6 +346,8 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
       silence: AiSilenceRequestSchema,
       breaths: AiBreathsRequestSchema,
       denoise: AiDenoiseRequestSchema,
+      enhance: AiEnhanceRequestSchema,
+      setup: AiSetupRequestSchema,
       matte: AiMatteRequestSchema,
       reframe: AiReframeRequestSchema,
       broll: AiBrollRequestSchema,
@@ -334,6 +363,10 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
       parsed.clipId = clip.id;
     }
     return ctx.ai.start(op, parsed);
+  }
+  if (key === `POST ${API_ROUTES.timelineDetach}`) {
+    const { id } = DetachAudioRequestSchema.parse(body);
+    return doc.detachAudio(id, ORIGIN_API);
   }
   if (key === `POST ${API_ROUTES.timelineCut}`) {
     const req = CutRangesRequestSchema.parse(body);
@@ -641,6 +674,9 @@ function recordActivity(ctx: MainContext, path: string, body: unknown, result: u
       break;
     case API_ROUTES.preview:
       ctx.events.activity('cli', 'preview.control', r.action === 'seek' ? `Moved the playhead to ${tc(Number(r.frame ?? 0))}` : `Preview: ${String(r.action)}`);
+      break;
+    case API_ROUTES.timelineDetach:
+      ctx.events.activity('cli', 'timeline.detach', `Detached audio of “${String((r as { name?: string }).name ?? '')}” to ${trackName(String((r as { trackId?: string }).trackId))}`, { clipIds: [String((r as { id?: string }).id)] });
       break;
     case API_ROUTES.timelineCut:
       ctx.events.activity('cli', 'timeline.cut', `Cut ${String((r as { cuts?: number }).cuts ?? 0)} clip segment(s), ${String(r.removedFrames)} frames removed (ripple)`);

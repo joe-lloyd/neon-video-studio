@@ -9,6 +9,9 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { RENDER_PRESETS, framesToTimecode, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type ImportAssetResponse, type RenderJob } from '@neon/core';
 import { renderHeadless } from '@neon/render';
+import { registerAllPacks } from '@neon/remotion-workspace/packs';
+
+registerAllPacks();
 import { ApiError, NeonClient, discoverClient } from './client.ts';
 import { clipRow, progressBar, table } from './format.ts';
 
@@ -43,15 +46,18 @@ COMMANDS
   room host [--password P] | room join <code> [--password P] [--host-url ws://ip:port] | room leave | room info
   events [--history N]                    Live-tail everything the app does (CLI actions, renders, peers) — Ctrl-C to stop
   timeline cut --from T --to T [--track REF] [--no-ripple]   Remove a timeline range (all tracks, ripple)
+  timeline detach <clip>                  Split a video clip's audio onto an audio track (video muted)
 
 AI (local engines: whisper.cpp, ffmpeg, Apple Vision; Claude optional for B-roll)
   ai status                               Which engines are available + how to install the missing ones
   ai transcribe <clip|asset> [--force]    Word-level transcript (cached per asset)
   ai transcript <clip|asset> [--json]     Print the transcript, fillers marked with ⟨⟩
   ai fillers <clip> [--apply] [--words um,uh,like] [--pad 40]      Find/remove "um, uh, like, you know"
-  ai silence <clip> [--apply] [--threshold -38] [--min 400] [--keep 150]   Dead-air trimming
+  ai silence <clip> [--apply] [--threshold=-38] [--min 400] [--keep 150]   Dead-air trimming
   ai breaths <clip> [--db 15]             Attenuate breaths/mouth clicks with volume keyframes
   ai denoise <clip> [--engine auto|rnnoise|afftdn|deepfilter] [--strength 0.7]
+  ai enhance <clip> [--lufs=-16] [--no-denoise]                    Clearer voice at broadcast loudness
+  ai setup [--model tiny.en|base.en|small.en]                      Install whisper.cpp + models automatically
   ai matte <clip> [--mode person|chroma] [--quality fast|balanced|accurate] [--color 0x00FF00]
   ai reframe <clip> [--aspect 9:16] [--resize]                     Face-tracked auto-reframe
   ai broll [<asset>] [--apply] [--no-claude] [--duration 3]        Suggest/place B-roll from the transcript
@@ -128,6 +134,8 @@ const { values: flags, positionals } = parseArgs({
     quality: { type: 'string' },
     color: { type: 'string' },
     aspect: { type: 'string' },
+    lufs: { type: 'string' },
+    model: { type: 'string' },
     resize: { type: 'boolean', default: false },
     claude: { type: 'boolean', default: true },
     fillers: { type: 'boolean', default: true },
@@ -355,6 +363,11 @@ async function main(): Promise<void> {
         const trackIds = flags.track ? [(await api.resolveTrack(flags.track)).id] : undefined;
         const r = await api.cut({ ranges: [{ start: flags.from, end: flags.to }], trackIds, ripple: flags.ripple });
         out(r, () => `Removed ${r.removedFrames} frames (${r.cuts} clip segment(s) touched)`);
+      } else if (sub === 'detach') {
+        if (!rest[0]) throw new ApiError('USAGE', 'timeline detach <clip>');
+        const target = await api.resolveClip(rest[0]);
+        const audio = await api.detach(target.id);
+        out(audio, () => `Audio detached → clip ${audio.id} on an audio track (video muted; undo with ⌘Z in the app)`);
       } else if (sub === 'remove') {
         if (rest.length === 0) throw new ApiError('USAGE', 'timeline remove <clip...>');
         const all = (await api.list()).clips;
@@ -362,7 +375,7 @@ async function main(): Promise<void> {
         for (const ref of rest) ids.push((await api.resolveClip(ref, all)).id);
         const r = await api.remove(ids);
         out(r, () => `Removed ${r.removed} clip(s)`);
-      } else throw new ApiError('USAGE', 'timeline insert|update|move|split|remove|cut');
+      } else throw new ApiError('USAGE', 'timeline insert|update|move|split|remove|cut|detach');
       return;
     }
 
@@ -636,6 +649,21 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       });
       return;
     }
+    case 'enhance': {
+      const target = await assetOrClipParam(rest[0], 'ai enhance <clip> [--lufs=-16] [--no-denoise]');
+      await finish(await api.aiRun('enhance', { ...target, lufs: numOr(flags.lufs), denoise: flags.denoise !== false ? true : false, strength: numOr(flags.strength) }), (j) => {
+        const r = j.result as { lufs: number; filter: string; newAssetId: string };
+        return `Voice enhanced to ${r.lufs} LUFS → clip now uses asset ${r.newAssetId.slice(0, 12)}… (original kept)\nchain: ${r.filter}`;
+      });
+      return;
+    }
+    case 'setup': {
+      await finish(await api.aiRun('setup', { model: flags.model ?? 'base.en' }), (j) => {
+        const r = j.result as { installed: string[]; skipped: string[]; whisperReady: boolean };
+        return `${r.installed.length ? `Installed: ${r.installed.join(', ')}` : 'Nothing new to install'}${r.skipped.length ? `\nAlready present: ${r.skipped.join(', ')}` : ''}\nSpeech recognition ${r.whisperReady ? 'is ready ✓' : 'still unavailable ✗'}`;
+      });
+      return;
+    }
     case 'denoise': {
       const target = await assetOrClipParam(rest[0], 'ai denoise <clip>');
       await finish(await api.aiRun('denoise', { ...target, engine: flags.engine, strength: numOr(flags.strength) }), (j) => {
@@ -683,7 +711,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     default:
-      throw new ApiError('USAGE', 'ai status|transcribe|transcript|fillers|silence|breaths|denoise|matte|reframe|broll|clean|cut|jobs|job|cancel');
+      throw new ApiError('USAGE', 'ai status|setup|transcribe|transcript|fillers|silence|breaths|denoise|enhance|matte|reframe|broll|clean|cut|jobs|job|cancel');
   }
 }
 

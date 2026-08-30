@@ -11,7 +11,9 @@ export function TitleBar() {
 
   return (
     <header className={`titlebar${isMac ? '' : ' no-traffic-lights'}`}>
-      <NeonLogo size={20} withText />
+      <button className="btn ghost" style={{ padding: '2px 6px' }} title="Projects overview" onClick={() => editor.ui.set({ showStart: true })}>
+        <NeonLogo size={20} withText />
+      </button>
       <input
         className="project-name"
         value={draft ?? ui.projectName}

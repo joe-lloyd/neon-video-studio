@@ -7,6 +7,8 @@ export * from './breaths.ts';
 export * from './transcribe.ts';
 export * from './fillers.ts';
 export * from './denoise.ts';
+export * from './enhance.ts';
+export * from './setup.ts';
 export * from './matte.ts';
 export * from './reframe.ts';
 export * from './broll.ts';

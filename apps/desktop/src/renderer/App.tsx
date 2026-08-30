@@ -12,6 +12,7 @@ import { SidePanels } from './components/SidePanels.tsx';
 import { StatusBar } from './components/StatusBar.tsx';
 import { Toasts } from './components/Toasts.tsx';
 import { Dialogs } from './components/Dialogs.tsx';
+import { StartPage } from './components/StartPage.tsx';
 
 export function App() {
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -65,8 +66,9 @@ function Shell() {
   useKeyboard(editor);
   const [timelineH, setTimelineH] = useState(300);
   const ready = useStoreValue(editor.project).ready;
+  const sidebarWidth = useStoreValue(editor.ui).sidebarWidth;
   return (
-    <div className="app" style={{ ['--timeline-h' as string]: `${timelineH}px` }}>
+    <div className="app" style={{ ['--timeline-h' as string]: `${timelineH}px`, ['--side-w' as string]: `${sidebarWidth}px` }}>
       <TitleBar />
       <div className="preview-area">
         <Preview />
@@ -80,6 +82,7 @@ function Shell() {
       <StatusBar />
       <Toasts />
       <Dialogs />
+      <StartPage />
       {!ready ? <div className="preview-overlay" style={{ position: 'fixed', pointerEvents: 'none' }} /> : null}
     </div>
   );

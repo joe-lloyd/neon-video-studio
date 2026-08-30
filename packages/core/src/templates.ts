@@ -78,6 +78,72 @@ export interface ComponentTemplate<S extends z.ZodObject = z.ZodObject> {
   /** Default clip length when inserted without an explicit duration (in seconds). */
   defaultDurationSeconds: number;
   schema: S;
+  /** Pack this template came from ("core" for built-ins). */
+  pack?: string;
+}
+
+// ---- FX packs -------------------------------------------------------------------------
+// Packs describe their props with a plain field spec (no zod import needed in pack code);
+// the schema, inspector UI and CLI validation are derived from it.
+
+export type TemplateField =
+  | { key: string; type: 'text'; label?: string; default: string; multiline?: boolean; description?: string }
+  | { key: string; type: 'number'; label?: string; default: number; min?: number; max?: number; step?: number; description?: string }
+  | { key: string; type: 'color'; label?: string; default: string; description?: string }
+  | { key: string; type: 'boolean'; label?: string; default: boolean; description?: string }
+  | { key: string; type: 'select'; label?: string; default: string; options: string[]; description?: string };
+
+export interface TemplatePackMeta {
+  /** Unique template name (also the React component key), e.g. "NeonBadge". */
+  name: string;
+  label: string;
+  description: string;
+  defaultDurationSeconds: number;
+  fields: TemplateField[];
+}
+
+export function schemaFromFields(fields: TemplateField[]): z.ZodObject {
+  const shape: Record<string, z.ZodType> = {};
+  for (const f of fields) {
+    switch (f.type) {
+      case 'text':
+        shape[f.key] = z.string().default(f.default);
+        break;
+      case 'number': {
+        let n = z.number();
+        if (f.min !== undefined) n = n.min(f.min);
+        if (f.max !== undefined) n = n.max(f.max);
+        shape[f.key] = n.default(f.default);
+        break;
+      }
+      case 'color':
+        shape[f.key] = z.string().min(1).default(f.default);
+        break;
+      case 'boolean':
+        shape[f.key] = z.boolean().default(f.default);
+        break;
+      case 'select':
+        shape[f.key] = z.enum(f.options as [string, ...string[]]).default(f.default);
+        break;
+    }
+  }
+  return z.object(shape);
+}
+
+const EXTRA_TEMPLATES = new Map<string, ComponentTemplate>();
+
+/** Register FX-pack templates (idempotent). Call once at startup in every process that needs them. */
+export function registerTemplatePack(pack: string, templates: TemplatePackMeta[]): void {
+  for (const t of templates) {
+    EXTRA_TEMPLATES.set(t.name, {
+      name: t.name,
+      label: t.label,
+      description: t.description,
+      defaultDurationSeconds: t.defaultDurationSeconds,
+      schema: schemaFromFields(t.fields),
+      pack,
+    });
+  }
 }
 
 export const COMPONENT_TEMPLATES = {
@@ -135,13 +201,13 @@ export const COMPONENT_TEMPLATES = {
 export type ComponentTemplateName = keyof typeof COMPONENT_TEMPLATES;
 
 export function listTemplates(): ComponentTemplate[] {
-  return Object.values(COMPONENT_TEMPLATES);
+  return [...Object.values(COMPONENT_TEMPLATES).map((t) => ({ ...t, pack: 'core' })), ...EXTRA_TEMPLATES.values()];
 }
 
 export function getTemplate(name: string): ComponentTemplate {
-  const template = (COMPONENT_TEMPLATES as Record<string, ComponentTemplate>)[name];
+  const template = (COMPONENT_TEMPLATES as Record<string, ComponentTemplate>)[name] ?? EXTRA_TEMPLATES.get(name);
   if (!template) {
-    throw new Error(`Unknown component "${name}". Available: ${Object.keys(COMPONENT_TEMPLATES).join(', ')}`);
+    throw new Error(`Unknown component "${name}". Available: ${listTemplates().map((t) => t.name).join(', ')}`);
   }
   return template;
 }

@@ -22,6 +22,7 @@ import { loadSettings, saveSettings } from './settings.ts';
 import { SyncHub } from './sync-hub.ts';
 import { EventHub } from './events.ts';
 import { AiManager } from './ai-manager.ts';
+import { registerAllPacks } from '@neon/remotion-workspace/packs';
 import type { Bootstrap, DesktopRPC } from '../shared/rpc.ts';
 
 const VERSION = '0.2.1';
@@ -49,6 +50,7 @@ async function resolveViewUrl(port: number, token: string): Promise<{ url: strin
 }
 
 async function main(): Promise<void> {
+  registerAllPacks();
   const startedAt = Date.now();
   await mkdir(paths.home(), { recursive: true, mode: 0o700 });
   await mkdir(paths.renders(), { recursive: true });
@@ -219,6 +221,32 @@ async function main(): Promise<void> {
         aiJobs: () => ctx.ai.list(),
         aiCancel: ({ id }) => ctx.ai.cancel(id) ?? null,
         cutRanges: ({ ranges, trackIds }) => store.doc.cutRanges(ranges, { trackIds, ripple: true, crossfadeFrames: 2 }, ORIGIN_LOCAL),
+        detachAudio: ({ id }) => store.doc.detachAudio(id, ORIGIN_LOCAL),
+        recentProjects: async () => {
+          const { readFile: rf } = await import('node:fs/promises');
+          const out: { path: string; name: string; updatedAt: string; current: boolean }[] = [];
+          for (const dir of [store.dir, ...settings.recent.filter((d) => d !== store.dir)].slice(0, 12)) {
+            try {
+              const meta = (JSON.parse(await rf(join(dir, 'project.json'), 'utf8')) as { meta: { name: string; updatedAt: string } }).meta;
+              out.push({ path: dir, name: meta.name, updatedAt: meta.updatedAt, current: dir === store.dir });
+            } catch {
+              /* project folder gone — skip */
+            }
+          }
+          return out;
+        },
+        newProjectAt: async ({ name, fps, width, height, dir }) => {
+          const fresh = await ProjectStore.create({ name, fps, width, height });
+          if (dir) {
+            await fresh.saveAs(join(dir, `${(name ?? 'project').replace(/[^a-zA-Z0-9-_ ]/g, '').trim() || 'project'}.neon`));
+          }
+          await store.adopt(fresh);
+          return { projectId: store.projectId, path: store.isScratch ? null : store.dir };
+        },
+        chooseFolder: async () => {
+          const [dir] = await Utils.openFileDialog({ canChooseFiles: false, canChooseDirectory: true, allowsMultipleSelection: false });
+          return dir ?? null;
+        },
         setPeerName: async ({ name }) => {
           settings.peerName = name.trim().slice(0, 40) || settings.peerName;
           await saveSettings(settings);

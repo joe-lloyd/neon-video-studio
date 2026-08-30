@@ -50,6 +50,10 @@ export type DesktopRPC = {
       aiJobs: { params: Record<string, never>; response: AiJob[] };
       aiCancel: { params: { id: string }; response: AiJob | null };
       cutRanges: { params: { ranges: { start: number; end: number }[]; trackIds?: string[] }; response: { removedFrames: number; cuts: number } };
+      detachAudio: { params: { id: string }; response: unknown };
+      recentProjects: { params: Record<string, never>; response: { path: string; name: string; updatedAt: string; current: boolean }[] };
+      newProjectAt: { params: { name?: string; fps?: number; width?: number; height?: number; dir?: string }; response: { projectId: string; path: string | null } };
+      chooseFolder: { params: Record<string, never>; response: string | null };
     };
     messages: {
       rendererReady: { ok: true };

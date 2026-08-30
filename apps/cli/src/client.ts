@@ -100,6 +100,7 @@ export class NeonClient {
   ui = (body: { panel?: string; select?: string[]; dialog?: string }) => this.call<typeof body>('POST', API_ROUTES.ui, body);
 
   cut = (body: Record<string, unknown>) => this.call<{ removedFrames: number; cuts: number }>('POST', API_ROUTES.timelineCut, body);
+  detach = (id: string) => this.call<Clip>('POST', API_ROUTES.timelineDetach, { id });
   aiStatus = () => this.call<AiCapabilities & { hints: Record<string, string> }>('GET', API_ROUTES.aiStatus);
   aiJobs = () => this.call<AiJob[]>('GET', API_ROUTES.aiJobs);
   aiJob = (id: string) => this.call<AiJob>('GET', `${API_ROUTES.aiJobs}/${encodeURIComponent(id)}`);

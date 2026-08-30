@@ -20,6 +20,9 @@ importers:
       '@neon/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@neon/remotion-workspace':
+        specifier: workspace:*
+        version: link:../remotion-workspace
       '@neon/render':
         specifier: workspace:*
         version: link:../../packages/render

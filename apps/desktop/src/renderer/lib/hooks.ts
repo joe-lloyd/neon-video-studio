@@ -112,7 +112,7 @@ export function useKeyboard(editor: Editor): void {
           break;
         case 'Escape':
           editor.select([]);
-          editor.ui.set({ dialog: null });
+          editor.ui.set({ dialog: null, showStart: false });
           break;
         case 'n':
         case 'N':
