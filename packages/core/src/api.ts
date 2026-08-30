@@ -35,6 +35,35 @@ export interface RenderJob {
   log: string[];
 }
 
+export type AiOperation = 'transcribe' | 'fillers' | 'silence' | 'breaths' | 'denoise' | 'matte' | 'reframe' | 'broll' | 'clean' | 'transcript-cut';
+export type AiJobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+
+export interface AiJob {
+  id: string;
+  op: AiOperation;
+  status: AiJobStatus;
+  /** 0..1 when known */
+  progress: number;
+  message: string;
+  clipId?: string;
+  assetId?: string;
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+  /** Operation-specific result (ranges removed, suggestions, new asset id, …). */
+  result?: unknown;
+  log: string[];
+}
+
+export interface AiCapabilities {
+  whisper: { available: boolean; binary?: string; model?: string };
+  rnnoise: { available: boolean; model?: string };
+  deepfilter: { available: boolean; binary?: string };
+  vision: { available: boolean; binary?: string };
+  ffmpeg: { available: boolean };
+  claude: { available: boolean; model?: string };
+}
+
 export interface PeerInfo {
   clientId: number;
   peerId: string;
@@ -145,13 +174,18 @@ export const API_ROUTES = {
   events: '/api/events',
   preview: '/api/preview',
   ui: '/api/ui',
+  timelineCut: '/api/timeline/cut',
+  ai: '/api/ai',
+  aiStatus: '/api/ai/status',
+  aiJobs: '/api/ai/jobs',
+  aiTranscript: '/api/ai/transcript',
   yjs: '/yjs',
   signaling: '/signaling',
   assets: '/assets',
 } as const;
 
 /** Who caused an action. */
-export type ActivitySource = 'cli' | 'ui' | 'peer' | 'render' | 'room' | 'system';
+export type ActivitySource = 'cli' | 'ui' | 'peer' | 'render' | 'room' | 'system' | 'ai';
 
 /** One line in the live activity feed (shown in the app, streamed on /api/events, tailed by `neon-cli events`). */
 export interface ActivityEntry {
@@ -174,6 +208,7 @@ export type ServerEvent =
   | { type: 'activity'; entry: ActivityEntry }
   | { type: 'project-changed'; durationFrames: number; clips: number; updatedAt: string }
   | { type: 'render'; job: RenderJob }
+  | { type: 'ai'; job: AiJob }
   | { type: 'room'; room: RoomInfo }
   | { type: 'project-opened'; path: string | null; name: string; projectId: string }
   | { type: 'heartbeat'; ts: number };

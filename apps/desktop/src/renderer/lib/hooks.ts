@@ -107,7 +107,8 @@ export function useKeyboard(editor: Editor): void {
         case 'Delete':
         case 'Backspace':
           e.preventDefault();
-          editor.deleteSelection();
+          if (editor.ui.get().panel === 'script' && editor.ui.get().scriptSelection) void editor.cutScriptSelection();
+          else editor.deleteSelection();
           break;
         case 'Escape':
           editor.select([]);

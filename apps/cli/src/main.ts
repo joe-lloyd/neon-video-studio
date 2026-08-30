@@ -7,7 +7,7 @@
 import { parseArgs } from 'node:util';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { RENDER_PRESETS, framesToTimecode, listTemplates, templateDefaults, templateJsonSchema, type ImportAssetResponse, type RenderJob } from '@neon/core';
+import { RENDER_PRESETS, framesToTimecode, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type ImportAssetResponse, type RenderJob } from '@neon/core';
 import { renderHeadless } from '@neon/render';
 import { ApiError, NeonClient, discoverClient } from './client.ts';
 import { clipRow, progressBar, table } from './format.ts';
@@ -42,8 +42,24 @@ COMMANDS
   render status <jobId> | render cancel <jobId>
   room host [--password P] | room join <code> [--password P] [--host-url ws://ip:port] | room leave | room info
   events [--history N]                    Live-tail everything the app does (CLI actions, renders, peers) — Ctrl-C to stop
+  timeline cut --from T --to T [--track REF] [--no-ripple]   Remove a timeline range (all tracks, ripple)
+
+AI (local engines: whisper.cpp, ffmpeg, Apple Vision; Claude optional for B-roll)
+  ai status                               Which engines are available + how to install the missing ones
+  ai transcribe <clip|asset> [--force]    Word-level transcript (cached per asset)
+  ai transcript <clip|asset> [--json]     Print the transcript, fillers marked with ⟨⟩
+  ai fillers <clip> [--apply] [--words um,uh,like] [--pad 40]      Find/remove "um, uh, like, you know"
+  ai silence <clip> [--apply] [--threshold -38] [--min 400] [--keep 150]   Dead-air trimming
+  ai breaths <clip> [--db 15]             Attenuate breaths/mouth clicks with volume keyframes
+  ai denoise <clip> [--engine auto|rnnoise|afftdn|deepfilter] [--strength 0.7]
+  ai matte <clip> [--mode person|chroma] [--quality fast|balanced|accurate] [--color 0x00FF00]
+  ai reframe <clip> [--aspect 9:16] [--resize]                     Face-tracked auto-reframe
+  ai broll [<asset>] [--apply] [--no-claude] [--duration 3]        Suggest/place B-roll from the transcript
+  ai clean <clip> [--no-fillers] [--no-silences] [--no-breaths] [--denoise]   One-shot voice clean-up
+  ai cut <asset> <fromWord> <toWord>      Text-driven edit: delete words → cut the video
+  ai jobs | ai job <id> | ai cancel <id>
   preview play|pause|toggle|seek <T>      Drive the app's preview player (watch your edits play back)
-  ui panel <media|fx|inspect|room|render|live> | ui select <clip...> | ui select none | ui dialog <render|room|shortcuts|none>
+  ui panel <media|fx|inspect|room|ai|script|render|live> | ui select <clip...> | ui select none | ui dialog <render|room|shortcuts|none>
 
 TIME (T)   HH:MM:SS[:FF] · MM:SS · 12.5s · 300f · 300 (frames)
 REF        id, id prefix, or name (tracks: "V1"; assets: file name or hash prefix)
@@ -57,6 +73,7 @@ GLOBAL OPTIONS
 
 const { values: flags, positionals } = parseArgs({
   allowPositionals: true,
+  allowNegative: true,
   strict: true,
   options: {
     json: { type: 'boolean', default: false },
@@ -97,6 +114,26 @@ const { values: flags, positionals } = parseArgs({
     password: { type: 'string' },
     'host-url': { type: 'string' },
     history: { type: 'string' },
+    force: { type: 'boolean', default: false },
+    apply: { type: 'boolean', default: false },
+    words: { type: 'string' },
+    pad: { type: 'string' },
+    threshold: { type: 'string' },
+    min: { type: 'string' },
+    keep: { type: 'string' },
+    db: { type: 'string' },
+    engine: { type: 'string' },
+    strength: { type: 'string' },
+    mode: { type: 'string' },
+    quality: { type: 'string' },
+    color: { type: 'string' },
+    aspect: { type: 'string' },
+    resize: { type: 'boolean', default: false },
+    claude: { type: 'boolean', default: true },
+    fillers: { type: 'boolean', default: true },
+    silences: { type: 'boolean', default: true },
+    breaths: { type: 'boolean', default: true },
+    denoise: { type: 'boolean', default: false },
   },
 });
 
@@ -313,6 +350,11 @@ async function main(): Promise<void> {
         const target = await api.resolveClip(rest[0]);
         const [l, r] = await api.split(target.id, flags.at);
         out([l, r], () => `Split into ${l.id} (${l.durationFrames}f) and ${r.id} (${r.durationFrames}f)`);
+      } else if (sub === 'cut') {
+        if (!flags.from || !flags.to) throw new ApiError('USAGE', 'timeline cut --from T --to T [--track REF] [--no-ripple]');
+        const trackIds = flags.track ? [(await api.resolveTrack(flags.track)).id] : undefined;
+        const r = await api.cut({ ranges: [{ start: flags.from, end: flags.to }], trackIds, ripple: flags.ripple });
+        out(r, () => `Removed ${r.removedFrames} frames (${r.cuts} clip segment(s) touched)`);
       } else if (sub === 'remove') {
         if (rest.length === 0) throw new ApiError('USAGE', 'timeline remove <clip...>');
         const all = (await api.list()).clips;
@@ -320,7 +362,7 @@ async function main(): Promise<void> {
         for (const ref of rest) ids.push((await api.resolveClip(ref, all)).id);
         const r = await api.remove(ids);
         out(r, () => `Removed ${r.removed} clip(s)`);
-      } else throw new ApiError('USAGE', 'timeline insert|update|move|split|remove');
+      } else throw new ApiError('USAGE', 'timeline insert|update|move|split|remove|cut');
       return;
     }
 
@@ -424,8 +466,13 @@ async function main(): Promise<void> {
       return;
     }
 
+    case 'ai': {
+      await aiCommand(api, sub, rest);
+      return;
+    }
+
     case 'ui': {
-      const panelAlias: Record<string, string> = { media: 'assets', assets: 'assets', fx: 'templates', templates: 'templates', inspect: 'inspector', inspector: 'inspector', room: 'peers', peers: 'peers', render: 'renders', renders: 'renders', live: 'activity', activity: 'activity' };
+      const panelAlias: Record<string, string> = { media: 'assets', assets: 'assets', fx: 'templates', templates: 'templates', inspect: 'inspector', inspector: 'inspector', room: 'peers', peers: 'peers', render: 'renders', renders: 'renders', live: 'activity', activity: 'activity', ai: 'ai', script: 'script' };
       if (sub === 'panel') {
         const panel = panelAlias[(rest[0] ?? '').toLowerCase()];
         if (!panel) throw new ApiError('USAGE', 'ui panel <media|fx|inspect|room|render|live>');
@@ -471,11 +518,180 @@ async function main(): Promise<void> {
   }
 }
 
+async function waitForAi(api: NeonClient, job: AiJob): Promise<AiJob> {
+  let current = job;
+  let last = '';
+  while (current.status === 'queued' || current.status === 'running') {
+    await new Promise((r) => setTimeout(r, 400));
+    current = await api.aiJob(job.id);
+    if (!json) {
+      const line = `${current.op.padEnd(10)} ${progressBar(current.progress, 24)} ${current.message}`;
+      if (line !== last) {
+        process.stderr.write(`\r\x1b[2K${line}`);
+        last = line;
+      }
+    }
+  }
+  if (!json) process.stderr.write('\n');
+  if (current.status === 'failed') throw new ApiError('AI_FAILED', current.error ?? 'AI job failed', current.log);
+  return current;
+}
+
+async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[]): Promise<void> {
+  const numOr = (v: string | undefined, d?: number) => (v === undefined ? d : Number(v));
+  const assetOrClipParam = async (ref: string | undefined, usage: string): Promise<{ clipId: string; assetId?: never } | { assetId: string; clipId?: never }> => {
+    if (!ref) throw new ApiError('USAGE', usage);
+    const list = await api.list();
+    const byId = list.clips.filter((c) => c.id === ref || c.id.startsWith(ref));
+    if (byId.length === 1) return { clipId: byId[0]!.id };
+    // A name that maps to exactly one clip targets that clip; several clips with the same name
+    // (e.g. after cuts) fall through to the asset so the operation covers all of them.
+    const byName = list.clips.filter((c) => c.name.toLowerCase() === ref.toLowerCase());
+    if (byName.length === 1) return { clipId: byName[0]!.id };
+    return { assetId: (await api.resolveAsset(ref, list.assets)).id };
+  };
+  const finish = async (job: AiJob, human: (j: AiJob) => string) => {
+    const done = flags.wait ? await waitForAi(api, job) : job;
+    out(done, () => (done.status === 'done' ? human(done) : `${done.op} ${done.status} (${done.id})`));
+  };
+
+  switch (sub) {
+    case 'status': {
+      const s = await api.aiStatus();
+      const row = (name: string, ok: boolean, detail: string | undefined, hint: string | undefined) => [name, ok ? '✓ ready' : '✗ missing', ok ? detail ?? '' : hint ?? ''];
+      out(s, () =>
+        table(
+          [
+            row('whisper.cpp', s.whisper.available, `${s.whisper.binary} · ${s.whisper.model?.split('/').pop()}`, s.hints.whisper),
+            row('rnnoise model', s.rnnoise.available, s.rnnoise.model, s.hints.rnnoise),
+            row('DeepFilterNet', s.deepfilter.available, s.deepfilter.binary, s.hints.deepfilter),
+            row('Apple Vision', s.vision.available, s.vision.binary, s.hints.vision),
+            row('ffmpeg', s.ffmpeg.available, 'ffmpeg/ffprobe', 'brew install ffmpeg'),
+            row('Claude (B-roll)', s.claude.available, s.claude.model, s.hints.claude),
+          ],
+          ['engine', 'state', 'detail / how to install'],
+        ),
+      );
+      return;
+    }
+    case 'jobs': {
+      const jobs = await api.aiJobs();
+      out(jobs, () => (jobs.length ? table(jobs.map((j) => [j.id, j.op, j.status, `${Math.round(j.progress * 100)}%`, j.message]), ['id', 'op', 'status', 'progress', 'message']) : 'No AI jobs yet'));
+      return;
+    }
+    case 'job': {
+      if (!rest[0]) throw new ApiError('USAGE', 'ai job <id>');
+      const j = await api.aiJob(rest[0]);
+      out(j, () => `${j.id} ${j.op} ${j.status} ${Math.round(j.progress * 100)}% — ${j.message}${j.result ? `\n${JSON.stringify(j.result, null, 2)}` : ''}${j.error ? `\n${j.error}` : ''}`);
+      return;
+    }
+    case 'cancel': {
+      if (!rest[0]) throw new ApiError('USAGE', 'ai cancel <id>');
+      const j = await api.aiCancel(rest[0]);
+      out(j, () => `${j.id} ${j.status}`);
+      return;
+    }
+    case 'transcribe': {
+      const target = await assetOrClipParam(rest[0], 'ai transcribe <clip|asset>');
+      await finish(await api.aiRun('transcribe', { ...target, force: flags.force }), (j) => {
+        const r = j.result as { words: number; fillers: number; text: string; engine: string };
+        return `${r.words} words · ${r.fillers} fillers · ${r.engine}\n${r.text}`;
+      });
+      return;
+    }
+    case 'transcript': {
+      const target = await assetOrClipParam(rest[0], 'ai transcript <clip|asset>');
+      let assetId: string;
+      if (target.assetId) assetId = target.assetId;
+      else {
+        const clip = await api.resolveClip(rest[0]!);
+        if (clip.kind === 'component') throw new ApiError('USAGE', 'That clip is a template, not media');
+        assetId = clip.assetId;
+      }
+      const t = await api.transcript(assetId);
+      out(t, () => t.words.map((w, i) => `${w.filler ? `⟨${w.w}⟩` : w.w}${(i + 1) % 18 === 0 ? '\n' : ''}`).join(' ') + `\n\n(${t.words.length} words · ${t.engine} · word indexes for \`ai cut\` start at 0)`);
+      return;
+    }
+    case 'fillers': {
+      const target = await assetOrClipParam(rest[0], 'ai fillers <clip> [--apply]');
+      await finish(await api.aiRun('fillers', { ...target, apply: flags.apply, words: flags.words?.split(',').map((w) => w.trim()).filter(Boolean), padMs: numOr(flags.pad) }), (j) => {
+        const r = j.result as { fillers: number; words: string[]; removedFrames: number; applied: boolean; ranges: unknown[] };
+        return r.applied ? `Removed ${r.fillers} filler(s): ${r.words.join(' ')} — ${r.removedFrames} frames cut` : `${r.fillers} filler(s) in ${r.ranges.length} range(s): ${r.words.join(' ')}\nRe-run with --apply to cut them.`;
+      });
+      return;
+    }
+    case 'silence': {
+      const target = await assetOrClipParam(rest[0], 'ai silence <clip> [--apply]');
+      await finish(await api.aiRun('silence', { ...target, apply: flags.apply, thresholdDb: numOr(flags.threshold), minSilenceMs: numOr(flags.min), keepMs: numOr(flags.keep) }), (j) => {
+        const r = j.result as { silences: number; cuts: unknown[]; removedFrames: number; applied: boolean; noiseFloorDb: number; thresholdDb: number };
+        return `${r.silences} pause(s) ≥ threshold (floor ${r.noiseFloorDb.toFixed(1)} dB, speech > ${r.thresholdDb.toFixed(1)} dB) · ${r.cuts.length} cut(s)${r.applied ? ` applied — ${r.removedFrames} frames removed` : ' — add --apply to trim'}`;
+      });
+      return;
+    }
+    case 'breaths': {
+      const target = await assetOrClipParam(rest[0], 'ai breaths <clip> [--db 15]');
+      await finish(await api.aiRun('breaths', { ...target, reductionDb: numOr(flags.db) }), (j) => {
+        const r = j.result as { breaths: number; reductionDb: number };
+        return `${r.breaths} breath/mouth-noise event(s) attenuated by ${r.reductionDb} dB (volume keyframes on the clip)`;
+      });
+      return;
+    }
+    case 'denoise': {
+      const target = await assetOrClipParam(rest[0], 'ai denoise <clip>');
+      await finish(await api.aiRun('denoise', { ...target, engine: flags.engine, strength: numOr(flags.strength) }), (j) => {
+        const r = j.result as { engine: string; filter: string; newAssetId: string };
+        return `Denoised with ${r.engine} (${r.filter}) → clip now uses asset ${r.newAssetId.slice(0, 12)}… (original kept)`;
+      });
+      return;
+    }
+    case 'matte': {
+      const target = await assetOrClipParam(rest[0], 'ai matte <clip> [--mode person|chroma]');
+      await finish(await api.aiRun('matte', { ...target, mode: flags.mode, quality: flags.quality, color: flags.color }), (j) => {
+        const r = j.result as { mode: string; newAssetId: string; frames?: number };
+        return `Background removed (${r.mode}${r.frames ? `, ${r.frames} frames` : ''}) → ProRes 4444 alpha asset ${r.newAssetId.slice(0, 12)}…`;
+      });
+      return;
+    }
+    case 'reframe': {
+      const target = await assetOrClipParam(rest[0], 'ai reframe <clip> [--aspect 9:16] [--resize]');
+      await finish(await api.aiRun('reframe', { ...target, aspect: flags.aspect, resizeProject: flags.resize }), (j) => {
+        const r = j.result as { mode: string; detectedRatio: number; samples: number; resized: { width: number; height: number } | null };
+        return `${r.mode}: faces in ${Math.round(r.detectedRatio * 100)}% of ${r.samples} samples${r.resized ? ` · project resized to ${r.resized.width}×${r.resized.height}` : ''}`;
+      });
+      return;
+    }
+    case 'broll': {
+      const assetId = rest[0] ? (await api.resolveAsset(rest[0])).id : undefined;
+      const durationSeconds = flags.duration ? Number(String(flags.duration).replace(/s$/, '')) : undefined;
+      await finish(await api.aiRun('broll', { assetId, apply: flags.apply, useClaude: flags.claude, durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : undefined }), (j) => {
+        const r = j.result as { suggestions: { startS: number; endS: number; keyword: string; assetName: string; score: number; reason: string; source: string }[]; placed: number; applied: boolean; claude: boolean };
+        if (r.suggestions.length === 0) return 'No B-roll matches — name your library files after what they show (e.g. stock-market-chart.mp4)';
+        return `${r.claude ? 'Claude + heuristic' : 'heuristic'} · ${r.suggestions.length} suggestion(s)${r.applied ? `, ${r.placed} placed` : ' (add --apply to place them)'}\n` +
+          table(r.suggestions.map((s) => [`${s.startS.toFixed(1)}s–${s.endS.toFixed(1)}s`, s.keyword, s.assetName, s.source, s.reason]), ['when', 'concept', 'asset', 'via', 'reason']);
+      });
+      return;
+    }
+    case 'clean': {
+      const target = await assetOrClipParam(rest[0], 'ai clean <clip>');
+      await finish(await api.aiRun('clean', { ...target, fillers: flags.fillers, silences: flags.silences, breaths: flags.breaths, denoise: flags.denoise }), (j) => `Voice clean-up finished: ${(j.result as { steps: string[] }).steps.join(' → ')}`);
+      return;
+    }
+    case 'cut': {
+      if (rest.length < 3) throw new ApiError('USAGE', 'ai cut <asset> <fromWord> <toWord>');
+      const asset = await api.resolveAsset(rest[0]!);
+      await finish(await api.transcriptCut(asset.id, Number(rest[1]), Number(rest[2])), (j) => `Cut “${(j.result as { words: string }).words}” — ${(j.result as { removedFrames: number }).removedFrames} frames removed`);
+      return;
+    }
+    default:
+      throw new ApiError('USAGE', 'ai status|transcribe|transcript|fillers|silence|breaths|denoise|matte|reframe|broll|clean|cut|jobs|job|cancel');
+  }
+}
+
 /** Stream GET /api/events (SSE) to the terminal until interrupted. */
 async function tailEvents(api: NeonClient, history: number): Promise<void> {
   const res = await api.openEventStream(history);
   if (!res.body) throw new ApiError('NO_STREAM', 'Event stream unavailable');
-  const badge: Record<string, string> = { cli: '⌁ CLI', ui: '◉ UI', peer: '⇄ PEER', render: '▶ RENDER', room: '⊕ ROOM', system: '· SYS' };
+  const badge: Record<string, string> = { cli: '⌁ CLI', ui: '◉ UI', peer: '⇄ PEER', render: '▶ RENDER', room: '⊕ ROOM', system: '· SYS', ai: '✦ AI' };
   if (!json) process.stderr.write(`tailing ${api.endpoint}/api/events — Ctrl-C to stop\n`);
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -503,6 +719,9 @@ async function tailEvents(api: NeonClient, history: number): Promise<void> {
         const job = event.job as RenderJob;
         if (job.status === 'rendering') process.stdout.write(`\r          ▶ RENDER  ${progressBar(job.progress, 20)} ${job.renderedFrames}/${job.totalFrames}`);
         if (job.status === 'done' || job.status === 'failed' || job.status === 'cancelled') process.stdout.write('\n');
+      } else if (event.type === 'ai') {
+        const job = event.job as AiJob;
+        process.stdout.write(`\r\x1b[2K          ✦ AI      ${job.op.padEnd(10)} ${progressBar(job.progress, 16)} ${job.message}${job.status === 'running' || job.status === 'queued' ? '' : '\n'}`);
       } else if (event.type === 'project-changed') {
         const pc = event as unknown as { clips: number; durationFrames: number };
         process.stdout.write(`          ~ DOC     ${pc.clips} clips · ${pc.durationFrames} frames\n`);

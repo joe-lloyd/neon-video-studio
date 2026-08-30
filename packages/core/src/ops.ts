@@ -1,4 +1,4 @@
-import type { Clip, Track } from './types.ts';
+import type { Clip, FrameRange, Track } from './types.ts';
 
 export function clipEnd(clip: Pick<Clip, 'startFrame' | 'durationFrames'>): number {
   return clip.startFrame + clip.durationFrames;
@@ -89,4 +89,53 @@ export function snapFrame(frame: number, candidates: number[], threshold: number
     }
   }
   return bestDist <= threshold ? best : frame;
+}
+
+/** Merge overlapping/adjacent ranges (gap ≤ `gap` frames), sorted ascending. */
+export function mergeRanges(ranges: FrameRange[], gap = 0): FrameRange[] {
+  const sorted = ranges
+    .filter((r) => r.end > r.start)
+    .map((r) => ({ start: Math.max(0, Math.round(r.start)), end: Math.round(r.end) }))
+    .sort((a, b) => a.start - b.start);
+  const out: FrameRange[] = [];
+  for (const r of sorted) {
+    const last = out[out.length - 1];
+    if (last && r.start <= last.end + gap) last.end = Math.max(last.end, r.end);
+    else out.push({ ...r });
+  }
+  return out;
+}
+
+export function rangesTotal(ranges: FrameRange[]): number {
+  return ranges.reduce((n, r) => n + (r.end - r.start), 0);
+}
+
+/** Convert a source-time range (seconds) of an asset to the timeline range it occupies within `clip`, or null. */
+export function sourceSecondsToTimeline(
+  clip: { startFrame: number; durationFrames: number; trimBefore: number },
+  startSeconds: number,
+  endSeconds: number,
+  fps: number,
+): FrameRange | null {
+  const localStart = Math.round(startSeconds * fps) - clip.trimBefore;
+  const localEnd = Math.round(endSeconds * fps) - clip.trimBefore;
+  const start = Math.max(0, localStart);
+  const end = Math.min(clip.durationFrames, localEnd);
+  if (end <= start) return null;
+  return { start: clip.startFrame + start, end: clip.startFrame + end };
+}
+
+/** Linear interpolation of volume keyframes at a clip-local frame (1 when no keyframes). */
+export function volumeAt(keyframes: { frame: number; gain: number }[] | undefined, frame: number): number {
+  if (!keyframes || keyframes.length === 0) return 1;
+  if (frame <= keyframes[0]!.frame) return keyframes[0]!.gain;
+  for (let i = 1; i < keyframes.length; i++) {
+    const a = keyframes[i - 1]!;
+    const b = keyframes[i]!;
+    if (frame <= b.frame) {
+      const t = b.frame === a.frame ? 1 : (frame - a.frame) / (b.frame - a.frame);
+      return a.gain + (b.gain - a.gain) * t;
+    }
+  }
+  return keyframes[keyframes.length - 1]!.gain;
 }

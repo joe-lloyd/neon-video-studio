@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { SUPPORTED_EXTENSIONS, clearInstanceInfo, writeInstanceInfo } from '@neon/core/node';
-import type { ImportAssetResponse } from '@neon/core';
+import { ORIGIN_LOCAL, type ImportAssetResponse } from '@neon/core';
 import { AssetManager } from './assets.ts';
 import type { MainContext } from './context.ts';
 import { buildStatus, startControlServer } from './control-server.ts';
@@ -21,6 +21,7 @@ import { RoomManager } from './room.ts';
 import { loadSettings, saveSettings } from './settings.ts';
 import { SyncHub } from './sync-hub.ts';
 import { EventHub } from './events.ts';
+import { AiManager } from './ai-manager.ts';
 import type { Bootstrap, DesktopRPC } from '../shared/rpc.ts';
 
 const VERSION = '0.1.0';
@@ -65,6 +66,7 @@ async function main(): Promise<void> {
     sync: null as unknown as SyncHub,
     room: null as unknown as RoomManager,
     events: new EventHub(),
+    ai: null as unknown as AiManager,
     localPort: 0,
     startedAt,
     rpc: null,
@@ -73,6 +75,7 @@ async function main(): Promise<void> {
   ctx.assets = new AssetManager(store, settings.peerId);
   ctx.sync = new SyncHub(store);
   ctx.room = new RoomManager(ctx);
+  ctx.ai = new AiManager(ctx);
   ctx.renders = new RenderManager({
     getProject: () => store.toJSON(),
     projectDir: () => store.dir,
@@ -211,6 +214,11 @@ async function main(): Promise<void> {
           }
           return true;
         },
+        aiRun: ({ op, params }) => ctx.ai.start(op, params),
+        aiStatus: () => ctx.ai.capabilities(),
+        aiJobs: () => ctx.ai.list(),
+        aiCancel: ({ id }) => ctx.ai.cancel(id) ?? null,
+        cutRanges: ({ ranges, trackIds }) => store.doc.cutRanges(ranges, { trackIds, ripple: true, crossfadeFrames: 2 }, ORIGIN_LOCAL),
         setPeerName: async ({ name }) => {
           settings.peerName = name.trim().slice(0, 40) || settings.peerName;
           await saveSettings(settings);

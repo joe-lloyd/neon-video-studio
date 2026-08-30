@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import { newId } from './ids.ts';
-import { clipEnd, planRippleInsert, resolveFreePosition, sortClips, sortTracks, trackEnd } from './ops.ts';
+import { clipEnd, mergeRanges, planRippleInsert, resolveFreePosition, sortClips, sortTracks, trackEnd } from './ops.ts';
 import { getTemplate, resolveTemplateProps } from './templates.ts';
 import {
   DEFAULT_PROJECT_META,
@@ -10,11 +10,13 @@ import {
   type Clip,
   type ClipKind,
   type ComponentClip,
+  type FrameRange,
   type MediaClip,
   type Project,
   type ProjectMeta,
   type Track,
   type TrackKind,
+  type Transcript,
 } from './types.ts';
 
 /** Transaction origins. The UI's UndoManager only tracks ORIGIN_LOCAL. */
@@ -45,8 +47,11 @@ export interface InsertClipInput {
   placement?: 'ripple' | 'free' | 'overlap';
 }
 
-export type ClipPatch = Partial<Omit<MediaClip, 'id' | 'kind' | 'assetId'>> &
-  Partial<Pick<ComponentClip, 'props'>>;
+export type ClipPatch = Partial<Omit<MediaClip, 'id' | 'kind' | 'assetId' | 'volumeKeyframes' | 'reframe'>> &
+  Partial<Pick<ComponentClip, 'props'>> & {
+    volumeKeyframes?: MediaClip['volumeKeyframes'] | null;
+    reframe?: MediaClip['reframe'] | null;
+  };
 
 const TRACK_PREFIX: Record<TrackKind, string> = { video: 'V', audio: 'A', overlay: 'FX' };
 
@@ -65,6 +70,7 @@ export class ProjectDoc {
   readonly tracks: Y.Map<YMap>;
   readonly clips: Y.Map<YMap>;
   readonly assets: Y.Map<YMap>;
+  readonly transcripts: Y.Map<YMap>;
 
   private snapshot: Project | null = null;
   private txDepth = 0;
@@ -76,6 +82,7 @@ export class ProjectDoc {
     this.tracks = doc.getMap('tracks');
     this.clips = doc.getMap('clips');
     this.assets = doc.getMap('assets');
+    this.transcripts = doc.getMap('transcripts');
     doc.on('update', () => {
       this.snapshot = null;
       if (this.listeners.size === 0) return;
@@ -116,10 +123,12 @@ export class ProjectDoc {
       for (const key of [...this.tracks.keys()]) this.tracks.delete(key);
       for (const key of [...this.clips.keys()]) this.clips.delete(key);
       for (const key of [...this.assets.keys()]) this.assets.delete(key);
+      for (const key of [...this.transcripts.keys()]) this.transcripts.delete(key);
       for (const [k, v] of Object.entries(project.meta)) this.meta.set(k, v);
       for (const track of project.tracks) this.tracks.set(track.id, mapFrom(track));
       for (const asset of project.assets) this.assets.set(asset.id, mapFrom(asset));
       for (const clip of project.clips) this.clips.set(clip.id, clipToMap(clip));
+      for (const t of project.transcripts ?? []) this.transcripts.set(t.assetId, mapFrom(t));
     }, ORIGIN_SYSTEM);
   }
 
@@ -169,7 +178,8 @@ export class ProjectDoc {
     const assets = [...this.assets.values()]
       .map((m) => m.toJSON() as Asset)
       .sort((a, b) => a.importedAt.localeCompare(b.importedAt) || a.name.localeCompare(b.name));
-    const project: Project = { meta, tracks, clips, assets };
+    const transcripts = [...this.transcripts.values()].map((m) => m.toJSON() as Transcript);
+    const project: Project = { meta, tracks, clips, assets, transcripts };
     if (this.txDepth === 0) this.snapshot = project;
     return project;
   }
@@ -357,6 +367,10 @@ export class ProjectDoc {
       const { props, ...scalars } = patch;
       for (const [k, v] of Object.entries(scalars)) {
         if (v === undefined) continue;
+        if (v === null) {
+          m.delete(k);
+          continue;
+        }
         if (k === 'trackId') {
           const t = this.getTrack(v as string);
           if (!t) throw new Error(`Track ${String(v)} not found`);
@@ -453,6 +467,114 @@ export class ProjectDoc {
     }, origin);
   }
 
+  /**
+   * Remove timeline ranges (e.g. filler words, dead air). Clips spanning a range are split, the
+   * middle is deleted and — with `ripple` — everything after the range shifts left, keeping all
+   * tracks in sync. Short fades on the joined edges act as audio crossfades.
+   */
+  cutRanges(
+    ranges: FrameRange[],
+    opts: { trackIds?: string[]; ripple?: boolean; crossfadeFrames?: number } = {},
+    origin?: unknown,
+  ): { removedFrames: number; cuts: number } {
+    const ripple = opts.ripple ?? true;
+    const xf = Math.max(0, Math.round(opts.crossfadeFrames ?? 2));
+    const merged = mergeRanges(ranges);
+    if (merged.length === 0) return { removedFrames: 0, cuts: 0 };
+    return this.transact(() => {
+      const trackIds = new Set(opts.trackIds ?? this.toJSON().tracks.map((t) => t.id));
+      let removedFrames = 0;
+      let cuts = 0;
+      // Process from the end so ripple shifts never invalidate earlier ranges.
+      for (const range of [...merged].reverse()) {
+        const { start, end } = range;
+        const length = end - start;
+        for (const clip of this.toJSON().clips) {
+          if (!trackIds.has(clip.trackId)) continue;
+          const cStart = clip.startFrame;
+          const cEnd = clipEnd(clip);
+          if (cEnd <= start || cStart >= end) continue; // untouched
+          if (cStart >= start && cEnd <= end) {
+            this.clips.delete(clip.id); // entirely inside the range
+            cuts++;
+            continue;
+          }
+          let keepLeft: Clip | null = null;
+          let keepRight: Clip | null = null;
+          if (cStart < start && cEnd > end) {
+            const [l, r] = this.splitClipInternal(clip.id, start);
+            const [, rr] = this.splitClipInternal(r.id, end);
+            this.clips.delete(r.id);
+            keepLeft = l;
+            keepRight = rr;
+          } else if (cStart < start) {
+            const [l, r] = this.splitClipInternal(clip.id, start);
+            this.clips.delete(r.id);
+            keepLeft = l;
+          } else {
+            const [l, r] = this.splitClipInternal(clip.id, end);
+            this.clips.delete(l.id);
+            keepRight = r;
+          }
+          cuts++;
+          if (xf > 0) {
+            if (keepLeft && keepLeft.kind !== 'component') {
+              const m = this.clips.get(keepLeft.id);
+              if (m && Number(m.get('fadeOut') ?? 0) < xf) m.set('fadeOut', Math.min(xf, keepLeft.durationFrames));
+            }
+            if (keepRight && keepRight.kind !== 'component') {
+              const m = this.clips.get(keepRight.id);
+              if (m && Number(m.get('fadeIn') ?? 0) < xf) m.set('fadeIn', Math.min(xf, keepRight.durationFrames));
+            }
+          }
+        }
+        if (ripple) {
+          for (const clip of this.toJSON().clips) {
+            if (!trackIds.has(clip.trackId)) continue;
+            if (clip.startFrame >= end) this.clips.get(clip.id)!.set('startFrame', clip.startFrame - length);
+          }
+        }
+        removedFrames += length;
+      }
+      this.touch();
+      return { removedFrames, cuts };
+    }, origin);
+  }
+
+  /** Point clips at a different asset (e.g. the denoised / matted derivative). */
+  replaceClipAsset(clipIds: string[], assetId: string, origin?: unknown): void {
+    if (!this.assets.has(assetId)) throw new Error(`Asset ${assetId} not found`);
+    this.transact(() => {
+      for (const id of clipIds) {
+        const m = this.clips.get(id);
+        if (!m) throw new Error(`Clip ${id} not found`);
+        if (m.get('kind') === 'component') throw new Error(`Clip ${id} is a component clip`);
+        m.set('assetId', assetId);
+      }
+      this.touch();
+    }, origin);
+  }
+
+  // ---- transcripts ---------------------------------------------------------------------
+
+  setTranscript(transcript: Transcript, origin?: unknown): void {
+    this.transact(() => {
+      this.transcripts.set(transcript.assetId, mapFrom(transcript));
+      this.touch();
+    }, origin ?? ORIGIN_SYSTEM);
+  }
+
+  getTranscript(assetId: string): Transcript | undefined {
+    const m = this.transcripts.get(assetId);
+    return m ? (m.toJSON() as Transcript) : undefined;
+  }
+
+  removeTranscript(assetId: string, origin?: unknown): void {
+    this.transact(() => {
+      this.transcripts.delete(assetId);
+    }, origin ?? ORIGIN_SYSTEM);
+  }
+
   // ---- assets --------------------------------------------------------------------------
 
   addAsset(asset: Asset, origin?: unknown): Asset {
@@ -482,6 +604,7 @@ export class ProjectDoc {
     this.transact(() => {
       for (const clip of this.toJSON().clips) if (clip.kind !== 'component' && clip.assetId === id) this.clips.delete(clip.id);
       this.assets.delete(id);
+      this.transcripts.delete(id);
       this.touch();
     }, origin);
   }
@@ -516,7 +639,7 @@ function mapToClip(m: YMap): Clip {
 
 /** UndoManager scoped to a single peer's own edits. */
 export function createUndoManager(project: ProjectDoc, trackedOrigins: unknown[] = [ORIGIN_LOCAL]): Y.UndoManager {
-  return new Y.UndoManager([project.tracks, project.clips, project.assets, project.meta], {
+  return new Y.UndoManager([project.tracks, project.clips, project.assets, project.meta, project.transcripts], {
     trackedOrigins: new Set(trackedOrigins),
     captureTimeout: 300,
   });

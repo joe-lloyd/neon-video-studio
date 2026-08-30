@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
-import { sortClips, sortTracks, type Asset, type Clip, type MediaClip, type Project, type Track } from '@neon/core';
+import { sortClips, sortTracks, volumeAt, type Asset, type Clip, type MediaClip, type Project, type Track } from '@neon/core';
 import { TEMPLATES } from '../templates/index.ts';
 
 /** Kept as a type alias (not an interface) so it satisfies Remotion's Record<string, unknown> constraint. */
@@ -43,10 +43,36 @@ const MediaClipView: React.FC<{ clip: MediaClip; asset: Asset | undefined; track
   const { durationInFrames } = useVideoConfig();
   if (!asset) return <MissingBox label={`Missing asset ${clip.assetId.slice(0, 8)}…`} />;
   const src = assetUrl(props.assetBaseUrl, asset, props.assetQuery);
-  const envelope = fadeEnvelope(frame, durationInFrames, Math.round(clip.fadeIn * scale), Math.round(clip.fadeOut * scale));
-  const volume = track.muted ? 0 : Math.max(0, Math.min(2, clip.volume)) * envelope;
+  const fadeIn = Math.round(clip.fadeIn * scale);
+  const fadeOut = Math.round(clip.fadeOut * scale);
+  const envelope = fadeEnvelope(frame, durationInFrames, fadeIn, fadeOut);
+  const baseVolume = track.muted ? 0 : Math.max(0, Math.min(2, clip.volume));
+  const keyframes = clip.volumeKeyframes;
+  // Volume automation (breath attenuation etc.). Keyframes are in project frames, `f` in output frames.
+  const volume = keyframes && keyframes.length
+    ? (f: number) => baseVolume * volumeAt(keyframes, f / scale) * fadeEnvelope(f, durationInFrames, fadeIn, fadeOut)
+    : baseVolume * envelope;
   const trimBefore = Math.round(clip.trimBefore * scale);
   const style: React.CSSProperties = { width: '100%', height: '100%', objectFit: clip.fit };
+  if (clip.reframe && clip.reframe.keyframes.length) {
+    // Auto-reframe: keep the tracked subject centred by steering object-position on a covering fit.
+    const kfs = clip.reframe.keyframes;
+    const local = frame / scale;
+    let a = kfs[0]!;
+    let b = kfs[kfs.length - 1]!;
+    for (let i = 0; i < kfs.length; i++) {
+      if (kfs[i]!.frame <= local) a = kfs[i]!;
+      if (kfs[i]!.frame >= local) {
+        b = kfs[i]!;
+        break;
+      }
+    }
+    const t = b.frame === a.frame ? 0 : Math.min(1, Math.max(0, (local - a.frame) / (b.frame - a.frame)));
+    const cx = a.cx + (b.cx - a.cx) * t;
+    const cy = a.cy + (b.cy - a.cy) * t;
+    style.objectFit = 'cover';
+    style.objectPosition = `${(cx * 100).toFixed(2)}% ${(cy * 100).toFixed(2)}%`;
+  }
 
   if (clip.kind === 'audio') {
     return <Audio src={src} trimBefore={trimBefore} volume={volume} />;
@@ -60,7 +86,7 @@ const MediaClipView: React.FC<{ clip: MediaClip; asset: Asset | undefined; track
   }
   return (
     <AbsoluteFill style={{ opacity: envelope }}>
-      <OffthreadVideo src={src} trimBefore={trimBefore} volume={volume} style={style} pauseWhenBuffering />
+      <OffthreadVideo src={src} trimBefore={trimBefore} volume={volume} style={style} pauseWhenBuffering transparent={Boolean(asset.hasAlpha)} />
     </AbsoluteFill>
   );
 };

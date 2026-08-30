@@ -58,6 +58,15 @@ export {
   PaintBucket,
   MousePointer2,
   Link,
+  Mic,
+  AudioLines,
+  Captions,
+  Crop,
+  Eraser,
+  UserRound,
+  Wind,
+  Brain,
+  MessageSquareText,
 } from 'lucide-react';
 
 export type NeonTone = 'magenta' | 'cyan' | 'green' | 'amber' | 'red' | 'muted' | 'white';

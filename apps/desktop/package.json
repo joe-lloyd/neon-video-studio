@@ -17,6 +17,7 @@
     "test": "echo 'desktop is covered by the end-to-end CLI smoke test (pnpm smoke)'"
   },
   "dependencies": {
+    "@neon/ai": "workspace:*",
     "@neon/core": "workspace:*",
     "@neon/icon-kit": "workspace:*",
     "@neon/p2p": "workspace:*",

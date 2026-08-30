@@ -24,8 +24,11 @@ export class YjsSyncServer {
   readonly awareness: awarenessProtocol.Awareness;
   private readonly conns = new Map<SyncSocket, Set<number>>();
 
+  private readonly ownsAwareness: boolean;
+
   constructor(doc: Y.Doc, awareness?: awarenessProtocol.Awareness) {
     this.doc = doc;
+    this.ownsAwareness = !awareness;
     this.awareness = awareness ?? new awarenessProtocol.Awareness(doc);
     this.awareness.setLocalState(null);
     this.doc.on('update', this.onDocUpdate);
@@ -40,6 +43,8 @@ export class YjsSyncServer {
     this.doc.off('update', this.onDocUpdate);
     this.awareness.off('update', this.onAwarenessUpdate);
     for (const sock of [...this.conns.keys()]) this.onClose(sock);
+    // The Awareness we created runs a cleanup interval that would otherwise keep the process alive.
+    if (this.ownsAwareness) this.awareness.destroy();
   }
 
   onOpen(sock: SyncSocket): void {

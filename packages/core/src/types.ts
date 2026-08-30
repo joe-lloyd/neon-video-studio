@@ -47,6 +47,20 @@ export interface ClipBase {
   color?: string;
 }
 
+/** Volume automation point. `frame` is clip-local (0 = clip start), `gain` a linear multiplier (1 = unity). */
+export interface VolumeKeyframe {
+  frame: number;
+  gain: number;
+}
+
+/** Auto-reframe data: where the subject is over time, in normalised source coordinates (0..1). */
+export interface Reframe {
+  mode: 'face-track' | 'center';
+  /** Output aspect ratio this was computed for (width / height), informational. */
+  targetAspect: number;
+  keyframes: { frame: number; cx: number; cy: number; zoom: number }[];
+}
+
 export interface MediaClip extends ClipBase {
   kind: 'video' | 'audio' | 'image';
   /** SHA-256 of the source file; key into Project.assets. */
@@ -60,6 +74,10 @@ export interface MediaClip extends ClipBase {
   /** Fade in/out lengths (frames) applied to opacity and volume. */
   fadeIn: number;
   fadeOut: number;
+  /** Optional volume automation (e.g. breath attenuation), linearly interpolated. */
+  volumeKeyframes?: VolumeKeyframe[];
+  /** Optional subject tracking used to pan/crop when the output aspect differs from the source. */
+  reframe?: Reframe;
 }
 
 export interface ComponentClip extends ClipBase {
@@ -86,6 +104,32 @@ export interface Asset {
   /** Peer id of the node that first imported it (informational). */
   importedBy?: string;
   importedAt: string;
+  /** Asset id this one was derived from (denoise, matte, …). */
+  derivedFrom?: string;
+  /** Processing steps applied to produce this asset, e.g. ["denoise:rnnoise"]. */
+  processing?: string[];
+  /** Video carries an alpha channel (ProRes 4444 matte). */
+  hasAlpha?: boolean;
+}
+
+export interface TranscriptWord {
+  /** Word text as spoken (punctuation attached). */
+  w: string;
+  /** Start / end in source seconds. */
+  s: number;
+  e: number;
+  /** Engine confidence 0..1 when available. */
+  p?: number;
+  /** Marked as a disfluency ("um", "uh", "like", …). */
+  filler?: boolean;
+}
+
+export interface Transcript {
+  assetId: string;
+  engine: string;
+  language: string;
+  createdAt: string;
+  words: TranscriptWord[];
 }
 
 export interface Project {
@@ -93,6 +137,13 @@ export interface Project {
   tracks: Track[];
   clips: Clip[];
   assets: Asset[];
+  transcripts: Transcript[];
+}
+
+/** Half-open frame range on the timeline [start, end). */
+export interface FrameRange {
+  start: number;
+  end: number;
 }
 
 export const PROJECT_SCHEMA_VERSION = 1;

@@ -2,7 +2,7 @@
  * Typed RPC contract between the Bun main process and the webview. Types only — no runtime code.
  */
 import type { RPCSchema } from 'electrobun/view';
-import type { ActivityEntry, AppStatus, ImportAssetResponse, RenderJob, RoomInfo } from '@neon/core';
+import type { ActivityEntry, AiCapabilities, AiJob, AiOperation, AppStatus, ImportAssetResponse, RenderJob, RoomInfo } from '@neon/core';
 
 export interface Bootstrap {
   version: string;
@@ -45,6 +45,11 @@ export type DesktopRPC = {
       revealPath: { params: { path: string }; response: boolean };
       windowCommand: { params: { command: WindowCommand }; response: boolean };
       setPeerName: { params: { name: string }; response: boolean };
+      aiRun: { params: { op: AiOperation; params: Record<string, unknown> }; response: AiJob };
+      aiStatus: { params: Record<string, never>; response: AiCapabilities };
+      aiJobs: { params: Record<string, never>; response: AiJob[] };
+      aiCancel: { params: { id: string }; response: AiJob | null };
+      cutRanges: { params: { ranges: { start: number; end: number }[]; trackIds?: string[] }; response: { removedFrames: number; cuts: number } };
     };
     messages: {
       rendererReady: { ok: true };
@@ -60,8 +65,9 @@ export type DesktopRPC = {
       toast: { kind: 'info' | 'success' | 'error'; message: string };
       menuAction: { action: string };
       activity: { entry: ActivityEntry };
+      aiUpdate: { job: AiJob };
       previewControl: { action: 'play' | 'pause' | 'toggle' | 'seek'; frame?: number };
-      uiControl: { panel?: 'assets' | 'templates' | 'inspector' | 'peers' | 'renders' | 'activity'; select?: string[]; dialog?: 'render' | 'room' | 'shortcuts' | 'none' };
+      uiControl: { panel?: 'assets' | 'templates' | 'inspector' | 'peers' | 'renders' | 'activity' | 'ai' | 'script'; select?: string[]; dialog?: 'render' | 'room' | 'shortcuts' | 'none' };
     };
   }>;
 };

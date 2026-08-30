@@ -40,13 +40,17 @@ import {
 } from '@neon/icon-kit';
 import type { LucideIcon } from 'lucide-react';
 import { useEditor } from '../lib/context.ts';
+import { AiPanel } from './AiPanel.tsx';
+import { ScriptPanel } from './ScriptPanel.tsx';
 import { useSelector, useStoreValue, type Panel } from '../lib/store.ts';
 
 const TABS: { id: Panel; label: string; icon: LucideIcon }[] = [
   { id: 'assets', label: 'Media', icon: Film },
-  { id: 'templates', label: 'FX', icon: Sparkles },
+  { id: 'templates', label: 'FX', icon: Clapperboard },
   { id: 'inspector', label: 'Inspect', icon: Layers },
   { id: 'peers', label: 'Room', icon: Users },
+  { id: 'ai', label: 'AI', icon: Sparkles },
+  { id: 'script', label: 'Script', icon: Type },
   { id: 'renders', label: 'Render', icon: Download },
   { id: 'activity', label: 'Live', icon: Terminal },
 ];
@@ -80,6 +84,8 @@ export function SidePanels() {
         {panel === 'peers' ? <PeersPanel /> : null}
         {panel === 'renders' ? <RendersPanel /> : null}
         {panel === 'activity' ? <ActivityPanel /> : null}
+        {panel === 'ai' ? <AiPanel /> : null}
+        {panel === 'script' ? <ScriptPanel /> : null}
       </div>
     </aside>
   );

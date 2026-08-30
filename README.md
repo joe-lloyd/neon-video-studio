@@ -77,6 +77,46 @@ neon-video-editor/
 └── scripts/                 smoke test · release · install-mac · build-icons
 ```
 
+## Integrated AI (local-first)
+
+Everything runs on local engines — whisper.cpp for speech, ffmpeg's neural RNNoise for audio,
+Apple Vision for people and faces. Nothing leaves your machine (the only optional cloud call is
+Claude picking B-roll concepts when `ANTHROPIC_API_KEY` is set). Every feature is a button in the
+**AI** panel *and* a CLI command, and every change lands on the timeline as normal, undoable edits.
+
+| Feature | How | Engine |
+|---|---|---|
+| Filler-word removal (*um, uh, like, you know*) | finds them in the word-level transcript, cuts video+audio with micro-crossfades, ripples the timeline | whisper.cpp |
+| Smart silence trimming | pauses > 400 ms are shortened to a natural 150 ms | energy VAD (built-in) |
+| Breath & mouth-noise softening | −15 dB volume keyframes over detected breaths (no jarring cuts) | energy heuristic |
+| Neural denoise | new cleaned asset, original kept; clip swaps automatically | RNNoise / afftdn / DeepFilterNet |
+| Background removal | person segmentation → ProRes 4444 with alpha (no green screen); chroma-key mode too | Apple Vision |
+| Auto-reframe 16:9 → 9:16 | face tracking with smoothing steers the crop; optional project resize | Apple Vision |
+| B-roll suggestions | transcript concepts matched to your media library, placed on B-ROLL tracks | heuristic + optional Claude |
+| Text-driven editing | **Script** panel: click a word to jump, select words and hit ⌫ to cut them from the video | whisper.cpp |
+
+```bash
+pnpm cli ai status                       # which engines are ready + install hints
+pnpm cli ai clean talk.mp4               # fillers + silences + breaths in one go
+pnpm cli ai fillers talk.mp4 --apply
+pnpm cli ai matte talk.mp4 --mode person
+pnpm cli ai reframe talk.mp4 --aspect 9:16 --resize
+pnpm cli ai broll --apply
+pnpm cli ai transcript talk.mp4          # word indexes …
+pnpm cli ai cut talk.mp4 33 35           # … delete “stay calm and” from the video
+```
+
+First-time setup: `brew install whisper-cpp` plus a model download (the app prints the exact
+commands in **AI → engines** / `ai status`). The Vision helper compiles itself on first use.
+
+| AI panel | Script panel (text-driven editing) |
+|---|---|
+| ![ai](docs/screenshots/ai-panel.png) | ![script](docs/screenshots/script-panel.png) |
+
+| Background removal on real footage (Apple Vision person matte) |
+|---|
+| ![matte](docs/screenshots/ai-matte-frame.png) |
+
 ## Drive it from the terminal (or from an AI)
 
 ```bash

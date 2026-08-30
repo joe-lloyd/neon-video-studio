@@ -19,6 +19,18 @@ import {
   ProjectSaveRequestSchema,
   PreviewControlRequestSchema,
   UiControlRequestSchema,
+  CutRangesRequestSchema,
+  AiTranscribeRequestSchema,
+  AiFillersRequestSchema,
+  AiSilenceRequestSchema,
+  AiBreathsRequestSchema,
+  AiDenoiseRequestSchema,
+  AiMatteRequestSchema,
+  AiReframeRequestSchema,
+  AiBrollRequestSchema,
+  AiCleanRequestSchema,
+  TranscriptCutRequestSchema,
+  type AiOperation,
   RENDER_PRESETS,
   RemoveClipRequestSchema,
   RenderRequestSchema,
@@ -278,6 +290,56 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
   const fps = doc.fps;
   const T = (v: string | number | undefined): number | undefined => (v === undefined ? undefined : parseTimecode(v, fps));
   const key = `${method} ${path}`;
+
+  // AI routes.
+  if (key === `GET ${API_ROUTES.aiStatus}`) return ctx.ai.capabilities(true);
+  if (key === `GET ${API_ROUTES.aiJobs}`) return ctx.ai.list();
+  const aiJob = /^(GET|POST) \/api\/ai\/jobs\/([^/]+)(\/cancel)?$/.exec(key);
+  if (aiJob) {
+    const id = decodeURIComponent(aiJob[2]!);
+    const job = ctx.ai.get(id);
+    if (!job) throw new HttpError(404, 'NOT_FOUND', `AI job ${id} not found`);
+    return aiJob[3] ? ctx.ai.cancel(id) : job;
+  }
+  const transcriptGet = /^GET \/api\/ai\/transcript\/([a-f0-9]+)$/.exec(key);
+  if (transcriptGet) {
+    const ref = transcriptGet[1]!;
+    const asset = doc.toJSON().assets.find((a) => a.id === ref || a.id.startsWith(ref));
+    const t = asset ? doc.getTranscript(asset.id) : undefined;
+    if (!t) throw new HttpError(404, 'NOT_FOUND', 'No transcript for that asset (run ai transcribe first)');
+    return t;
+  }
+  if (key === `POST ${API_ROUTES.aiTranscript}/cut`) return ctx.ai.start('transcript-cut', TranscriptCutRequestSchema.parse(body));
+  const aiOp = /^POST \/api\/ai\/(transcribe|fillers|silence|breaths|denoise|matte|reframe|broll|clean)$/.exec(key);
+  if (aiOp) {
+    const op = aiOp[1] as AiOperation;
+    const schemas: Record<string, { parse(v: unknown): unknown }> = {
+      transcribe: AiTranscribeRequestSchema,
+      fillers: AiFillersRequestSchema,
+      silence: AiSilenceRequestSchema,
+      breaths: AiBreathsRequestSchema,
+      denoise: AiDenoiseRequestSchema,
+      matte: AiMatteRequestSchema,
+      reframe: AiReframeRequestSchema,
+      broll: AiBrollRequestSchema,
+      clean: AiCleanRequestSchema,
+    };
+    const parsed = schemas[op]!.parse(body) as Record<string, unknown>;
+    // Accept clip references by name or prefix like the rest of the CLI.
+    if (typeof parsed.clipId === 'string') {
+      const clips = doc.toJSON().clips;
+      const ref = parsed.clipId;
+      const clip = clips.find((c) => c.id === ref) ?? clips.find((c) => c.id.startsWith(ref)) ?? clips.find((c) => c.name.toLowerCase() === ref.toLowerCase());
+      if (!clip) throw new HttpError(404, 'NOT_FOUND', `Clip ${ref} not found`);
+      parsed.clipId = clip.id;
+    }
+    return ctx.ai.start(op, parsed);
+  }
+  if (key === `POST ${API_ROUTES.timelineCut}`) {
+    const req = CutRangesRequestSchema.parse(body);
+    const ranges = req.ranges.map((r) => ({ start: T(r.start)!, end: T(r.end)! }));
+    return doc.cutRanges(ranges, { trackIds: req.trackIds, ripple: req.ripple, crossfadeFrames: req.crossfadeFrames }, ORIGIN_API);
+  }
 
   // Dynamic render routes.
   const renderMatch = /^(GET|POST) \/api\/render\/([^/]+)(\/cancel)?$/.exec(key);
@@ -580,6 +642,9 @@ function recordActivity(ctx: MainContext, path: string, body: unknown, result: u
     case API_ROUTES.preview:
       ctx.events.activity('cli', 'preview.control', r.action === 'seek' ? `Moved the playhead to ${tc(Number(r.frame ?? 0))}` : `Preview: ${String(r.action)}`);
       break;
+    case API_ROUTES.timelineCut:
+      ctx.events.activity('cli', 'timeline.cut', `Cut ${String((r as { cuts?: number }).cuts ?? 0)} clip segment(s), ${String(r.removedFrames)} frames removed (ripple)`);
+      break;
     case API_ROUTES.ui: {
       const parts: string[] = [];
       if (r.panel) parts.push(`opened the ${String(r.panel)} panel`);
@@ -598,7 +663,9 @@ function recordActivity(ctx: MainContext, path: string, body: unknown, result: u
       ctx.events.activity('cli', 'room.leave', 'Left room');
       break;
     default:
-      if (/\/cancel$/.test(path)) ctx.events.activity('cli', 'render.cancel', `Render ${String(r.id)} cancelled`, { jobId: String(r.id) });
+      if (/^\/api\/ai\//.test(path) && typeof r.op === 'string') {
+        ctx.events.activity('cli', `ai.${String(r.op)}.requested`, `AI ${String(r.op)} requested${r.clipId ? ` for clip ${String(r.clipId).slice(-6)}` : ''}`, { jobId: String(r.id), clipIds: r.clipId ? [String(r.clipId)] : [] });
+      } else if (/\/cancel$/.test(path)) ctx.events.activity('cli', 'render.cancel', `Render ${String(r.id)} cancelled`, { jobId: String(r.id) });
       break;
   }
 }

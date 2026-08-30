@@ -352,7 +352,12 @@ function ClipView({ clip, drag, pxPerFrame, fps, selected, flashing, onMove, onT
       title={`${clip.name} · ${framesToTimecode(start, fps)} → ${framesToTimecode(end, fps)}`}
     >
       {clip.kind === 'audio' || clip.kind === 'video' ? <div className="wave" /> : null}
+      {clip.kind !== 'component' && clip.volumeKeyframes
+        ? clip.volumeKeyframes.filter((k) => k.gain < 0.99).map((k, i) => <span key={i} className="vol-dot" style={{ left: k.frame * pxPerFrame }} />)
+        : null}
       <span className="clip-name">{clip.name}</span>
+      {clip.kind !== 'component' && clip.reframe ? <span className="clip-badge" title="auto-reframed">◱</span> : null}
+      {clip.kind !== 'component' && clip.volumeKeyframes?.length ? <span className="clip-badge" title="volume automation">∿</span> : null}
       <span className="clip-len">{framesToTimecode(end - start, fps)}</span>
       <div className="handle l" onPointerDown={(e) => onTrim(e, clip, 'start')} />
       <div className="handle r" onPointerDown={(e) => onTrim(e, clip, 'end')} />

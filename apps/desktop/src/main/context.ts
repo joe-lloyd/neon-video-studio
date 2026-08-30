@@ -5,6 +5,7 @@ import type { RoomManager } from './room.ts';
 import type { Settings } from './settings.ts';
 import type { SyncHub } from './sync-hub.ts';
 import type { EventHub } from './events.ts';
+import type { AiManager } from './ai-manager.ts';
 import type { DesktopRPC } from '../shared/rpc.ts';
 
 /** Minimal shape of the Electrobun RPC object we use from the main side. */
@@ -24,6 +25,7 @@ export interface MainContext {
   sync: SyncHub;
   room: RoomManager;
   events: EventHub;
+  ai: AiManager;
   localPort: number;
   startedAt: number;
   rpc: MainRpc | null;

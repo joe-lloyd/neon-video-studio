@@ -1,0 +1,23 @@
+{
+  "name": "@neon/ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first AI helpers for Neon Video Studio: Whisper transcription + filler detection, energy VAD (silence/breaths), ffmpeg neural denoise, Vision-based person matting and face tracking, B-roll suggestions (optionally with Claude)",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.ts",
+    "build": "echo '@neon/ai is consumed as TypeScript source'"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0",
+    "@neon/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

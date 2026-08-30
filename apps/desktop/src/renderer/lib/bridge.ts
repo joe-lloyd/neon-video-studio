@@ -3,7 +3,7 @@
  * browser (Vite dev without Electrobun) we fall back to the HTTP control API with a token
  * from the URL (?port=…&token=…) or localStorage.
  */
-import type { AppStatus, ImportAssetResponse, RenderJob, RoomInfo } from '@neon/core';
+import type { AiCapabilities, AiJob, AppStatus, ImportAssetResponse, RenderJob, RoomInfo } from '@neon/core';
 import { newId } from '@neon/core';
 import type { Bootstrap, DesktopRPC, RoomState, WindowCommand } from '../../shared/rpc.ts';
 
@@ -44,7 +44,7 @@ async function tryElectrobun(): Promise<Bridge | null> {
   const handlers: MessageHandlers = {};
   // Every message type declared in DesktopRPC['webview']['messages'] must be forwarded here;
   // a missing entry silently drops the message (a bug we hit once — keep this list in sync).
-  const MESSAGE_TYPES: (keyof Messages)[] = ['renderUpdate', 'roomUpdate', 'projectOpened', 'toast', 'menuAction', 'activity', 'previewControl', 'uiControl'];
+  const MESSAGE_TYPES: (keyof Messages)[] = ['renderUpdate', 'roomUpdate', 'projectOpened', 'toast', 'menuAction', 'activity', 'previewControl', 'uiControl', 'aiUpdate'];
   const forward = Object.fromEntries(
     MESSAGE_TYPES.map((type) => [type, (payload: unknown) => (handlers[type] as ((p: unknown) => void) | undefined)?.(payload)]),
   ) as { [K in keyof Messages]: (payload: Messages[K]) => void };
@@ -135,6 +135,8 @@ async function httpBridge(): Promise<Bridge> {
         lastRenders = key;
         for (const job of s.renders) handlers.renderUpdate?.({ job });
       }
+      const aiJobs = await call<AiJob[]>('GET', '/api/ai/jobs');
+      for (const job of aiJobs) handlers.aiUpdate?.({ job });
       if (s.project.id !== bootstrap.projectId) {
         bootstrap.projectId = s.project.id;
         handlers.projectOpened?.({ projectId: s.project.id, path: s.project.path, name: s.project.name });
@@ -178,6 +180,18 @@ async function httpBridge(): Promise<Bridge> {
           return call<{ path: string }>('POST', '/api/project/save', {}) as never;
         case 'newProject':
           return call('POST', '/api/project/new', params) as never;
+        case 'aiRun': {
+          const p = params as Requests['aiRun']['params'];
+          return call<AiJob>('POST', `/api/ai/${p.op}`, p.params) as never;
+        }
+        case 'aiStatus':
+          return call<AiCapabilities>('GET', '/api/ai/status') as never;
+        case 'aiJobs':
+          return call<AiJob[]>('GET', '/api/ai/jobs') as never;
+        case 'aiCancel':
+          return call<AiJob>('POST', `/api/ai/jobs/${(params as { id: string }).id}/cancel`) as never;
+        case 'cutRanges':
+          return call('POST', '/api/timeline/cut', params) as never;
         case 'windowCommand':
           return false as never;
         default:

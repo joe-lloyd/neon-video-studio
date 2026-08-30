@@ -1,5 +1,5 @@
 /** Typed HTTP client for the desktop app's control API. */
-import { API_ROUTES, type ApiResult, type AppStatus, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse } from '@neon/core';
+import { API_ROUTES, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript } from '@neon/core';
 import { isProcessAlive, readInstanceInfo } from '@neon/core/node';
 import type { Asset, Clip, Project, Track } from '@neon/core';
 
@@ -98,6 +98,15 @@ export class NeonClient {
     this.call<{ action: string; frame: number | null }>('POST', API_ROUTES.preview, { action, at });
 
   ui = (body: { panel?: string; select?: string[]; dialog?: string }) => this.call<typeof body>('POST', API_ROUTES.ui, body);
+
+  cut = (body: Record<string, unknown>) => this.call<{ removedFrames: number; cuts: number }>('POST', API_ROUTES.timelineCut, body);
+  aiStatus = () => this.call<AiCapabilities & { hints: Record<string, string> }>('GET', API_ROUTES.aiStatus);
+  aiJobs = () => this.call<AiJob[]>('GET', API_ROUTES.aiJobs);
+  aiJob = (id: string) => this.call<AiJob>('GET', `${API_ROUTES.aiJobs}/${encodeURIComponent(id)}`);
+  aiCancel = (id: string) => this.call<AiJob>('POST', `${API_ROUTES.aiJobs}/${encodeURIComponent(id)}/cancel`);
+  aiRun = (op: string, body: Record<string, unknown>) => this.call<AiJob>('POST', `${API_ROUTES.ai}/${op}`, body);
+  transcript = (assetId: string) => this.call<Transcript>('GET', `${API_ROUTES.aiTranscript}/${assetId}`);
+  transcriptCut = (assetId: string, fromWord: number, toWord: number) => this.call<AiJob>('POST', `${API_ROUTES.aiTranscript}/cut`, { assetId, fromWord, toWord });
 
   /** Open the Server-Sent Events stream (GET /api/events). Caller reads `res.body`. */
   async openEventStream(history = 20): Promise<Response> {

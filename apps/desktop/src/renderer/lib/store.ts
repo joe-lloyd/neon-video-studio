@@ -12,6 +12,9 @@ import {
   peerColor,
   projectDurationFrames,
   type ActivityEntry,
+  type AiCapabilities,
+  type AiJob,
+  type AiOperation,
   type Clip,
   type Project,
   type RenderJob,
@@ -38,7 +41,7 @@ export function createStore<T>(initial: T) {
   };
 }
 
-export type Panel = 'assets' | 'templates' | 'inspector' | 'peers' | 'renders' | 'activity';
+export type Panel = 'assets' | 'templates' | 'inspector' | 'peers' | 'renders' | 'activity' | 'ai' | 'script';
 export interface Toast {
   id: string;
   kind: 'info' | 'success' | 'error';
@@ -67,6 +70,10 @@ export interface UiState {
   flash: Record<string, number>;
   /** Most recent activity, for the status-bar pulse. */
   lastActivity: ActivityEntry | null;
+  aiJobs: AiJob[];
+  aiCaps: AiCapabilities | null;
+  /** Word range selected in the Script panel (inclusive indexes). */
+  scriptSelection: { assetId: string; from: number; to: number } | null;
 }
 
 export interface PlayheadState {
@@ -79,6 +86,7 @@ export const EMPTY_PROJECT: Project = {
   tracks: [],
   clips: [],
   assets: [],
+  transcripts: [],
 };
 
 export class Editor {
@@ -105,6 +113,9 @@ export class Editor {
     activity: [],
     flash: {},
     lastActivity: null,
+    aiJobs: [],
+    aiCaps: null,
+    scriptSelection: null,
   });
   readonly playhead = createStore<PlayheadState>({ frame: 0, playing: false });
   /** Set by the Preview component so the editor can drive the Remotion Player. */
@@ -133,6 +144,7 @@ export class Editor {
       toast: ({ kind, message }) => this.toast(kind, message),
       menuAction: ({ action }) => this.handleMenuAction(action),
       activity: ({ entry }) => this.pushActivity(entry),
+      aiUpdate: ({ job }) => this.upsertAiJob(job),
       previewControl: ({ action, frame }) => {
         switch (action) {
           case 'play':
@@ -166,6 +178,8 @@ export class Editor {
       },
     });
     bridge.request('listRenders', {}).then((jobs) => this.ui.set({ renders: jobs })).catch(() => undefined);
+    bridge.request('aiJobs', {}).then((jobs) => this.ui.set({ aiJobs: jobs })).catch(() => undefined);
+    void this.loadAiStatus();
     // Media diagnostics: WKWebView surfaces <video>/<audio> failures only on the element, so
     // capture them here and forward to the main-process log.
     const mediaLog = (e: Event) => {
@@ -266,6 +280,78 @@ export class Editor {
         return { flash: next };
       });
     }, ms + 50);
+  }
+
+  // ---- AI ------------------------------------------------------------------------------
+
+  private upsertAiJob(job: AiJob): void {
+    this.ui.set((u) => ({ aiJobs: [job, ...u.aiJobs.filter((j) => j.id !== job.id)].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 30) }));
+    if (job.status === 'done') this.toast('success', job.message);
+    if (job.status === 'failed') this.toast('error', job.message);
+  }
+
+  async loadAiStatus(refresh = false): Promise<void> {
+    if (this.ui.get().aiCaps && !refresh) return;
+    try {
+      this.ui.set({ aiCaps: await this.bridge.request('aiStatus', {}) });
+    } catch (err) {
+      this.toast('error', `AI status: ${(err as Error).message}`);
+    }
+  }
+
+  async runAi(op: AiOperation, params: Record<string, unknown>): Promise<AiJob | null> {
+    try {
+      const job = await this.bridge.request('aiRun', { op, params });
+      this.upsertAiJob(job);
+      this.noteUiAction(`ai.${op}`, `Started AI ${op}`, typeof params.clipId === 'string' ? [params.clipId] : undefined);
+      return job;
+    } catch (err) {
+      this.toast('error', (err as Error).message);
+      return null;
+    }
+  }
+
+  async cancelAi(id: string): Promise<void> {
+    const job = await this.bridge.request('aiCancel', { id }).catch(() => null);
+    if (job) this.upsertAiJob(job);
+  }
+
+  /** Cut the words currently selected in the Script panel out of the timeline. */
+  async cutScriptSelection(): Promise<void> {
+    const sel = this.ui.get().scriptSelection;
+    if (!sel) return;
+    await this.runAi('transcript-cut', { assetId: sel.assetId, fromWord: Math.min(sel.from, sel.to), toWord: Math.max(sel.from, sel.to) });
+    this.ui.set({ scriptSelection: null });
+  }
+
+  /** Transcript for an asset, following derivedFrom links in both directions (denoised copies share timing). */
+  transcriptForAsset(assetId: string) {
+    const { transcripts, assets } = this.project.get().project;
+    const family = new Set([assetId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const a of assets) {
+        if (a.derivedFrom && family.has(a.derivedFrom) && !family.has(a.id)) { family.add(a.id); changed = true; }
+        if (a.derivedFrom && family.has(a.id) && !family.has(a.derivedFrom)) { family.add(a.derivedFrom); changed = true; }
+      }
+    }
+    return transcripts.find((t) => family.has(t.assetId));
+  }
+
+  /** Timeline frame where a source second of `assetId` is shown (first clip that contains it), if any. */
+  timelineFrameForSource(assetId: string, seconds: number): number | null {
+    const fps = this.fps;
+    const { assets } = this.project.get().project;
+    const family = new Set([assetId]);
+    for (const a of assets) if (a.derivedFrom === assetId) family.add(a.id);
+    for (const a of assets) if (a.id === assetId && a.derivedFrom) family.add(a.derivedFrom);
+    const clips = this.project.get().project.clips.filter((c): c is Clip & { kind: 'video' | 'audio' | 'image' } => c.kind !== 'component' && family.has(c.assetId));
+    for (const c of clips) {
+      const local = Math.round(seconds * fps) - c.trimBefore;
+      if (local >= 0 && local < c.durationFrames) return c.startFrame + local;
+    }
+    return null;
   }
 
   /** Record a UI action in the feed (kept local — the main process learns about it through Yjs). */

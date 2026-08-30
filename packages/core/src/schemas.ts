@@ -39,6 +39,13 @@ const ClipBaseSchema = z.object({
   color: z.string().optional(),
 });
 
+export const VolumeKeyframeSchema = z.object({ frame: z.number().int().nonnegative(), gain: z.number().min(0).max(4) });
+export const ReframeSchema = z.object({
+  mode: z.enum(['face-track', 'center']),
+  targetAspect: z.number().positive(),
+  keyframes: z.array(z.object({ frame: z.number().int().nonnegative(), cx: z.number().min(0).max(1), cy: z.number().min(0).max(1), zoom: z.number().min(1).max(4) })),
+});
+
 export const MediaClipSchema = ClipBaseSchema.extend({
   kind: z.enum(['video', 'audio', 'image']),
   assetId: z.string(),
@@ -47,6 +54,8 @@ export const MediaClipSchema = ClipBaseSchema.extend({
   fit: z.enum(['cover', 'contain', 'fill']),
   fadeIn: z.number().int().nonnegative(),
   fadeOut: z.number().int().nonnegative(),
+  volumeKeyframes: z.array(VolumeKeyframeSchema).optional(),
+  reframe: ReframeSchema.optional(),
 });
 
 export const ComponentClipSchema = ClipBaseSchema.extend({
@@ -69,6 +78,25 @@ export const AssetSchema = z.object({
   fps: z.number().positive().optional(),
   importedBy: z.string().optional(),
   importedAt: z.string(),
+  derivedFrom: z.string().optional(),
+  processing: z.array(z.string()).optional(),
+  hasAlpha: z.boolean().optional(),
+});
+
+export const TranscriptWordSchema = z.object({
+  w: z.string(),
+  s: z.number().nonnegative(),
+  e: z.number().nonnegative(),
+  p: z.number().min(0).max(1).optional(),
+  filler: z.boolean().optional(),
+});
+
+export const TranscriptSchema = z.object({
+  assetId: z.string(),
+  engine: z.string(),
+  language: z.string(),
+  createdAt: z.string(),
+  words: z.array(TranscriptWordSchema),
 });
 
 export const ProjectSchema = z.object({
@@ -76,6 +104,7 @@ export const ProjectSchema = z.object({
   tracks: z.array(TrackSchema),
   clips: z.array(ClipSchema),
   assets: z.array(AssetSchema),
+  transcripts: z.array(TranscriptSchema).default([]),
 });
 
 // ---- Control API request bodies -------------------------------------------------------
@@ -119,9 +148,78 @@ export const UpdateClipRequestSchema = z.object({
     trackId: z.string().optional(),
     color: z.string().optional(),
     props: z.record(z.string(), z.unknown()).optional(),
+    volumeKeyframes: z.array(VolumeKeyframeSchema).nullable().optional(),
+    reframe: ReframeSchema.nullable().optional(),
   }),
 });
 export type UpdateClipRequest = z.infer<typeof UpdateClipRequestSchema>;
+
+export const CutRangesRequestSchema = z.object({
+  ranges: z.array(z.object({ start: TimeExpr, end: TimeExpr })).min(1),
+  /** Restrict to these tracks (default: all tracks). */
+  trackIds: z.array(z.string()).optional(),
+  ripple: z.boolean().default(true),
+  crossfadeFrames: z.number().int().min(0).max(30).default(2),
+});
+
+// ---- AI feature requests --------------------------------------------------------------
+
+export const AiTargetSchema = z.object({
+  clipId: z.string().optional(),
+  assetId: z.string().optional(),
+});
+
+export const AiTranscribeRequestSchema = AiTargetSchema.extend({ force: z.boolean().optional() });
+export const AiFillersRequestSchema = AiTargetSchema.extend({
+  apply: z.boolean().default(false),
+  words: z.array(z.string()).optional(),
+  padMs: z.number().min(0).max(500).default(40),
+});
+export const AiSilenceRequestSchema = AiTargetSchema.extend({
+  apply: z.boolean().default(false),
+  thresholdDb: z.number().min(-90).max(0).default(-38),
+  minSilenceMs: z.number().min(100).max(10000).default(400),
+  keepMs: z.number().min(0).max(2000).default(150),
+});
+export const AiBreathsRequestSchema = AiTargetSchema.extend({
+  reductionDb: z.number().min(3).max(40).default(15),
+  apply: z.boolean().default(true),
+});
+export const AiDenoiseRequestSchema = AiTargetSchema.extend({
+  engine: z.enum(['auto', 'rnnoise', 'afftdn', 'deepfilter']).default('auto'),
+  strength: z.number().min(0).max(1).default(0.7),
+});
+export const AiMatteRequestSchema = AiTargetSchema.extend({
+  mode: z.enum(['person', 'chroma']).default('person'),
+  quality: z.enum(['fast', 'balanced', 'accurate']).default('balanced'),
+  color: z.string().default('0x00FF00'),
+  similarity: z.number().min(0.01).max(1).default(0.3),
+  blend: z.number().min(0).max(1).default(0.1),
+});
+export const AiReframeRequestSchema = AiTargetSchema.extend({
+  aspect: z.string().default('9:16'),
+  resizeProject: z.boolean().default(false),
+  sampleFps: z.number().min(1).max(15).default(5),
+});
+export const AiBrollRequestSchema = z.object({
+  assetId: z.string().optional(),
+  apply: z.boolean().default(false),
+  durationSeconds: z.number().min(0.5).max(60).default(3),
+  useClaude: z.boolean().default(true),
+  maxSuggestions: z.number().int().min(1).max(50).default(12),
+});
+export const AiCleanRequestSchema = AiTargetSchema.extend({
+  fillers: z.boolean().default(true),
+  silences: z.boolean().default(true),
+  breaths: z.boolean().default(true),
+  denoise: z.boolean().default(false),
+});
+export const TranscriptCutRequestSchema = z.object({
+  assetId: z.string(),
+  /** Inclusive word index range within the transcript. */
+  fromWord: z.number().int().nonnegative(),
+  toWord: z.number().int().nonnegative(),
+});
 
 export const MoveClipRequestSchema = z.object({
   id: z.string().min(1),
@@ -206,7 +304,7 @@ export const PreviewControlRequestSchema = z.object({
 });
 
 export const UiControlRequestSchema = z.object({
-  panel: z.enum(['assets', 'templates', 'inspector', 'peers', 'renders', 'activity']).optional(),
+  panel: z.enum(['assets', 'templates', 'inspector', 'peers', 'renders', 'activity', 'ai', 'script']).optional(),
   /** Clip ids (or empty array to clear the selection). */
   select: z.array(z.string()).optional(),
   dialog: z.enum(['render', 'room', 'shortcuts', 'none']).optional(),

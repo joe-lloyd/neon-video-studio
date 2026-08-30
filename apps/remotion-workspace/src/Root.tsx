@@ -21,6 +21,7 @@ const EMPTY: TimelineProps = {
     tracks: [],
     clips: [],
     assets: [],
+    transcripts: [],
   },
   assetBaseUrl: '',
   assetQuery: '',

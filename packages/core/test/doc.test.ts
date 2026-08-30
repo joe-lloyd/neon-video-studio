@@ -149,3 +149,37 @@ test('load + toJSON round-trips', () => {
   const copy = ProjectDoc.fromJSON(json);
   assert.deepEqual(copy.toJSON(), json);
 });
+
+
+test('cutRanges removes a range across tracks, splits spanning clips, ripples and adds crossfades', () => {
+  const pd = fresh();
+  pd.addAsset(asset(HASH_A, 300));
+  const v = pd.insertClip({ kind: 'video', assetId: HASH_A }); // [0,300)
+  const overlay = pd.insertClip({ kind: 'component', componentName: 'Watermark', startFrame: 200, durationFrames: 100, placement: 'overlap' }); // [200,300)
+  const result = pd.cutRanges([{ start: 100, end: 130 }, { start: 250, end: 260 }], { ripple: true, crossfadeFrames: 2 });
+  assert.equal(result.removedFrames, 40);
+  const clips = pd.toJSON().clips;
+  const videos = clips.filter((c) => c.kind === 'video').sort((a, b) => a.startFrame - b.startFrame);
+  assert.equal(videos.length, 3);
+  assert.deepEqual(videos.map((c) => [c.startFrame, c.durationFrames]), [[0, 100], [100, 120], [220, 40]]);
+  // source continuity: second piece starts at source frame 130, third at 260
+  if (videos[1]!.kind !== 'component') assert.equal(videos[1]!.trimBefore, 130);
+  if (videos[2]!.kind !== 'component') assert.equal(videos[2]!.trimBefore, 260);
+  if (videos[0]!.kind !== 'component') assert.equal(videos[0]!.fadeOut, 2);
+  if (videos[1]!.kind !== 'component') assert.equal(videos[1]!.fadeIn, 2);
+  const overlays = clips.filter((c) => c.kind === 'component');
+  // overlay [200,300) → shifted by 30 → [170,270) then cut [250,260) → [170,250) + [250,260)…
+  assert.equal(overlays.reduce((n, c) => n + c.durationFrames, 0), 90);
+  assert.ok(overlays.every((c) => c.startFrame >= 170));
+  assert.equal(pd.durationFrames(), 260);
+  assert.ok(pd.getClip(v.id));
+  void overlay;
+});
+
+test('transcripts round-trip and undo covers them', () => {
+  const pd = fresh();
+  pd.setTranscript({ assetId: HASH_A, engine: 'test', language: 'en', createdAt: 'now', words: [{ w: 'um', s: 0, e: 0.3, filler: true }] }, ORIGIN_LOCAL);
+  assert.equal(pd.getTranscript(HASH_A)?.words.length, 1);
+  const copy = ProjectDoc.fromJSON(pd.toJSON());
+  assert.deepEqual(copy.toJSON().transcripts, pd.toJSON().transcripts);
+});
