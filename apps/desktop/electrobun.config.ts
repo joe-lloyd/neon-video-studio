@@ -21,6 +21,6 @@ export default {
     watchIgnore: ['dist/**', 'build/**'],
     mac: { bundleCEF: false, icons: 'icons/icon.iconset' },
     linux: { bundleCEF: false, icon: 'icons/icon.png' },
-    win: { bundleCEF: false, icon: 'icons/icon.png' },
+    win: { bundleCEF: false, icon: 'icons/icon-win.png' },
   },
 } satisfies ElectrobunConfig;

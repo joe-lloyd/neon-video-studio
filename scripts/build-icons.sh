@@ -21,7 +21,8 @@ for size in 16 32 128 256 512; do
   sips -z $dbl $dbl "$MASTER" --out "$OUT/icon.iconset/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$OUT/icon.iconset" -o "$OUT/icon.icns"
-sips -z 512 512 "$MASTER" --out "$OUT/icon.png" >/dev/null           # Linux + Windows (Hutch converts PNG → ICO)
+sips -z 512 512 "$MASTER" --out "$OUT/icon.png" >/dev/null           # Linux
+sips -z 256 256 "$MASTER" --out "$OUT/icon-win.png" >/dev/null       # Windows (ICO conversion rejects >256px)
 mkdir -p "$ROOT/docs/icons"
 sips -z 256 256 "$MASTER" --out "$ROOT/docs/icons/app-icon.png" >/dev/null
 for svg in "$ROOT"/apps/desktop/icons/candidates/*.svg; do

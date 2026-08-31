@@ -364,6 +364,23 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     }
     return ctx.ai.start(op, parsed);
   }
+  if (key === 'POST /api/record/start') {
+    const r = await ctx.recorder.start();
+    ctx.events.activity('cli', 'vo.start', `Recording voice-over (${r.device})`);
+    return { ...r, state: ctx.recorder.state() };
+  }
+  if (key === 'POST /api/record/stop') {
+    const at = Number((body as { at?: number | string })?.at ?? 0);
+    const startFrame = Number.isFinite(at) ? Math.max(0, Math.round(at)) : parseTimecode(String((body as { at?: string }).at ?? '0'), fps);
+    const { file } = await ctx.recorder.stop();
+    let track = doc.toJSON().tracks.find((t) => t.kind === 'audio' && t.name === 'VO');
+    track ??= doc.addTrack('audio', 'VO', ORIGIN_API);
+    const result = await ctx.assets.import(file, { insertAt: startFrame, trackId: track.id, origin: ORIGIN_API });
+    await ctx.recorder.discard();
+    ctx.events.activity('cli', 'vo.done', `Voice-over take placed on ${track.name} at frame ${startFrame}`, { clipIds: result.clip ? [result.clip.id] : [] });
+    return result;
+  }
+  if (key === 'GET /api/record/state') return ctx.recorder.state();
   if (key === `POST ${API_ROUTES.timelineDetach}`) {
     const { id } = DetachAudioRequestSchema.parse(body);
     return doc.detachAudio(id, ORIGIN_API);

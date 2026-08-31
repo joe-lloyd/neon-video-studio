@@ -221,9 +221,15 @@ export class AiManager {
     const doc = this.ctx.store.doc;
     const existing = doc.getTranscript(target.asset.id);
     if (existing && !force) return existing;
-    const paths = await this.paths();
+    let paths = await this.paths();
     if (!paths.whisper || !paths.whisperModel) {
-      throw new Error(`Speech recognition is not installed. ${SETUP_HINTS.whisper}`);
+      // The check may be stale (engines installed after app launch) — re-detect before failing.
+      this.tools = null;
+      paths = await this.paths();
+    }
+    if (!paths.whisper || !paths.whisperModel) {
+      const missing = [!paths.whisper ? 'whisper-cli binary' : null, !paths.whisperModel ? 'a ggml model in ~/.neon-video/models' : null].filter(Boolean).join(' and ');
+      throw new Error(`Speech recognition is not installed (missing ${missing}). Use the “Install automatically” button in the AI panel, run \`neon-cli ai setup\`, or: ${SETUP_HINTS.whisper}`);
     }
     this.progress(job, 0.1, `Transcribing ${target.asset.name} (whisper.cpp)…`);
     const transcript = await transcribe(target.file, {

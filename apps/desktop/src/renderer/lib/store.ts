@@ -333,6 +333,20 @@ export class Editor {
 
   async startVoiceOver(): Promise<void> {
     if (this.ui.get().recording) return;
+    // views:// is not a secure context → navigator.mediaDevices does not exist in the webview.
+    // The main process records via ffmpeg/avfoundation instead; MediaRecorder is the browser-mode path.
+    if (this.bridge.mode === 'electrobun' || typeof navigator.mediaDevices?.getUserMedia !== 'function') {
+      const startFrame = this.playhead.get().frame;
+      try {
+        const { device } = await this.bridge.request('voStart', {});
+        this.ui.set({ recording: { startFrame, startedAt: Date.now() } });
+        this.noteUiAction('vo.record', `Recording voice-over (${device}) from frame ${startFrame}`);
+        this.player?.play();
+      } catch (err) {
+        this.toast('error', (err as Error).message);
+      }
+      return;
+    }
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false } });
@@ -358,10 +372,26 @@ export class Editor {
   }
 
   stopVoiceOver(): void {
-    if (!this.mediaRecorder) return;
+    const rec = this.ui.get().recording;
     this.player?.pause();
-    this.mediaRecorder.stop();
-    this.mediaRecorder = null;
+    if (this.mediaRecorder) {
+      this.mediaRecorder.stop();
+      this.mediaRecorder = null;
+      return;
+    }
+    if (!rec) return;
+    this.ui.set({ recording: null });
+    this.bridge
+      .request('voStop', { startFrame: rec.startFrame })
+      .then((result) => {
+        if (result.clip) {
+          this.select([result.clip.id]);
+          this.flashClips([result.clip.id]);
+        }
+        this.seek(rec.startFrame);
+        this.toast('success', `Voice-over placed at frame ${rec.startFrame}`);
+      })
+      .catch((err: Error) => this.toast('error', err.message));
   }
 
   private async finishVoiceOver(startFrame: number, mime: string): Promise<void> {
@@ -395,6 +425,13 @@ export class Editor {
     } catch (err) {
       this.toast('error', `Voice-over import failed: ${(err as Error).message}`);
     }
+  }
+
+  setTransform(clipId: string, transform: { x: number; y: number; scale: number } | null): void {
+    const t = transform
+      ? { x: Math.round(transform.x * 1000) / 1000, y: Math.round(transform.y * 1000) / 1000, scale: Math.round(transform.scale * 1000) / 1000 }
+      : null;
+    this.updateClip(clipId, { transform: t && t.x === 0.5 && t.y === 0.5 && t.scale === 1 ? null : t });
   }
 
   detachAudio(clipId: string): void {

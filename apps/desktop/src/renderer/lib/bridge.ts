@@ -192,6 +192,12 @@ async function httpBridge(): Promise<Bridge> {
           return call<AiJob>('POST', `/api/ai/jobs/${(params as { id: string }).id}/cancel`) as never;
         case 'cutRanges':
           return call('POST', '/api/timeline/cut', params) as never;
+        case 'voStart':
+          return call('POST', '/api/record/start') as never;
+        case 'voStop':
+          return call('POST', '/api/record/stop', { at: (params as { startFrame: number }).startFrame }) as never;
+        case 'voCancel':
+          return true as never;
         case 'windowCommand':
           return false as never;
         default:

@@ -2,6 +2,14 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-08-31 · round 5
+
+- ☑ **FX draggable + scalable on the canvas with snapping** — selected elements (templates, images, video) get a manipulation box in the preview: drag to move, corner handles to scale, light snapping to centre / margins / thirds / other elements (magenta guides, ⌘ disables), double-click resets. Numeric position/scale in the inspector, `--pos`/`--scale` in the CLI.
+- ☑ **Animate in/out for elements** — fade, slide (4 directions), pop; per-clip in/out with duration; inspector selects + `--in pop:12 --out fade:10`.
+- ☑ **Bug: microphone "undefined is not an object (navigator.mediaDevices)"** — `views://` is not a secure context, so WKWebView has no media APIs at all. Recording moved to the main process (ffmpeg/avfoundation, device auto-pick); first use triggers the macOS mic permission prompt. Also exposed as `neon-cli record start/stop`.
+- ☑ **Bug: transcript said "speech recognition is not installed" although it is** — the engine check was cached from app launch; it now re-detects before failing and names exactly what's missing.
+- ☑ **Release pipeline shipped no artifacts** — `macos-13` runners no longer exist (job queued ~10 h and blocked publishing), Linux needed glibc ≥ 2.38 (→ ubuntu-24.04), Windows failed on an ESM path quirk + missing `zip` (→ file:// import, 7z). Publish now posts a release on every tag with whatever platforms succeeded, notes include the mac install one-liner.
+
 ## 2026-08-30 · round 5
 
 - ◐ **Canvas editing for FX & images** — drag elements on the preview, scale with handles, light snapping (canvas center, margins, other elements), works for FX components and images.

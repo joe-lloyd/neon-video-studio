@@ -109,6 +109,9 @@ export class NeonClient {
   transcript = (assetId: string) => this.call<Transcript>('GET', `${API_ROUTES.aiTranscript}/${assetId}`);
   transcriptCut = (assetId: string, fromWord: number, toWord: number) => this.call<AiJob>('POST', `${API_ROUTES.aiTranscript}/cut`, { assetId, fromWord, toWord });
 
+  /** Generic escape hatch for new endpoints. */
+  call2 = (method: 'GET' | 'POST', path: string, body?: unknown) => this.call<unknown>(method, path, body);
+
   /** Open the Server-Sent Events stream (GET /api/events). Caller reads `res.body`. */
   async openEventStream(history = 20): Promise<Response> {
     const res = await fetch(`${this.opts.endpoint}${API_ROUTES.events}?history=${history}`, {

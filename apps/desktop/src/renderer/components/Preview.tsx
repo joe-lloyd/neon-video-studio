@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Player, type PlayerRef } from '@remotion/player';
 import { TimelineComposition, type TimelineProps } from '@neon/remotion-workspace/composition';
 import { useEditor } from '../lib/context.ts';
+import { CanvasEditor } from './CanvasEditor.tsx';
 import { useElementSize } from '../lib/hooks.ts';
 import { useStoreValue } from '../lib/store.ts';
 
@@ -93,7 +94,8 @@ export function Preview() {
         <button className={safe ? 'on' : ''} onClick={() => setSafe((v) => !v)} title="Toggle title/action safe areas">safe</button>
       </div>
       {ready && w > 0 ? (
-        <div className="player-wrap" style={{ width: w, height: h }}>
+        <div className="player-wrap" style={{ width: w, height: h, position: 'relative' }}>
+          <CanvasEditor width={w} height={h} />
           <Player
             ref={bindPlayer}
             component={TimelineComposition}

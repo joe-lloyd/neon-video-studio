@@ -394,6 +394,24 @@ function InspectorPanel() {
             ))}
           </>
         )}
+        {clip.kind !== 'audio' ? (
+          <>
+            <div className="panel-header" style={{ padding: '10px 0 6px' }}><span className="title">Canvas & animation</span></div>
+            <div className="grid-2">
+              <div className="field"><label>Position X · %</label><input className="input mono" type="number" step={1} value={Math.round((clip.transform?.x ?? 0.5) * 100)} onChange={(e) => editor.setTransform(clip.id, { x: Number(e.target.value) / 100, y: clip.transform?.y ?? 0.5, scale: clip.transform?.scale ?? 1 })} /></div>
+              <div className="field"><label>Position Y · %</label><input className="input mono" type="number" step={1} value={Math.round((clip.transform?.y ?? 0.5) * 100)} onChange={(e) => editor.setTransform(clip.id, { x: clip.transform?.x ?? 0.5, y: Number(e.target.value) / 100, scale: clip.transform?.scale ?? 1 })} /></div>
+            </div>
+            <div className="field">
+              <label>Scale · {Math.round((clip.transform?.scale ?? 1) * 100)}% {clip.transform ? <button className="btn sm ghost" onClick={() => editor.setTransform(clip.id, null)}>reset</button> : null}</label>
+              <input type="range" min={0.05} max={3} step={0.01} value={clip.transform?.scale ?? 1} onChange={(e) => editor.setTransform(clip.id, { x: clip.transform?.x ?? 0.5, y: clip.transform?.y ?? 0.5, scale: Number(e.target.value) })} />
+            </div>
+            <div className="grid-2">
+              <AnimationField label="Animate in" value={clip.animateIn} onChange={(a) => editor.updateClip(clip.id, { animateIn: a })} fps={fps} />
+              <AnimationField label="Animate out" value={clip.animateOut} onChange={(a) => editor.updateClip(clip.id, { animateOut: a })} fps={fps} />
+            </div>
+            <p className="hint">Drag the element in the preview to position it (snaps to centre/margins/other elements; hold ⌘ to disable). Corners scale, double-click resets.</p>
+          </>
+        ) : null}
         <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
           <button className="btn sm" onClick={() => editor.seek(clip.startFrame)}>Go to start</button>
           {clip.kind === 'video' ? (
@@ -405,6 +423,30 @@ function InspectorPanel() {
         </div>
       </div>
     </>
+  );
+}
+
+function AnimationField({ label, value, onChange, fps }: { label: string; value?: { type: string; durationFrames: number }; onChange: (a: { type: 'fade' | 'slide-up' | 'slide-down' | 'slide-left' | 'slide-right' | 'pop'; durationFrames: number } | null) => void; fps: number }) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      <div className="row">
+        <select
+          className="select"
+          value={value?.type ?? 'none'}
+          onChange={(e) => onChange(e.target.value === 'none' ? null : { type: e.target.value as 'fade', durationFrames: value?.durationFrames ?? Math.round(fps * 0.4) })}
+        >
+          <option value="none">none</option>
+          <option value="fade">fade</option>
+          <option value="slide-up">slide up</option>
+          <option value="slide-down">slide down</option>
+          <option value="slide-left">slide left</option>
+          <option value="slide-right">slide right</option>
+          <option value="pop">pop</option>
+        </select>
+        {value ? <input className="input mono" style={{ width: 62 }} type="number" min={1} value={value.durationFrames} title="frames" onChange={(e) => onChange({ type: value.type as 'fade', durationFrames: Math.max(1, Math.round(Number(e.target.value))) })} /> : null}
+      </div>
+    </div>
   );
 }
 

@@ -23,6 +23,7 @@ import { SyncHub } from './sync-hub.ts';
 import { EventHub } from './events.ts';
 import { AiManager } from './ai-manager.ts';
 import { registerAllPacks } from '@neon/remotion-workspace/packs';
+import { VoiceRecorder } from './recorder.ts';
 import type { Bootstrap, DesktopRPC } from '../shared/rpc.ts';
 
 const VERSION = '0.3.1';
@@ -69,6 +70,7 @@ async function main(): Promise<void> {
     room: null as unknown as RoomManager,
     events: new EventHub(),
     ai: null as unknown as AiManager,
+    recorder: new VoiceRecorder(),
     localPort: 0,
     startedAt,
     rpc: null,
@@ -242,6 +244,24 @@ async function main(): Promise<void> {
           }
           await store.adopt(fresh);
           return { projectId: store.projectId, path: store.isScratch ? null : store.dir };
+        },
+        voStart: async () => {
+          const r = await ctx.recorder.start();
+          ctx.events.activity('ui', 'vo.start', `Recording voice-over (${r.device})`);
+          return r;
+        },
+        voStop: async ({ startFrame }) => {
+          const { file } = await ctx.recorder.stop();
+          let track = store.toJSON().tracks.find((t) => t.kind === 'audio' && t.name === 'VO');
+          track ??= store.doc.addTrack('audio', 'VO', ORIGIN_LOCAL);
+          const result = await ctx.assets.import(file, { insertAt: startFrame, trackId: track.id, origin: ORIGIN_LOCAL });
+          await ctx.recorder.discard();
+          ctx.events.activity('ui', 'vo.done', `Voice-over take placed on ${track.name} at frame ${startFrame}`, { clipIds: result.clip ? [result.clip.id] : [], assetIds: [result.asset.id] });
+          return result;
+        },
+        voCancel: async () => {
+          await ctx.recorder.discard();
+          return true;
         },
         chooseFolder: async () => {
           const [dir] = await Utils.openFileDialog({ canChooseFiles: false, canChooseDirectory: true, allowsMultipleSelection: false });

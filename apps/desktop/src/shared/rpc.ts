@@ -54,6 +54,9 @@ export type DesktopRPC = {
       recentProjects: { params: Record<string, never>; response: { path: string; name: string; updatedAt: string; current: boolean }[] };
       newProjectAt: { params: { name?: string; fps?: number; width?: number; height?: number; dir?: string }; response: { projectId: string; path: string | null } };
       chooseFolder: { params: Record<string, never>; response: string | null };
+      voStart: { params: Record<string, never>; response: { device: string } };
+      voStop: { params: { startFrame: number }; response: ImportAssetResponse };
+      voCancel: { params: Record<string, never>; response: boolean };
     };
     messages: {
       rendererReady: { ok: true };

@@ -47,6 +47,8 @@ COMMANDS
   events [--history N]                    Live-tail everything the app does (CLI actions, renders, peers) — Ctrl-C to stop
   timeline cut --from T --to T [--track REF] [--no-ripple]   Remove a timeline range (all tracks, ripple)
   timeline detach <clip>                  Split a video clip's audio onto an audio track (video muted)
+  timeline update <clip> --pos 0.5,0.3 --scale 0.6 --in pop:12 --out fade:10   Canvas placement + enter/exit animation
+  record start | record stop [--at T]     Record a mic voice-over in the app (take lands on the VO track)
 
 AI (local engines: whisper.cpp, ffmpeg, Apple Vision; Claude optional for B-roll)
   ai status                               Which engines are available + how to install the missing ones
@@ -136,6 +138,9 @@ const { values: flags, positionals } = parseArgs({
     aspect: { type: 'string' },
     lufs: { type: 'string' },
     model: { type: 'string' },
+    pos: { type: 'string' },
+    scale: { type: 'string' },
+    in: { type: 'string' },
     resize: { type: 'boolean', default: false },
     claude: { type: 'boolean', default: true },
     fillers: { type: 'boolean', default: true },
@@ -337,6 +342,22 @@ async function main(): Promise<void> {
         if (!rest[0]) throw new ApiError('USAGE', 'timeline update <clip> [...]');
         const target = await api.resolveClip(rest[0]);
         const trackId = flags.track ? (await api.resolveTrack(flags.track)).id : undefined;
+        const parseAnim = (raw: string | undefined) => {
+          if (raw === undefined) return undefined;
+          if (raw === 'none') return null;
+          const [type, frames] = raw.split(':');
+          return { type, durationFrames: frames ? Number(frames) : 12 };
+        };
+        let transform;
+        if (flags.pos !== undefined || flags.scale !== undefined) {
+          const prev = target.kind !== 'component' || true ? (target as { transform?: { x: number; y: number; scale: number } }).transform : undefined;
+          const [px, py] = (flags.pos ?? '').split(',').map(Number);
+          transform = {
+            x: Number.isFinite(px) ? px : prev?.x ?? 0.5,
+            y: Number.isFinite(py) ? py : prev?.y ?? 0.5,
+            scale: flags.scale !== undefined ? Number(flags.scale) : prev?.scale ?? 1,
+          };
+        }
         const clip = await api.update(target.id, {
           props: parseJsonFlag(flags.props, 'props'),
           startFrame: flags.start,
@@ -345,6 +366,9 @@ async function main(): Promise<void> {
           name: flags.name,
           volume: num(flags.volume),
           trackId,
+          transform,
+          animateIn: parseAnim(flags.in),
+          animateOut: parseAnim(flags.out),
         });
         out(clip, () => `Updated ${clip.id}: start ${clip.startFrame}, length ${clip.durationFrames}`);
       } else if (sub === 'move') {
@@ -476,6 +500,20 @@ async function main(): Promise<void> {
       if (sub === 'seek' && !rest[0] && !flags.at) throw new ApiError('USAGE', 'preview seek <T>');
       const r = await api.preview(sub as 'play' | 'pause' | 'toggle' | 'seek', rest[0] ?? flags.at);
       out(r, () => (sub === 'seek' ? `Playhead → frame ${r.frame}` : `Preview ${sub}`));
+      return;
+    }
+
+    case 'record': {
+      if (sub === 'start') {
+        const r = (await api.call2('POST', '/api/record/start')) as { device: string };
+        out(r, () => `Recording from “${r.device}” — stop with: neon-cli record stop [--at T]`);
+      } else if (sub === 'stop') {
+        const status = await api.status();
+        const at = flags.at ?? String(status.project.durationFrames === 0 ? 0 : 0);
+        const r = (await api.call2('POST', '/api/record/stop', { at: flags.at ?? 0 })) as ImportAssetResponse;
+        void at;
+        out(r, () => `Take “${r.asset.name}” placed${r.clip ? ` at frame ${r.clip.startFrame} on the VO track` : ''}`);
+      } else throw new ApiError('USAGE', 'record start | record stop [--at T]');
       return;
     }
 
