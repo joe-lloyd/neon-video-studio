@@ -26,7 +26,7 @@ import { registerAllPacks } from '@neon/remotion-workspace/packs';
 import { VoiceRecorder } from './recorder.ts';
 import type { Bootstrap, DesktopRPC } from '../shared/rpc.ts';
 
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 const DEV_SERVER_URL = 'http://localhost:5173';
 
 async function resolveViewUrl(port: number, token: string): Promise<{ url: string; isDev: boolean }> {
