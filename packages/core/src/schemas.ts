@@ -30,6 +30,16 @@ export const TrackSchema = z.object({
   hidden: z.boolean(),
 });
 
+export const ClipTransformSchema = z.object({
+  x: z.number().min(-1).max(2),
+  y: z.number().min(-1).max(2),
+  scale: z.number().min(0.05).max(10),
+});
+export const ClipAnimationSchema = z.object({
+  type: z.enum(['fade', 'slide-up', 'slide-down', 'slide-left', 'slide-right', 'pop']),
+  durationFrames: z.number().int().min(1).max(600),
+});
+
 const ClipBaseSchema = z.object({
   id: z.string(),
   trackId: z.string(),
@@ -37,6 +47,9 @@ const ClipBaseSchema = z.object({
   startFrame: z.number().int().nonnegative(),
   durationFrames: z.number().int().positive(),
   color: z.string().optional(),
+  transform: ClipTransformSchema.optional(),
+  animateIn: ClipAnimationSchema.optional(),
+  animateOut: ClipAnimationSchema.optional(),
 });
 
 export const VolumeKeyframeSchema = z.object({ frame: z.number().int().nonnegative(), gain: z.number().min(0).max(4) });
@@ -150,6 +163,9 @@ export const UpdateClipRequestSchema = z.object({
     props: z.record(z.string(), z.unknown()).optional(),
     volumeKeyframes: z.array(VolumeKeyframeSchema).nullable().optional(),
     reframe: ReframeSchema.nullable().optional(),
+    transform: ClipTransformSchema.nullable().optional(),
+    animateIn: ClipAnimationSchema.nullable().optional(),
+    animateOut: ClipAnimationSchema.nullable().optional(),
   }),
 });
 export type UpdateClipRequest = z.infer<typeof UpdateClipRequestSchema>;

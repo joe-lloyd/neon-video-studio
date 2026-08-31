@@ -35,6 +35,22 @@ export interface Track {
   hidden: boolean;
 }
 
+/** Normalised placement of a visual clip on the canvas. Defaults: centre (0.5, 0.5), scale 1. */
+export interface ClipTransform {
+  /** Centre position as a fraction of the canvas (0..1; values outside allow off-screen). */
+  x: number;
+  y: number;
+  /** 1 = full size. */
+  scale: number;
+}
+
+export type ClipAnimationType = 'fade' | 'slide-up' | 'slide-down' | 'slide-left' | 'slide-right' | 'pop';
+
+export interface ClipAnimation {
+  type: ClipAnimationType;
+  durationFrames: number;
+}
+
 export interface ClipBase {
   id: string;
   trackId: string;
@@ -45,6 +61,11 @@ export interface ClipBase {
   durationFrames: number;
   /** Free-form label colour override (CSS colour) for the timeline UI. */
   color?: string;
+  /** Canvas placement (drag/scale in the preview). Absent = full frame, centred. */
+  transform?: ClipTransform;
+  /** Enter/exit animations applied to the whole element. */
+  animateIn?: ClipAnimation;
+  animateOut?: ClipAnimation;
 }
 
 /** Volume automation point. `frame` is clip-local (0 = clip start), `gain` a linear multiplier (1 = unity). */

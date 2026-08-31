@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import { sortClips, sortTracks, volumeAt, type Asset, type Clip, type MediaClip, type Project, type Track } from '@neon/core';
 import { TEMPLATES } from '../templates/index.ts';
 
@@ -91,6 +91,67 @@ const MediaClipView: React.FC<{ clip: MediaClip; asset: Asset | undefined; track
   );
 };
 
+/** Enter/exit animation + canvas transform wrapper shared by component, image and video clips. */
+const ElementWrapper: React.FC<{ clip: Clip; scale: number; children: React.ReactNode }> = ({ clip, scale, children }) => {
+  const frame = useCurrentFrame();
+  const { fps, durationInFrames } = useVideoConfig();
+  const t = clip.transform;
+
+  let opacity = 1;
+  let dx = 0; // percent of canvas
+  let dy = 0;
+  let popScale = 1;
+  const applyAnim = (anim: NonNullable<Clip['animateIn']>, progress: number, dir: 1 | -1) => {
+    const inv = 1 - progress;
+    switch (anim.type) {
+      case 'fade':
+        opacity *= progress;
+        break;
+      case 'slide-up':
+        opacity *= progress;
+        dy += dir * inv * 12;
+        break;
+      case 'slide-down':
+        opacity *= progress;
+        dy -= dir * inv * 12;
+        break;
+      case 'slide-left':
+        opacity *= progress;
+        dx += dir * inv * 12;
+        break;
+      case 'slide-right':
+        opacity *= progress;
+        dx -= dir * inv * 12;
+        break;
+      case 'pop':
+        opacity *= Math.min(1, progress * 2);
+        popScale *= 0.4 + 0.6 * progress;
+        break;
+    }
+  };
+  if (clip.animateIn) {
+    const d = Math.max(1, Math.round(clip.animateIn.durationFrames * scale));
+    const p = clip.animateIn.type === 'pop'
+      ? spring({ frame, fps, durationInFrames: d, config: { damping: 11, stiffness: 180 } })
+      : interpolate(frame, [0, d], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+    applyAnim(clip.animateIn, p, 1);
+  }
+  if (clip.animateOut) {
+    const d = Math.max(1, Math.round(clip.animateOut.durationFrames * scale));
+    const p = interpolate(frame, [durationInFrames - d, durationInFrames], [1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+    applyAnim(clip.animateOut, p, -1);
+  }
+
+  const style: React.CSSProperties = { opacity };
+  const parts: string[] = [];
+  if (t) parts.push(`translate(${((t.x - 0.5) * 100).toFixed(3)}%, ${((t.y - 0.5) * 100).toFixed(3)}%)`);
+  if (dx !== 0 || dy !== 0) parts.push(`translate(${dx.toFixed(3)}%, ${dy.toFixed(3)}%)`);
+  const totalScale = (t?.scale ?? 1) * popScale;
+  if (totalScale !== 1) parts.push(`scale(${totalScale.toFixed(4)})`);
+  if (parts.length) style.transform = parts.join(' ');
+  return <AbsoluteFill style={style}>{children}</AbsoluteFill>;
+};
+
 const MissingBox: React.FC<{ label: string }> = ({ label }) => (
   <AbsoluteFill
     style={{
@@ -138,9 +199,15 @@ export const TimelineComposition: React.FC<TimelineProps> = (props) => {
             return (
               <Sequence key={clip.id} from={from} durationInFrames={durationInFrames} name={clip.name} layout="none">
                 {clip.kind === 'component' ? (
-                  <ComponentClipView clip={clip} />
-                ) : (
+                  <ElementWrapper clip={clip} scale={scale}>
+                    <ComponentClipView clip={clip} />
+                  </ElementWrapper>
+                ) : clip.kind === 'audio' ? (
                   <MediaClipView clip={clip} asset={assetsById.get(clip.assetId)} track={track} props={props} scale={scale} />
+                ) : (
+                  <ElementWrapper clip={clip} scale={scale}>
+                    <MediaClipView clip={clip} asset={assetsById.get(clip.assetId)} track={track} props={props} scale={scale} />
+                  </ElementWrapper>
                 )}
               </Sequence>
             );

@@ -47,10 +47,13 @@ export interface InsertClipInput {
   placement?: 'ripple' | 'free' | 'overlap';
 }
 
-export type ClipPatch = Partial<Omit<MediaClip, 'id' | 'kind' | 'assetId' | 'volumeKeyframes' | 'reframe'>> &
+export type ClipPatch = Partial<Omit<MediaClip, 'id' | 'kind' | 'assetId' | 'volumeKeyframes' | 'reframe' | 'transform' | 'animateIn' | 'animateOut'>> &
   Partial<Pick<ComponentClip, 'props'>> & {
     volumeKeyframes?: MediaClip['volumeKeyframes'] | null;
     reframe?: MediaClip['reframe'] | null;
+    transform?: MediaClip['transform'] | null;
+    animateIn?: MediaClip['animateIn'] | null;
+    animateOut?: MediaClip['animateOut'] | null;
   };
 
 const TRACK_PREFIX: Record<TrackKind, string> = { video: 'V', audio: 'A', overlay: 'FX' };
