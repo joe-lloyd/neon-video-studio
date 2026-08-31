@@ -23,13 +23,13 @@ jobs:
           - os: macos-14
             label: macos-arm64
             archive: zip
-          - os: macos-13
+          - os: macos-15-intel
             label: macos-x64
             archive: zip
           - os: windows-latest
             label: windows-x64
             archive: zip
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04   # Cottontail's linux binary needs glibc ≥ 2.38
             label: linux-x64
             archive: tar
     steps:
@@ -63,7 +63,9 @@ jobs:
           OUT=$(ls -d build/stable-* | head -1)
           NAME="neon-video-studio-${GITHUB_REF_NAME//\//-}-${{ matrix.label }}"
           mkdir -p ../../release
-          if [ "${{ matrix.archive }}" = "zip" ]; then
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            (cd "$OUT" && 7z a -bso0 "../../../../release/${NAME}.zip" .)   # windows runners ship 7z, not zip
+          elif [ "${{ matrix.archive }}" = "zip" ]; then
             (cd "$OUT" && zip -qry "../../../../release/${NAME}.zip" .)
           else
             tar -C "$OUT" -czf "../../release/${NAME}.tar.gz" .
@@ -77,7 +79,8 @@ jobs:
 
   publish:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    # Publish whatever platforms succeeded — one broken platform must never block the release.
+    if: always() && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -90,8 +93,27 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
+          files=(release/*)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::No platform build produced an artifact — not creating a release."
+            exit 1
+          fi
           ls -la release
-          gh release create "$GITHUB_REF_NAME" release/* \
+          {
+            echo "## Install"
+            echo
+            echo "**macOS** (unsigned build — the script clears Gatekeeper quarantine and ad-hoc signs):"
+            echo
+            echo '```bash'
+            echo "curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/scripts/install-mac.sh | bash"
+            echo '```'
+            echo
+            echo "**Windows / Linux:** download the archive below and unpack; run the launcher inside."
+            echo
+            echo "## Artifacts in this release"
+            for f in "${files[@]}"; do echo "- \`$(basename "$f")\`"; done
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" "${files[@]}" \
             --title "Neon Video Studio $GITHUB_REF_NAME" \
-            --generate-notes \
-            --notes "macOS builds are unsigned: install with \`curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/scripts/install-mac.sh | bash\`"
+            --notes-file notes.md

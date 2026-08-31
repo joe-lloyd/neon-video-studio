@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { defineConfig, type Alias } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -12,7 +13,8 @@ const devkit = resolve(__dirname, '.hutch/devkit');
  */
 async function electrobunAlias(): Promise<Alias[]> {
   if (existsSync(resolve(devkit, 'package.json'))) {
-    const mod = (await import(resolve(devkit, 'api/config/electrobun-vite.ts'))) as {
+    // Windows ESM loader requires file:// URLs for absolute-path dynamic imports.
+    const mod = (await import(pathToFileURL(resolve(devkit, 'api/config/electrobun-vite.ts')).href)) as {
       electrobunViteAliases: (root: string) => Alias[];
     };
     return mod.electrobunViteAliases(devkit);

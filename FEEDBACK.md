@@ -2,6 +2,13 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-08-30 · round 5
+
+- ◐ **Canvas editing for FX & images** — drag elements on the preview, scale with handles, light snapping (canvas center, margins, other elements), works for FX components and images.
+- ◐ **Animate in/out for all elements** — per-clip enter/exit animation (fade, slide, pop) with duration.
+- ◐ **Bug: microphone** — `navigator.mediaDevices` is undefined in the WKWebView (views:// isn't a secure context). Fix: record in the main process via ffmpeg/avfoundation; renderer keeps MediaRecorder for browser mode.
+- ◐ **Bug: transcript says whisper not installed** — engine detection is cached from app start; re-detect before failing and report exactly what's missing.
+
 ## 2026-08-30 · round 4
 
 - ☑ **Whisper install UX** — when speech recognition is missing, offer one-click "Install automatically" (runs the brew + model download as a visible AI job) and a copy-able command. → AI panel button + `neon-cli ai setup`
