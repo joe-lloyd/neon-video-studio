@@ -23,6 +23,7 @@ export function setupCommands(model: keyof typeof WHISPER_MODELS = 'base.en'): s
 export interface SetupOptions {
   whisper: boolean;
   rnnoise: boolean;
+  ytdlp?: boolean;
   model: keyof typeof WHISPER_MODELS;
   onProgress?: (p: number, message: string) => void;
   onLog?: (line: string) => void;
@@ -53,6 +54,18 @@ export async function runSetup(opts: SetupOptions): Promise<{ installed: string[
       opts.onProgress?.(0.5, `Downloading Whisper model ${opts.model} (~${WHISPER_MODELS[opts.model]!.sizeMb} MB)…`);
       await runOrThrow(curl, ['-fL', '--retry', '3', '-o', target, WHISPER_MODELS[opts.model]!.url], { onStderr: opts.onLog });
       installed.push(`ggml-${opts.model}.bin`);
+    }
+  }
+  if (opts.ytdlp) {
+    if (await which('yt-dlp')) skipped.push('yt-dlp (already installed)');
+    else {
+      const brew = await which('brew');
+      if (brew) {
+        opts.onProgress?.(0.75, 'brew install yt-dlp…');
+        const r = await run(brew, ['install', 'yt-dlp'], { onStderr: opts.onLog, onStdout: opts.onLog });
+        if (r.code === 0) installed.push('yt-dlp');
+        else opts.onLog?.(`yt-dlp install failed: ${r.stderr.slice(-150)}`);
+      } else opts.onLog?.('Homebrew missing — install yt-dlp manually: brew install yt-dlp');
     }
   }
   if (opts.rnnoise) {

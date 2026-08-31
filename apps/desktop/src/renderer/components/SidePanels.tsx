@@ -117,6 +117,14 @@ const ASSET_ICON: Record<Asset['kind'], LucideIcon> = { video: Film, audio: Musi
 function AssetsPanel() {
   const editor = useEditor();
   const { project } = useStoreValue(editor.project);
+  const [ripUrl, setRipUrl] = useState('');
+  const ripping = useSelector(editor.ui, (u) => u.aiJobs.some((j) => j.op === 'rip' && (j.status === 'running' || j.status === 'queued')));
+  const startRip = () => {
+    const url = ripUrl.trim();
+    if (!/^https?:\/\//.test(url)) return editor.toast('error', 'Paste a full video URL (https://…)');
+    void editor.runAi('rip', { url, quality: '1080' });
+    setRipUrl('');
+  };
   return (
     <>
       <div className="panel-header">
@@ -125,6 +133,20 @@ function AssetsPanel() {
           <NeonIcon icon={Upload} size={13} tone="cyan" /> Import
         </button>
       </div>
+      <div className="row" style={{ padding: '8px 10px 0', gap: 6 }}>
+        <input
+          className="input mono"
+          placeholder="Paste a YouTube / video URL to rip…"
+          value={ripUrl}
+          onChange={(e) => setRipUrl(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && startRip()}
+          disabled={ripping}
+        />
+        <button className="btn sm magenta" disabled={ripping || !ripUrl.trim()} onClick={startRip} title="Download with yt-dlp into the media library">
+          {ripping ? '…' : 'Rip'}
+        </button>
+      </div>
+      {ripping ? <p className="hint" style={{ padding: '4px 12px 0' }}>Downloading — progress in the AI tab / Live feed.</p> : null}
       <div className="panel-body">
         {project.assets.length === 0 ? (
           <div className="empty">

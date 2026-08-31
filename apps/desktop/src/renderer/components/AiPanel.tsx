@@ -49,6 +49,7 @@ export function AiPanel() {
             <span className={`pill ${caps.vision.available ? 'green' : 'red'}`} title="Apple Vision helper">vision</span>
             <span className={`pill ${caps.rnnoise.available ? 'green' : ''}`} title="RNNoise model for ffmpeg arnndn">rnnoise</span>
             <span className={`pill ${caps.deepfilter.available ? 'green' : ''}`} title="DeepFilterNet binary">deepfilter</span>
+            <span className={`pill ${caps.ytdlp.available ? 'green' : ''}`} title="yt-dlp for ripping web videos">yt-dlp</span>
             <span className={`pill ${caps.claude.available ? 'cyan' : ''}`} title="ANTHROPIC_API_KEY for B-roll concept matching">claude</span>
           </div>
         ) : (

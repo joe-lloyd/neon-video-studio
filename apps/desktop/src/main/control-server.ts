@@ -27,6 +27,7 @@ import {
   AiDenoiseRequestSchema,
   AiEnhanceRequestSchema,
   AiSetupRequestSchema,
+  AiRipRequestSchema,
   DetachAudioRequestSchema,
   AiMatteRequestSchema,
   AiReframeRequestSchema,
@@ -337,7 +338,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     return t;
   }
   if (key === `POST ${API_ROUTES.aiTranscript}/cut`) return ctx.ai.start('transcript-cut', TranscriptCutRequestSchema.parse(body));
-  const aiOp = /^POST \/api\/ai\/(transcribe|fillers|silence|breaths|denoise|enhance|matte|reframe|broll|clean|setup)$/.exec(key);
+  const aiOp = /^POST \/api\/ai\/(transcribe|fillers|silence|breaths|denoise|enhance|matte|reframe|broll|clean|setup|rip)$/.exec(key);
   if (aiOp) {
     const op = aiOp[1] as AiOperation;
     const schemas: Record<string, { parse(v: unknown): unknown }> = {
@@ -348,12 +349,14 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
       denoise: AiDenoiseRequestSchema,
       enhance: AiEnhanceRequestSchema,
       setup: AiSetupRequestSchema,
+      rip: AiRipRequestSchema,
       matte: AiMatteRequestSchema,
       reframe: AiReframeRequestSchema,
       broll: AiBrollRequestSchema,
       clean: AiCleanRequestSchema,
     };
     const parsed = schemas[op]!.parse(body) as Record<string, unknown>;
+    if (op === 'rip' && parsed.at !== undefined) parsed.at = parseTimecode(parsed.at as string | number, fps);
     // Accept clip references by name or prefix like the rest of the CLI.
     if (typeof parsed.clipId === 'string') {
       const clips = doc.toJSON().clips;

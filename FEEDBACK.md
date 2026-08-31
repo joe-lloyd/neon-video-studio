@@ -2,6 +2,11 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-08-31 · round 6
+
+- ☑ **YouTube ripper** — paste a URL in the Media panel (or `neon-cli rip <url> [--quality] [--at T]`): yt-dlp downloads, remuxes to mp4/m4a, imports into the library (optionally straight onto the timeline). `ai setup` installs yt-dlp; progress in the AI jobs / Live feed.
+- ☑ **Self-hosted builder write-up** — concept review with the recommended hybrid (mac builds on your own machine as a self-hosted runner, publish stays on GitHub) incl. the security rules: `concept-reviews/2026-08-31-self-hosted-build-runner.html` on the HTML hub.
+
 ## 2026-08-31 · round 5
 
 - ☑ **FX draggable + scalable on the canvas with snapping** — selected elements (templates, images, video) get a manipulation box in the preview: drag to move, corner handles to scale, light snapping to centre / margins / thirds / other elements (magenta guides, ⌘ disables), double-click resets. Numeric position/scale in the inspector, `--pos`/`--scale` in the CLI.

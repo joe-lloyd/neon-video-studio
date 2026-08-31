@@ -24,6 +24,7 @@ import {
   DEFAULT_FILLERS,
   SETUP_HINTS,
   enhanceVoice,
+  ripUrl,
   runSetup,
   analyseBreaths,
   analyseSilences,
@@ -275,6 +276,8 @@ export class AiManager {
         return this.opEnhance(job, params);
       case 'setup':
         return this.opSetup(job, params);
+      case 'rip':
+        return this.opRip(job, params);
       case 'matte':
         return this.opMatte(job, params);
       case 'reframe':
@@ -416,6 +419,35 @@ export class AiManager {
     this.tools = null; // re-detect
     const caps = await this.capabilities(true);
     return { ...result, whisperReady: caps.whisper.available, rnnoiseReady: caps.rnnoise.available };
+  }
+
+  private async opRip(job: AiJob, params: Params) {
+    const paths = await this.paths();
+    if (!paths.ytdlp) {
+      this.tools = null;
+      if (!(await this.paths()).ytdlp) throw new Error(`yt-dlp is not installed. ${SETUP_HINTS.ytdlp} (or use “Install automatically” / neon-cli ai setup)`);
+    }
+    const url = String(params.url ?? '');
+    const dir = await mkdtemp(join(tmpdir(), 'neon-rip-'));
+    try {
+      this.progress(job, 0.02, `Downloading ${url}…`);
+      const result = await ripUrl(url, {
+        ytdlp: (await this.paths()).ytdlp!,
+        ffmpeg: paths.ffmpeg,
+        quality: String(params.quality ?? '1080'),
+        outDir: dir,
+        onProgress: (p) => this.progress(job, 0.02 + p * 0.9, `Downloading… ${Math.round(p * 100)}%`),
+        onLog: (line) => this.log(job, line),
+      });
+      this.progress(job, 0.95, 'Importing into the project');
+      const imported = await this.ctx.assets.import(result.file, {
+        insertAt: params.at !== undefined ? Number(params.at) : undefined,
+        origin: ORIGIN_API,
+      });
+      return { assetId: imported.asset.id, name: imported.asset.name, title: result.title, deduplicated: imported.deduplicated, clipId: imported.clip?.id, startFrame: imported.clip?.startFrame };
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 
   private async opMatte(job: AiJob, params: Params) {
@@ -585,6 +617,8 @@ function summarize(op: AiOperation, result: unknown): string {
       return `Denoised with ${String(r.engine)} → new asset ${String(r.newAssetId).slice(0, 8)}…`;
     case 'enhance':
       return `Voice enhanced to ${String(r.lufs)} LUFS → new asset ${String(r.newAssetId).slice(0, 8)}…`;
+    case 'rip':
+      return `Ripped “${String(r.title ?? r.name)}” → asset ${String(r.assetId).slice(0, 8)}…${r.clipId ? ` (placed at frame ${String(r.startFrame)})` : ''}`;
     case 'setup':
       return `Engines installed: ${((r.installed as string[]) ?? []).join(', ') || 'nothing new'}${((r.skipped as string[]) ?? []).length ? ` (already had ${(r.skipped as string[]).length})` : ''}`;
     case 'matte':

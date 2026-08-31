@@ -49,6 +49,7 @@ COMMANDS
   timeline detach <clip>                  Split a video clip's audio onto an audio track (video muted)
   timeline update <clip> --pos 0.5,0.3 --scale 0.6 --in pop:12 --out fade:10   Canvas placement + enter/exit animation
   record start | record stop [--at T]     Record a mic voice-over in the app (take lands on the VO track)
+  rip <url> [--quality 1080|720|best|audio] [--at T]   Download a YouTube/web video into the media library (yt-dlp)
 
 AI (local engines: whisper.cpp, ffmpeg, Apple Vision; Claude optional for B-roll)
   ai status                               Which engines are available + how to install the missing ones
@@ -503,6 +504,14 @@ async function main(): Promise<void> {
       return;
     }
 
+    case 'rip': {
+      if (!sub) throw new ApiError('USAGE', 'rip <url> [--quality 1080|720|best|audio] [--at T]');
+      const job = await api.aiRun('rip', { url: sub, quality: flags.quality && ['360','480','720','1080','1440','2160','best','audio'].includes(flags.quality) ? flags.quality : flags.quality === undefined ? undefined : (() => { throw new ApiError('USAGE', '--quality 360|480|720|1080|1440|2160|best|audio'); })(), at: flags.at });
+      const done = flags.wait ? await waitForAi(api, job) : job;
+      out(done, () => (done.status === 'done' ? (done.result as { title: string; assetId: string; clipId?: string; startFrame?: number; deduplicated: boolean }).deduplicated ? `Already in the library: ${(done.result as { name: string }).name}` : `Ripped “${(done.result as { title: string }).title}” → ${(done.result as { name: string }).name}${(done.result as { clipId?: string }).clipId ? ` (placed at frame ${(done.result as { startFrame?: number }).startFrame})` : ''}` : `${done.op} ${done.status} (${done.id})`));
+      return;
+    }
+
     case 'record': {
       if (sub === 'start') {
         const r = (await api.call2('POST', '/api/record/start')) as { device: string };
@@ -617,6 +626,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
             row('rnnoise model', s.rnnoise.available, s.rnnoise.model, s.hints.rnnoise),
             row('DeepFilterNet', s.deepfilter.available, s.deepfilter.binary, s.hints.deepfilter),
             row('Apple Vision', s.vision.available, s.vision.binary, s.hints.vision),
+            row('yt-dlp (rip)', s.ytdlp.available, s.ytdlp.binary, s.hints.ytdlp),
             row('ffmpeg', s.ffmpeg.available, 'ffmpeg/ffprobe', 'brew install ffmpeg'),
             row('Claude (B-roll)', s.claude.available, s.claude.model, s.hints.claude),
           ],

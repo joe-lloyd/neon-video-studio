@@ -35,7 +35,7 @@ export interface RenderJob {
   log: string[];
 }
 
-export type AiOperation = 'transcribe' | 'fillers' | 'silence' | 'breaths' | 'denoise' | 'enhance' | 'matte' | 'reframe' | 'broll' | 'clean' | 'transcript-cut' | 'setup';
+export type AiOperation = 'transcribe' | 'fillers' | 'silence' | 'breaths' | 'denoise' | 'enhance' | 'matte' | 'reframe' | 'broll' | 'clean' | 'transcript-cut' | 'setup' | 'rip';
 export type AiJobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface AiJob {
@@ -60,6 +60,7 @@ export interface AiCapabilities {
   rnnoise: { available: boolean; model?: string };
   deepfilter: { available: boolean; binary?: string };
   vision: { available: boolean; binary?: string };
+  ytdlp: { available: boolean; binary?: string };
   ffmpeg: { available: boolean };
   claude: { available: boolean; model?: string };
 }

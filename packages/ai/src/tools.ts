@@ -11,6 +11,7 @@ import { run } from './exec.ts';
 export interface ToolPaths {
   ffmpeg: string;
   ffprobe: string;
+  ytdlp?: string;
   whisper?: string;
   whisperModel?: string;
   rnnoiseModel?: string;
@@ -81,14 +82,16 @@ export async function detectTools(opts: { compileVision?: boolean } = {}): Promi
     /* ignore */
   }
   const deepFilter = await which('deep-filter');
+  const ytdlp = await which('yt-dlp');
   const vision = opts.compileVision === false ? ((await exists(join(toolsDir(), 'neon-vision'))) ? join(toolsDir(), 'neon-vision') : undefined) : await ensureVisionTool();
   const claudeKey = Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) || (await exists(join(homedir(), '.config', 'anthropic')));
-  const paths: ToolPaths = { ffmpeg, ffprobe, whisper, whisperModel, rnnoiseModel, deepFilter, vision };
+  const paths: ToolPaths = { ffmpeg, ffprobe, ytdlp, whisper, whisperModel, rnnoiseModel, deepFilter, vision };
   const capabilities: AiCapabilities = {
     whisper: { available: Boolean(whisper && whisperModel), binary: whisper, model: whisperModel },
     rnnoise: { available: Boolean(rnnoiseModel), model: rnnoiseModel },
     deepfilter: { available: Boolean(deepFilter), binary: deepFilter },
     vision: { available: Boolean(vision), binary: vision },
+    ytdlp: { available: Boolean(ytdlp), binary: ytdlp },
     ffmpeg: { available: await exists(ffmpeg, constants.X_OK) },
     claude: { available: claudeKey, model: claudeKey ? 'claude-opus-5' : undefined },
   };
@@ -100,5 +103,6 @@ export const SETUP_HINTS = {
   rnnoise: 'curl -L -o ~/.neon-video/models/std.rnnn https://raw.githubusercontent.com/GregorR/rnnoise-models/master/somnolent-hogwash-2018-09-01/sh.rnnn',
   deepfilter: 'optional: install DeepFilterNet (deep-filter) from https://github.com/Rikorose/DeepFilterNet/releases',
   vision: 'macOS only: xcode-select --install (the helper compiles itself on first use)',
+  ytdlp: 'brew install yt-dlp',
   claude: 'optional: export ANTHROPIC_API_KEY=… (or `ant auth login`) to let Claude pick B-roll concepts',
 };

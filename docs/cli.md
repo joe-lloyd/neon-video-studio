@@ -68,6 +68,17 @@ curl -X POST "http://127.0.0.1:$PORT/api/assets/upload?name=take.m4a&at=120&trac
      -H "Authorization: Bearer $TOKEN" --data-binary @take.m4a
 ```
 
+## Ripping media from the web
+
+```bash
+neon-cli rip "https://www.youtube.com/watch?v=…" [--quality 1080|720|best|audio] [--at T]
+```
+
+Downloads via yt-dlp (`ai setup` installs it), remuxes to mp4/m4a, imports into the media library
+(content-addressed like any import) and optionally places it on the timeline at `--at`. Then slice
+away: `timeline split/cut/trim`, `ai transcribe`, etc. Respect the source platform's terms and
+copyright — intended for your own/licensed/CC content.
+
 ## AI (local engines)
 
 ```bash

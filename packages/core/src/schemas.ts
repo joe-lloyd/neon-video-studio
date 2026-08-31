@@ -336,6 +336,15 @@ export const AiSetupRequestSchema = z.object({
   /** Which engines to install. */
   whisper: z.boolean().default(true),
   rnnoise: z.boolean().default(true),
+  ytdlp: z.boolean().default(true),
   model: z.enum(['tiny.en', 'base.en', 'small.en']).default('base.en'),
 });
 export const DetachAudioRequestSchema = z.object({ id: z.string().min(1) });
+
+export const AiRipRequestSchema = z.object({
+  url: z.string().url(),
+  /** Max height, 'best', or 'audio' for audio-only. */
+  quality: z.enum(['360', '480', '720', '1080', '1440', '2160', 'best', 'audio']).default('1080'),
+  /** Also place the ripped media on the timeline at this time. */
+  at: TimeExpr.optional(),
+});

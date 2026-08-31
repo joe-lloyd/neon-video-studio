@@ -134,3 +134,12 @@ test('enhance filter chain', () => {
   assert.ok(!g.includes('arnndn') && !g.includes('afftdn'));
   assert.ok(setupCommands('base.en')[0] === 'brew install whisper-cpp');
 });
+
+
+import { ripFormatArgs } from '../src/rip.ts';
+
+test('rip format args', () => {
+  assert.deepEqual(ripFormatArgs('audio').slice(0, 4), ['-f', 'ba/b', '-x', '--audio-format']);
+  assert.ok(ripFormatArgs('720').join(' ').includes('res:720,ext:mp4:m4a'));
+  assert.ok(ripFormatArgs('best').join(' ').includes('res,ext:mp4:m4a'));
+});
