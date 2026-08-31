@@ -1,6 +1,6 @@
 {
   "name": "neon-video-editor",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Neon Video Studio — Electrobun + Remotion desktop video editor with P2P (Yjs) sync and an agent-friendly CLI",
   "license": "UNLICENSED",
