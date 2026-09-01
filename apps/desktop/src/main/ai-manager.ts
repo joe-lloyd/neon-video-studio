@@ -7,6 +7,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, extname, join } from 'node:path';
+import { resetProbeCache } from './assets.ts';
 import {
   ORIGIN_API,
   mergeRanges,
@@ -24,6 +25,7 @@ import {
   DEFAULT_FILLERS,
   SETUP_HINTS,
   enhanceVoice,
+  ensureFfmpeg,
   ensureYtdlp,
   ripUrl,
   runSetup,
@@ -409,8 +411,10 @@ export class AiManager {
   }
 
   private async opSetup(job: AiJob, params: Params) {
-    this.progress(job, 0.02, 'Installing speech/denoise engines…');
+    this.progress(job, 0.02, 'Installing engines…');
     const result = await runSetup({
+      ffmpeg: params.ffmpeg !== false,
+      ytdlp: params.ytdlp !== false,
       whisper: params.whisper !== false,
       rnnoise: params.rnnoise !== false,
       model: (params.model as 'tiny.en' | 'base.en' | 'small.en') ?? 'base.en',
@@ -418,8 +422,43 @@ export class AiManager {
       onLog: (line) => this.log(job, line),
     });
     this.tools = null; // re-detect
+    resetProbeCache();
     const caps = await this.capabilities(true);
-    return { ...result, whisperReady: caps.whisper.available, rnnoiseReady: caps.rnnoise.available };
+    return { ...result, whisperReady: caps.whisper.available, rnnoiseReady: caps.rnnoise.available, ffmpegReady: caps.ffmpeg.available, ytdlpReady: caps.ytdlp.available };
+  }
+
+  /**
+   * First-launch provisioning: the app should just work on a fresh machine, so when the core
+   * media engines (ffmpeg/ffprobe, yt-dlp) are missing they are installed quietly as a visible
+   * setup job. Speech (whisper, ~150 MB of models) stays opt-in via the AI panel.
+   */
+  async autoProvision(): Promise<void> {
+    try {
+      const caps = await this.capabilities(true);
+      if (caps.ffmpeg.available && caps.ytdlp.available) return;
+      const missing = [!caps.ffmpeg.available ? 'ffmpeg' : null, !caps.ytdlp.available ? 'yt-dlp' : null].filter(Boolean).join(' + ');
+      this.ctx.rpc?.send.toast({ kind: 'info', message: `Setting up media engines (${missing}) — imports and rips will work in a moment…` });
+      this.ctx.events.activity('ai', 'setup.auto', `Installing missing media engines: ${missing}`);
+      const job = this.start('setup', { whisper: false, rnnoise: false, ffmpeg: true, ytdlp: true });
+      await this.waitForJob(job.id);
+      const after = await this.capabilities(true);
+      if (after.ffmpeg.available && after.ytdlp.available) {
+        this.ctx.rpc?.send.toast({ kind: 'success', message: 'Media engines ready.' });
+      } else {
+        const still = [!after.ffmpeg.available ? `ffmpeg (${SETUP_HINTS.ffmpeg})` : null, !after.ytdlp.available ? `yt-dlp (${SETUP_HINTS.ytdlp})` : null].filter(Boolean).join(' · ');
+        this.ctx.rpc?.send.toast({ kind: 'error', message: `Could not install: ${still}` });
+      }
+    } catch (err) {
+      console.warn('[ai] auto-provision failed', (err as Error).message);
+    }
+  }
+
+  private async waitForJob(id: string): Promise<AiJob | undefined> {
+    for (;;) {
+      const job = this.jobs.get(id);
+      if (!job || job.status === 'done' || job.status === 'failed' || job.status === 'cancelled') return job;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
   }
 
   private async opRip(job: AiJob, params: Params) {
@@ -444,7 +483,21 @@ export class AiManager {
       paths = await this.paths();
     }
     if (!(await this.capabilities()).ffmpeg.available) {
-      throw new Error(`ffmpeg is required to merge and convert rips — ${SETUP_HINTS.ffmpeg}`);
+      // Same self-healing as yt-dlp: rips need ffmpeg to merge/convert, so install it first.
+      this.progress(job, 0.06, 'ffmpeg is missing — installing it first…');
+      const how = await ensureFfmpeg({
+        onProgress: (p, message) => this.progress(job, 0.06 + p * 0.05, message),
+        onLog: (line) => this.log(job, line),
+      }).catch((err) => {
+        this.log(job, String((err as Error).message ?? err));
+        return null;
+      });
+      this.tools = null;
+      resetProbeCache();
+      if (!how || !(await this.capabilities(true)).ffmpeg.available) throw new Error(`Couldn't install ffmpeg automatically — ${SETUP_HINTS.ffmpeg}`);
+      this.log(job, `Installed ffmpeg (${how})`);
+      this.ctx.events.activity('ai', 'setup.ffmpeg', `Installed ffmpeg on demand (${how})`);
+      paths = await this.paths();
     }
     const url = String(params.url ?? '');
     const dir = await mkdtemp(join(tmpdir(), 'neon-rip-'));

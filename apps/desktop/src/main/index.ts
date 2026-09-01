@@ -424,6 +424,8 @@ async function main(): Promise<void> {
   });
 
   ctx.updates.start();
+  // Fresh machine? Install the core media engines (ffmpeg/ffprobe, yt-dlp) so everything just works.
+  setTimeout(() => void ctx.ai.autoProvision(), 3000);
 
   ctx.events.activity('system', 'app.ready', `Neon Video Studio ${VERSION} ready · project “${store.doc.getMeta().name}” · API :${local.port}`);
   console.log(`[main] Neon Video Studio ${VERSION} ready (project: ${store.doc.getMeta().name} @ ${store.dir})`);

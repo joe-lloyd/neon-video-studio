@@ -630,7 +630,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
             row('DeepFilterNet', s.deepfilter.available, s.deepfilter.binary, s.hints.deepfilter),
             row('Apple Vision', s.vision.available, s.vision.binary, s.hints.vision),
             row('yt-dlp (rip)', s.ytdlp.available, s.ytdlp.binary, s.hints.ytdlp),
-            row('ffmpeg', s.ffmpeg.available, 'ffmpeg/ffprobe', 'brew install ffmpeg'),
+            row('ffmpeg', s.ffmpeg.available, 'ffmpeg/ffprobe', s.hints.ffmpeg ?? 'installed automatically by `ai setup`'),
             row('Claude (B-roll)', s.claude.available, s.claude.model, s.hints.claude),
           ],
           ['engine', 'state', 'detail / how to install'],
