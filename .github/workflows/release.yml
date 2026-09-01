@@ -83,7 +83,9 @@ jobs:
           # (v0.6.3's windows pack shipped 435 symlinks and broke every render).
           pnpm --filter @neon/render deploy --legacy --prod --config.node-linker=hoisted "$RUNNER_TEMP/render-runtime"
           mkdir -p release
-          tar -C "$RUNNER_TEMP/render-runtime" --exclude './node_modules/.bin' -czf "release/render-runtime-${{ matrix.label }}.tar.gz" .
+          # .bin dirs are symlink shims (also in NESTED node_modules) — nothing in the render
+          # path executes them, and they are the only links left in a hoisted install.
+          tar -C "$RUNNER_TEMP/render-runtime" --exclude './node_modules/.bin' --exclude '*/node_modules/.bin' -czf "release/render-runtime-${{ matrix.label }}.tar.gz" .
           # The pack must extract everywhere, so it must not contain a single link entry.
           if tar -tvf "release/render-runtime-${{ matrix.label }}.tar.gz" | grep -E '^l' | head -5 | grep -q .; then
             echo "::error::render runtime pack contains symlinks — it would break on Windows"; exit 1

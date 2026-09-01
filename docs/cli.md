@@ -52,7 +52,11 @@ neon-cli timeline cut --from 4s --to 6s [--track REF] [--no-ripple]   # remove a
 neon-cli timeline detach <clip>     # split a video's audio onto an audio track (video muted)
 neon-cli timeline update <clip> --pos 0.8,0.2 --scale 0.4 --rotation 15   # canvas placement (fractions of the frame; rotation in degrees)
 neon-cli timeline update <clip> --in pop:12 --out fade:10     # enter/exit animation (type:frames; 'none' clears)
-neon-cli record start · record stop [--at T]                  # mic voice-over → VO track (macOS mic permission applies)
+neon-cli record start · record stop [--at T]   # mic voice-over → VO track
+    # macOS: grant mic access in System Settings → Privacy & Security → Microphone.
+    # Windows: enable “Microphone access” AND “Let desktop apps access your microphone” in
+    #   Settings → Privacy & security → Microphone — desktop apps don't appear in the per-app list.
+    # Linux: uses PulseAudio/PipeWire (falls back to ALSA); distro ffmpeg recommended.
 neon-cli tracks add --kind video|audio|overlay [--name N]
 neon-cli tracks update <track> [--mute|--unmute] [--lock|--unlock] [--hide|--show] [--name N]
 neon-cli tracks remove <track>
