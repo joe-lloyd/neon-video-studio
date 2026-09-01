@@ -140,6 +140,6 @@ import { ripFormatArgs } from '../src/rip.ts';
 
 test('rip format args', () => {
   assert.deepEqual(ripFormatArgs('audio').slice(0, 4), ['-f', 'ba/b', '-x', '--audio-format']);
-  assert.ok(ripFormatArgs('720').join(' ').includes('res:720,ext:mp4:m4a'));
-  assert.ok(ripFormatArgs('best').join(' ').includes('res,ext:mp4:m4a'));
+  assert.ok(ripFormatArgs('720').join(' ').includes('res:720,codec:avc:m4a,ext:mp4:m4a'));
+  assert.ok(ripFormatArgs('best').join(' ').includes('res,codec:avc:m4a,ext:mp4:m4a'));
 });

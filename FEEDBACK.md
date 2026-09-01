@@ -2,6 +2,12 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-09-01 · round 7
+
+- ☑ **Raspberry Pi build orchestrator write-up** — "can a Pi run a build queue that calls my mac/windows/ubuntu machines to build the app?" → added §6 to the self-hosted-builder concept review (three shapes: machines as labelled GitHub runners with the Pi as wake-on-LAN kicker; a real CI server like Woodpecker/Forgejo on the Pi; full DIY SSH fan-out with sketch code). The Pi itself builds nothing — it's arm64, all three targets are covered by the machines.
+- ☑ **Bug: ripped YouTube videos could be AV1** — WKWebView can't decode AV1/VP9 (media error code 4 in the preview). Rips now prefer H.264+AAC (`-S codec:avc:m4a`) and auto-convert to H.264 after download when a site only offers AV1/VP9.
+- ☑ **Boba Expressive FX pack committed** — 5 templates (BobaTitle, BobaLowerThird, BobaTag, BobaBlob, BobaMorphLoader), verified in an exported frame.
+
 ## 2026-08-31 · round 6
 
 - ☑ **YouTube ripper** — paste a URL in the Media panel (or `neon-cli rip <url> [--quality] [--at T]`): yt-dlp downloads, remuxes to mp4/m4a, imports into the library (optionally straight onto the timeline). `ai setup` installs yt-dlp; progress in the AI jobs / Live feed.

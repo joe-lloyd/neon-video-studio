@@ -434,6 +434,7 @@ export class AiManager {
       const result = await ripUrl(url, {
         ytdlp: (await this.paths()).ytdlp!,
         ffmpeg: paths.ffmpeg,
+        ffprobe: paths.ffprobe,
         quality: String(params.quality ?? '1080'),
         outDir: dir,
         onProgress: (p) => this.progress(job, 0.02 + p * 0.9, `Downloading… ${Math.round(p * 100)}%`),
