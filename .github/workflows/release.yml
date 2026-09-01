@@ -48,10 +48,12 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
         run: |
           pnpm exec electrobun prepare
           pnpm exec vite build
-          pnpm exec electrobun build --env=stable
+          # hdiutil on macOS runners flakes with 'Resource busy' — one retry clears it.
+          pnpm exec electrobun build --env=stable || { echo "build failed — retrying once"; sleep 10; pnpm exec electrobun build --env=stable; }
       - name: Package artifact
         shell: bash
         working-directory: apps/desktop
@@ -136,6 +138,8 @@ jobs:
             echo "## Artifacts in this release"
             for f in "${files[@]}"; do echo "- \`$(basename "$f")\`"; done
           } > notes.md
+          # Idempotent: a re-run after a flaky platform job must add its assets to the existing release.
           gh release create "$GITHUB_REF_NAME" "${files[@]}" \
             --title "Neon Video Studio $GITHUB_REF_NAME" \
-            --notes-file notes.md
+            --notes-file notes.md \
+          || gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
