@@ -7,6 +7,7 @@ import type { SyncHub } from './sync-hub.ts';
 import type { EventHub } from './events.ts';
 import type { AiManager } from './ai-manager.ts';
 import type { VoiceRecorder } from './recorder.ts';
+import type { UpdateManager } from './updates.ts';
 import type { DesktopRPC } from '../shared/rpc.ts';
 
 /** Minimal shape of the Electrobun RPC object we use from the main side. */
@@ -28,6 +29,7 @@ export interface MainContext {
   events: EventHub;
   ai: AiManager;
   recorder: VoiceRecorder;
+  updates: UpdateManager;
   localPort: number;
   startedAt: number;
   rpc: MainRpc | null;

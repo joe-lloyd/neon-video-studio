@@ -85,7 +85,10 @@ copyright — intended for your own/licensed/CC content.
 
 ```bash
 neon-cli ai status                  # engine availability + copy-able install commands
-neon-cli ai setup [--model tiny.en|base.en|small.en]      # installs whisper.cpp + models automatically
+neon-cli ai setup [--model tiny.en|base.en|small.en]      # installs engines + models automatically
+    # whisper.cpp auto-installs via Homebrew (macOS); Windows/Linux get a copy-able manual command.
+    # yt-dlp installs everywhere: brew / winget when present, otherwise the official static binary
+    # is downloaded to ~/.neon-video/tools.
 
 neon-cli ai transcribe <clip|asset> [--force]             # word-level transcript, cached per asset
 neon-cli ai transcript <clip|asset> [--json]              # print it; fillers marked ⟨so⟩; indexes for `ai cut`

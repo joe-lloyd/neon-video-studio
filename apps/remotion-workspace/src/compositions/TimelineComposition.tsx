@@ -150,7 +150,9 @@ const ElementWrapper: React.FC<{ clip: Clip; scale: number; children: React.Reac
   if (totalScale !== 1) parts.push(`scale(${totalScale.toFixed(4)})`);
   if (t?.rotation) parts.push(`rotate(${t.rotation.toFixed(2)}deg)`);
   if (parts.length) style.transform = parts.join(' ');
-  return <AbsoluteFill style={style}>{children}</AbsoluteFill>;
+  // data-clip-id lets the preview's canvas editor find this wrapper and measure the painted
+  // content bounds for its manipulation box; inert during headless renders.
+  return <AbsoluteFill style={style} data-clip-id={clip.id}>{children}</AbsoluteFill>;
 };
 
 const MissingBox: React.FC<{ label: string }> = ({ label }) => (

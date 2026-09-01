@@ -23,4 +23,11 @@ export default {
     linux: { bundleCEF: false, icon: 'icons/icon.png' },
     win: { bundleCEF: false, icon: 'icons/icon-win.png' },
   },
+  release: {
+    // Auto-update feed: the updater fetches stable-<os>-<arch>-update.json + the .tar.zst bundle
+    // from here. CI uploads apps/desktop/artifacts/* to every GitHub release, and `latest` always
+    // points at the newest one. Patches are off — full-bundle updates only, no cross-release state.
+    baseUrl: 'https://github.com/joe-lloyd/neon-video-studio/releases/latest/download',
+    generatePatch: false,
+  },
 } satisfies ElectrobunConfig;

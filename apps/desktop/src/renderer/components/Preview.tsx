@@ -4,10 +4,12 @@ import { TimelineComposition, type TimelineProps } from '@neon/remotion-workspac
 import { useEditor } from '../lib/context.ts';
 import { CanvasEditor } from './CanvasEditor.tsx';
 import { useElementSize } from '../lib/hooks.ts';
+import { kbdFor } from '../lib/kbd.ts';
 import { useStoreValue } from '../lib/store.ts';
 
 export function Preview() {
   const editor = useEditor();
+  const kbd = kbdFor(editor.bridge.bootstrap.platform);
   const { project, durationFrames, ready } = useStoreValue(editor.project);
   const previewMuted = useStoreValue(editor.ui).previewMuted;
   const { frame, playing } = useStoreValue(editor.playhead);
@@ -122,7 +124,7 @@ export function Preview() {
               <>
                 EMPTY TIMELINE
                 <br />
-                <span style={{ fontSize: 11, letterSpacing: '0.05em', textTransform: 'none' }}>Import media (⌘I), drop a template from the FX tab, or drive it with neon-cli</span>
+                <span style={{ fontSize: 11, letterSpacing: '0.05em', textTransform: 'none' }}>Import media ({kbd.mod('I')}), drop a template from the FX tab, or drive it with neon-cli</span>
               </>
             ) : (
               'SYNCING PROJECT…'

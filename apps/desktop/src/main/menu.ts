@@ -4,7 +4,7 @@ export function installMenu(onAction: (action: string) => void): void {
   ApplicationMenu.setApplicationMenu([
     {
       label: 'Neon Video Studio',
-      submenu: [{ label: 'About Neon Video Studio', action: 'about' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' }, { role: 'quit' }],
+      submenu: [{ label: 'About Neon Video Studio', action: 'about' }, { label: 'Check for Updates…', action: 'help:check-updates' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { type: 'separator' }, { role: 'quit' }],
     },
     {
       label: 'File',

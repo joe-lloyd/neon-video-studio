@@ -52,6 +52,13 @@ curl -fsSL https://raw.githubusercontent.com/joe-lloyd/neon-video-studio/main/sc
 
 or from a local checkout: `pnpm --filter @neon/desktop build:app && scripts/install-mac.sh --local`.
 
+### Auto-update
+
+Installed apps check GitHub Releases on launch (and every few hours). When a new version is out, an
+**⬆ Update** pill appears in the title bar — one click downloads it, installs and restarts. Manual
+check: the Projects overview footer or *Check for Updates…* in the app menu. Dev builds (`pnpm dev`)
+never self-update.
+
 ## Develop
 
 Requirements: Node ≥ 22.18 (24 used), pnpm ≥ 10.16, `ffmpeg`/`ffprobe` on PATH, macOS for the

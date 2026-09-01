@@ -25,6 +25,17 @@ export type RoomState =
 
 export type WindowCommand = 'minimize' | 'maximize' | 'close' | 'toggleFullscreen';
 
+/** Auto-update state, pushed by the main process and mirrored in the UI. */
+export interface UpdateState {
+  phase: 'idle' | 'checking' | 'available' | 'downloading' | 'installing' | 'up-to-date' | 'unsupported' | 'error';
+  currentVersion: string;
+  /** Version offered by the update feed (when phase is available/downloading/installing). */
+  version?: string;
+  /** Download progress 0..1 (downloading only). */
+  progress?: number;
+  error?: string;
+}
+
 export type DesktopRPC = {
   bun: RPCSchema<{
     requests: {
@@ -57,6 +68,8 @@ export type DesktopRPC = {
       voStart: { params: Record<string, never>; response: { device: string } };
       voStop: { params: { startFrame: number }; response: ImportAssetResponse };
       voCancel: { params: Record<string, never>; response: boolean };
+      updateCheck: { params: Record<string, never>; response: UpdateState };
+      updateApply: { params: Record<string, never>; response: UpdateState };
     };
     messages: {
       rendererReady: { ok: true };
@@ -74,6 +87,7 @@ export type DesktopRPC = {
       activity: { entry: ActivityEntry };
       aiUpdate: { job: AiJob };
       previewControl: { action: 'play' | 'pause' | 'toggle' | 'seek'; frame?: number };
+      updateStatus: { state: UpdateState };
       uiControl: { panel?: 'assets' | 'templates' | 'inspector' | 'peers' | 'renders' | 'activity' | 'ai' | 'script'; select?: string[]; dialog?: 'render' | 'room' | 'shortcuts' | 'none' };
     };
   }>;

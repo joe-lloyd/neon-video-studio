@@ -25,7 +25,7 @@ import { registerAllPacks } from '@neon/remotion-workspace/packs';
 
 registerAllPacks();
 import type { Bridge } from './bridge.ts';
-import type { RoomState } from '../../shared/rpc.ts';
+import type { RoomState, UpdateState } from '../../shared/rpc.ts';
 
 export function createStore<T>(initial: T) {
   let state = initial;
@@ -84,6 +84,8 @@ export interface UiState {
   recentProjects: { path: string; name: string; updatedAt: string; current: boolean }[];
   /** Voice-over recording state. */
   recording: { startFrame: number; startedAt: number } | null;
+  /** Auto-update state pushed by the main process. */
+  update: UpdateState;
 }
 
 export interface PlayheadState {
@@ -130,6 +132,7 @@ export class Editor {
     showStart: true,
     recentProjects: [],
     recording: null,
+    update: { phase: 'idle', currentVersion: '' },
   });
   readonly playhead = createStore<PlayheadState>({ frame: 0, playing: false });
   /** Set by the Preview component so the editor can drive the Remotion Player. */
@@ -156,6 +159,7 @@ export class Editor {
         }
       },
       toast: ({ kind, message }) => this.toast(kind, message),
+      updateStatus: ({ state }) => this.ui.set({ update: state }),
       menuAction: ({ action }) => this.handleMenuAction(action),
       activity: ({ entry }) => this.pushActivity(entry),
       aiUpdate: ({ job }) => this.upsertAiJob(job),
@@ -558,6 +562,33 @@ export class Editor {
     const id = Math.random().toString(36).slice(2);
     this.ui.set((u) => ({ toasts: [...u.toasts, { id, kind, message }].slice(-5) }));
     setTimeout(() => this.ui.set((u) => ({ toasts: u.toasts.filter((t) => t.id !== id) })), kind === 'error' ? 7000 : 3500);
+  }
+
+  /** Manual "search for updates": reports the outcome as a toast; the pill appears when one exists. */
+  async checkForUpdates(): Promise<void> {
+    try {
+      const state = await this.bridge.request('updateCheck', {});
+      this.ui.set({ update: state });
+      if (state.phase === 'up-to-date') this.toast('success', `You're on the latest version (${state.currentVersion || this.bridge.bootstrap.version}).`);
+      else if (state.phase === 'available') this.toast('info', `Update ${state.version} is available — click “Update” in the title bar.`);
+      else if (state.phase === 'error' || state.phase === 'unsupported') this.toast('info', `Update check: ${state.error ?? 'unavailable'}`);
+    } catch (err) {
+      this.toast('error', (err as Error).message);
+    }
+  }
+
+  /** Download + install + restart. On success the app restarts, so this usually never resolves. */
+  async applyUpdate(): Promise<void> {
+    try {
+      const state = await this.bridge.request('updateApply', {});
+      this.ui.set({ update: state });
+      if (state.phase === 'error') this.toast('error', `Update failed: ${state.error ?? 'unknown error'}`);
+    } catch (err) {
+      // A download longer than the RPC timeout surfaces here even though the update keeps going —
+      // the pushed updateStatus messages stay authoritative, so only report real failures.
+      const phase = this.ui.get().update.phase;
+      if (phase !== 'downloading' && phase !== 'installing') this.toast('error', (err as Error).message);
+    }
   }
 
   private upsertRender(job: RenderJob): void {

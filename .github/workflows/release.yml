@@ -67,6 +67,10 @@ jobs:
           else
             tar -C "$OUT" -czf "../../release/${NAME}.tar.gz" .
           fi
+          # Auto-update feed (flat stable-<os>-<arch>-update.json + .tar.zst — release.baseUrl points
+          # at releases/latest/download, so every release must carry them) + native installers
+          # (dmg / Setup.exe / AppImage) that electrobun build drops in artifacts/.
+          cp artifacts/* ../../release/ 2>/dev/null || echo "::warning::no update artifacts produced"
           ls -la ../../release
       - uses: actions/upload-artifact@v4
         with:
@@ -106,7 +110,9 @@ jobs:
             echo "curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/scripts/install-mac.sh | bash"
             echo '```'
             echo
-            echo "**Windows / Linux:** download the archive below and unpack; run the launcher inside."
+            echo "**Windows / Linux:** grab the Setup.exe / AppImage below (or the archive: unpack and run the launcher inside)."
+            echo
+            echo "**Auto-update:** apps from v0.6.0 onwards find this release on their own — accept the ⬆ Update pill in the title bar. The \`stable-*-update.json\` / \`.tar.zst\` files below are that update feed; ignore them for manual installs."
             echo
             echo "## Artifacts in this release"
             for f in "${files[@]}"; do echo "- \`$(basename "$f")\`"; done

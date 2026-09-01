@@ -45,7 +45,7 @@ export function AiPanel() {
       <div className="panel-body">
         {caps ? (
           <div className="row" style={{ flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
-            <span className={`pill ${caps.whisper.available ? 'green' : 'red'}`} title={caps.whisper.model ?? 'brew install whisper-cpp'}>whisper</span>
+            <span className={`pill ${caps.whisper.available ? 'green' : 'red'}`} title={caps.whisper.model ?? (caps as unknown as { hints?: Record<string, string> }).hints?.whisper ?? 'speech recognition not installed'}>whisper</span>
             <span className={`pill ${caps.vision.available ? 'green' : 'red'}`} title="Apple Vision helper">vision</span>
             <span className={`pill ${caps.rnnoise.available ? 'green' : ''}`} title="RNNoise model for ffmpeg arnndn">rnnoise</span>
             <span className={`pill ${caps.deepfilter.available ? 'green' : ''}`} title="DeepFilterNet binary">deepfilter</span>
@@ -64,7 +64,8 @@ export function AiPanel() {
               <button
                 className="btn sm ghost"
                 onClick={() => {
-                  const cmd = (caps as unknown as { hints?: Record<string, string> }).hints?.whisper ?? 'brew install whisper-cpp && curl -L -o ~/.neon-video/models/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin';
+                  // The server sends platform-appropriate hints (brew / winget / manual download).
+                  const cmd = (caps as unknown as { hints?: Record<string, string> }).hints?.whisper ?? 'see `neon-cli ai status` for the install command';
                   void navigator.clipboard.writeText(cmd);
                   editor.toast('success', 'Install command copied — paste it into a terminal');
                 }}

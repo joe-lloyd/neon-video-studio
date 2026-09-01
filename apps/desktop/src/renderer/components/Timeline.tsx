@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { CLIP_COLORS, framesToTimecode, snapFrame, sortTracks, trackKindForClip, type Clip, type Track, type TrackKind } from '@neon/core';
 import { Eye, EyeOff, Lock, NeonIcon, Plus, Trash2, Unlock, Volume2, VolumeX } from '@neon/icon-kit';
 import { useEditor } from '../lib/context.ts';
+import { kbdFor } from '../lib/kbd.ts';
 import { useElementSize } from '../lib/hooks.ts';
 import { useSelector, useStoreValue } from '../lib/store.ts';
 
@@ -286,7 +287,7 @@ export function Timeline() {
               <div className="card">
                 <div className="step"><span className="num">1</span><span><b>Import media</b> <button className="btn sm cyan" onClick={() => void editor.importMedia(0)}>Import…</button></span></div>
                 <div className="step"><span className="num">2</span><span>Drop it on <b>V1</b>, add <b>FX</b> templates from the side panel</span></div>
-                <div className="step"><span className="num">3</span><span><b>Render</b> (⌘E) — or drive everything with <span className="mono">neon-cli</span></span></div>
+                <div className="step"><span className="num">3</span><span><b>Render</b> ({kbdFor(editor.bridge.bootstrap.platform).mod('E')}) — or drive everything with <span className="mono">neon-cli</span></span></div>
               </div>
             </div>
           ) : null}
