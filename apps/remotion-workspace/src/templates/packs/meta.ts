@@ -5,7 +5,9 @@
  */
 import { registerTemplatePack } from '@neon/core';
 import { NEON_ESSENTIALS_META, PACK_NAME as NEON_ESSENTIALS } from './neon-essentials/meta.ts';
+import { [removed]_EXPRESSIVE_META, PACK_NAME as [removed]_EXPRESSIVE } from './[removed]-expressive/meta.ts';
 
 export function registerAllPacks(): void {
   registerTemplatePack(NEON_ESSENTIALS, NEON_ESSENTIALS_META);
+  registerTemplatePack([removed]_EXPRESSIVE, [removed]_EXPRESSIVE_META);
 }

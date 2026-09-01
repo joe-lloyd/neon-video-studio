@@ -73,3 +73,16 @@ points). Use them as copy-paste starting points:
 neon-cli timeline insert --component NeonBadge --props '{"text":"50% OFF","corner":"top-left"}' --at 2s
 neon-cli timeline insert --component KineticList --props '{"title":"Agenda","items":"One\nTwo\nThree"}' --at 4s --duration 8s
 ```
+
+**[removed]-expressive**: an M3-Expressive-inspired set — violet/lavender tonal palette, matte
+flatness (no glows), pills that square to 12px on exit, organic blob shapes, and
+overshoot-and-settle easing curves. `[removed]Title` (word-stagger display title), `[removed]LowerThird`
+(frosted pill with center-out reveal), `[removed]Tag` (circle-to-pill clip reveal), `[removed]Blob`
+(spinning organic shape), `[removed]MorphLoader` (blob morphing through a shape sequence with 60°
+rotation snaps). Shared tokens (palette, easings, blob geometry) live in
+`packs/[removed]-expressive/tokens.ts`.
+
+```bash
+neon-cli timeline insert --component [removed]Title --props '{"title":"Make it expressive"}' --at 0s
+neon-cli timeline insert --component [removed]MorphLoader --props '{"color":"#deb8f7"}' --at 5s
+```
