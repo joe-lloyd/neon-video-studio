@@ -1,5 +1,6 @@
 /** Install the local speech/denoise engines (package manager where one exists + direct downloads). */
-import { chmod, mkdir } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run, runOrThrow } from './exec.ts';
 import { modelsDir, setupHints, toolsDir, which } from './tools.ts';
@@ -17,6 +18,68 @@ const YTDLP_DOWNLOADS: Partial<Record<NodeJS.Platform, { url: string; file: stri
   linux: { url: 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux', file: 'yt-dlp' },
   win32: { url: 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe', file: 'yt-dlp.exe' },
 };
+
+/**
+ * Static ffmpeg + ffprobe builds per OS: BtbN GitHub builds (win x64 / linux x64, one archive with
+ * bin/ffmpeg + bin/ffprobe) and Martin Riedl (macOS arm64, one single-binary zip per tool).
+ */
+const FFMPEG_DOWNLOADS: Partial<Record<NodeJS.Platform, { url: string; archive: string }[]>> = {
+  darwin: [
+    { url: 'https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip', archive: 'ffmpeg.zip' },
+    { url: 'https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffprobe.zip', archive: 'ffprobe.zip' },
+  ],
+  linux: [{ url: 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz', archive: 'ffmpeg.tar.xz' }],
+  win32: [{ url: 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip', archive: 'ffmpeg.zip' }],
+};
+
+/** Find files named like the wanted binaries anywhere in an extracted tree. */
+async function findBinaries(dir: string, names: Set<string>, found: Map<string, string>): Promise<void> {
+  for (const entry of await readdir(dir)) {
+    const full = join(dir, entry);
+    const s = await stat(full);
+    if (s.isDirectory()) await findBinaries(full, names, found);
+    else if (names.has(entry) && !found.has(entry)) found.set(entry, full);
+  }
+}
+
+/**
+ * Make sure ffmpeg AND ffprobe are available — the app's core media engines (import probing,
+ * rip merging/conversion, denoise/enhance, voice-over recording). Installs the official static
+ * builds into ~/.neon-video/tools when missing; no package manager needed on any platform.
+ * Returns a short description of how they got there, or null when this platform has no build.
+ */
+export async function ensureFfmpeg(opts: { onProgress?: (p: number, message: string) => void; onLog?: (line: string) => void } = {}): Promise<string | null> {
+  if ((await which('ffmpeg')) && (await which('ffprobe'))) return 'already installed';
+  const downloads = FFMPEG_DOWNLOADS[process.platform];
+  if (!downloads) return null;
+  const wanted = process.platform === 'win32' ? new Set(['ffmpeg.exe', 'ffprobe.exe']) : new Set(['ffmpeg', 'ffprobe']);
+  const curl = (await which('curl')) ?? 'curl';
+  const tar = (await which('tar')) ?? 'tar'; // bsdtar: extracts zip AND tar.xz on mac/win/linux
+  await mkdir(toolsDir(), { recursive: true });
+  const work = await mkdtemp(join(tmpdir(), 'neon-ffmpeg-'));
+  try {
+    const found = new Map<string, string>();
+    for (const [i, dl] of downloads.entries()) {
+      const archive = join(work, dl.archive);
+      opts.onProgress?.(0.1 + i * 0.35, `Downloading ${dl.archive.replace(/\.(zip|tar\.xz)$/, '')} (static build)…`);
+      await runOrThrow(curl, ['-fL', '--retry', '3', '-o', archive, dl.url], { onStderr: opts.onLog });
+      const out = join(work, `x${i}`);
+      await mkdir(out, { recursive: true });
+      await runOrThrow(tar, ['-xf', archive, '-C', out], { onStderr: opts.onLog });
+    }
+    await findBinaries(work, wanted, found);
+    if (found.size !== wanted.size) throw new Error(`archive did not contain ${[...wanted].join(' + ')}`);
+    opts.onProgress?.(0.9, 'Installing ffmpeg + ffprobe…');
+    for (const [name, src] of found) {
+      const target = join(toolsDir(), name);
+      await copyFile(src, target);
+      if (process.platform !== 'win32') await chmod(target, 0o755);
+    }
+    return `→ ${toolsDir()}`;
+  } finally {
+    await rm(work, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
 
 /**
  * Make sure yt-dlp is available: package manager when one exists (brew / winget), otherwise the
@@ -64,6 +127,7 @@ export interface SetupOptions {
   whisper: boolean;
   rnnoise: boolean;
   ytdlp?: boolean;
+  ffmpeg?: boolean;
   model: keyof typeof WHISPER_MODELS;
   onProgress?: (p: number, message: string) => void;
   onLog?: (line: string) => void;
@@ -74,6 +138,16 @@ export async function runSetup(opts: SetupOptions): Promise<{ installed: string[
   const skipped: string[] = [];
   await mkdir(modelsDir(), { recursive: true });
   const curl = (await which('curl')) ?? 'curl';
+
+  if (opts.ffmpeg) {
+    const how = await ensureFfmpeg({ onProgress: (p, m) => opts.onProgress?.(0.02 + p * 0.1, m), onLog: opts.onLog }).catch((err) => {
+      opts.onLog?.(String((err as Error).message ?? err));
+      return null;
+    });
+    if (how === 'already installed') skipped.push('ffmpeg + ffprobe (already installed)');
+    else if (how) installed.push(`ffmpeg + ffprobe (${how})`);
+    else opts.onLog?.(`ffmpeg could not be installed automatically — ${setupHints().ffmpeg}`);
+  }
 
   if (opts.whisper) {
     if (await which('whisper-cli')) {

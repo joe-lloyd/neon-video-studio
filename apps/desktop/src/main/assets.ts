@@ -8,6 +8,7 @@ import { basename, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { ORIGIN_API, type Asset, type Clip, type ImportAssetResponse } from '@neon/core';
 import { mediaTypeForFile, sha256File } from '@neon/core/node';
+import { which } from '@neon/ai';
 import type { ProjectStore } from './project-store.ts';
 
 const execFileAsync = promisify(execFile);
@@ -19,20 +20,31 @@ export interface ProbeResult {
   fps?: number;
 }
 
-let ffprobeChecked: Promise<boolean> | null = null;
+// Resolve ffprobe through which() so a copy installed into ~/.neon-video/tools is found even when
+// it isn't on PATH. Only a FOUND binary is cached — a miss re-checks next time, so an install by
+// `ai setup` / auto-provisioning takes effect without an app restart (or call resetProbeCache()).
+let ffprobeResolved: Promise<string | undefined> | null = null;
+function resolveFfprobe(): Promise<string | undefined> {
+  ffprobeResolved ??= which('ffprobe').then((found) => {
+    if (!found) ffprobeResolved = null;
+    return found;
+  });
+  return ffprobeResolved;
+}
+
+export function resetProbeCache(): void {
+  ffprobeResolved = null;
+}
+
 export function ffprobeAvailable(): Promise<boolean> {
-  if (!ffprobeChecked) {
-    ffprobeChecked = execFileAsync('ffprobe', ['-version'])
-      .then(() => true)
-      .catch(() => false);
-  }
-  return ffprobeChecked;
+  return resolveFfprobe().then(Boolean);
 }
 
 export async function probeMedia(path: string): Promise<ProbeResult> {
-  if (!(await ffprobeAvailable())) return {};
+  const ffprobe = await resolveFfprobe();
+  if (!ffprobe) return {};
   try {
-    const { stdout } = await execFileAsync('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', path], {
+    const { stdout } = await execFileAsync(ffprobe, ['-v', 'error', '-print_format', 'json', '-show_streams', '-show_format', path], {
       maxBuffer: 4 * 1024 * 1024,
     });
     const data = JSON.parse(stdout) as {

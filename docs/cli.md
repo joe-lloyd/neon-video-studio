@@ -83,14 +83,30 @@ the file is automatically converted to H.264 after download. Then slice away:
 `timeline split/cut/trim`, `ai transcribe`, etc. Respect the source platform's terms and
 copyright — intended for your own/licensed/CC content.
 
+## External engines
+
+Everything the app shells out to, in one checkable list (`neon-cli ai status` / the pills in the
+AI panel). **Core engines install themselves**: on every launch the app checks ffmpeg + yt-dlp and
+installs whatever is missing into `~/.neon-video/tools` (visible as a setup job + toast), so a
+fresh machine works without any manual steps. The rest is opt-in.
+
+| Engine | Used for | macOS | Windows | Linux |
+|---|---|---|---|---|
+| ffmpeg + ffprobe | import probing, rips, denoise/enhance, VO recording | auto (static build) | auto (static build) | auto (static build) |
+| yt-dlp | ripping web video | auto (brew → static) | auto (winget → static) | auto (static) |
+| whisper.cpp + model | transcripts, fillers, text editing | `ai setup` (brew) | manual (hint shown) | manual (hint shown) |
+| RNNoise model | denoise | `ai setup` (download) | `ai setup` (download) | `ai setup` (download) |
+| DeepFilterNet | optional better denoise | manual | manual | manual |
+| Apple Vision helper | person matting, reframe | compiles itself | — | — |
+| Claude API key | B-roll concepts | optional env var | optional env var | optional env var |
+
 ## AI (local engines)
 
 ```bash
 neon-cli ai status                  # engine availability + copy-able install commands
 neon-cli ai setup [--model tiny.en|base.en|small.en]      # installs engines + models automatically
+    # also re-installs the core engines (ffmpeg, yt-dlp) if anything is missing.
     # whisper.cpp auto-installs via Homebrew (macOS); Windows/Linux get a copy-able manual command.
-    # yt-dlp installs everywhere: brew / winget when present, otherwise the official static binary
-    # is downloaded to ~/.neon-video/tools.
 
 neon-cli ai transcribe <clip|asset> [--force]             # word-level transcript, cached per asset
 neon-cli ai transcript <clip|asset> [--json]              # print it; fillers marked ⟨so⟩; indexes for `ai cut`

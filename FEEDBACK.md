@@ -2,6 +2,10 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-09-01 · round 11
+
+- ☑ **"Now it says ffmpeg is missing — bundle the libraries so it just works"** — the core media engines (ffmpeg + ffprobe, yt-dlp) now provision themselves: on every app launch a check runs and anything missing is installed automatically (official static builds into `~/.neon-video/tools` — no package manager, no admin, all three OSes), with a toast + visible setup job. Rips also self-heal ffmpeg on demand. Every engine is checkable in one list (`ai status` / AI-panel pills, ffmpeg pill added) and documented in a table in docs/cli.md. Chose first-launch download over baking ffmpeg into the app bundle: same "just works" result, but updates stay ~25 MB instead of +120 MB per release, and the engines survive app updates. Also fixed: asset import probing used bare `ffprobe` from PATH and cached a *negative* result for the whole session — it now resolves through the tools dir and re-checks after installs.
+
 ## 2026-09-01 · round 10
 
 - ☑ **Rip installs yt-dlp by itself** — "when the popup says we don't have the thing to rip, just install it": the rip job now self-heals. If yt-dlp is missing it installs it as the job's first step (brew/winget when available, otherwise the official static binary into `~/.neon-video/tools`) and then downloads the video — no error popup, no manual step. The install shows as job progress and in the Live feed. A missing ffmpeg now fails with the exact platform install command instead of a cryptic yt-dlp merge error.

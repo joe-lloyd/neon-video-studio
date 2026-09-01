@@ -45,6 +45,7 @@ export function AiPanel() {
       <div className="panel-body">
         {caps ? (
           <div className="row" style={{ flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
+            <span className={`pill ${caps.ffmpeg.available ? 'green' : 'red'}`} title={caps.ffmpeg.available ? 'ffmpeg + ffprobe' : 'ffmpeg missing — installed automatically on launch/first use, or run `neon-cli ai setup`'}>ffmpeg</span>
             <span className={`pill ${caps.whisper.available ? 'green' : 'red'}`} title={caps.whisper.model ?? (caps as unknown as { hints?: Record<string, string> }).hints?.whisper ?? 'speech recognition not installed'}>whisper</span>
             <span className={`pill ${caps.vision.available ? 'green' : 'red'}`} title="Apple Vision helper">vision</span>
             <span className={`pill ${caps.rnnoise.available ? 'green' : ''}`} title="RNNoise model for ffmpeg arnndn">rnnoise</span>
