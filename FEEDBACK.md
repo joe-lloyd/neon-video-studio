@@ -2,6 +2,10 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-09-01 · round 13
+
+- ☑ **Bug: "Downloaded render runtime is incomplete" on Windows** — the v0.6.3 runtime pack contained 435 symlinks (pnpm's `.pnpm` node_modules layout); Windows can't create symlinks from tar without admin rights, so `node_modules/@neon/*` came out broken. Packs are now built with `node-linker=hoisted` (real directories, zero links — CI fails the build if a single link entry sneaks into the archive), and the downloader validates per source and falls back from the exact-version pack to `latest`, so a once-broken release heals itself after the next good one.
+
 ## 2026-09-01 · round 12
 
 - ☑ **Render failed on installed apps: "Cannot locate the neon-video-editor repository root"** — exporting used to require the source repo (render worker + Remotion toolchain + composition sources). CI now publishes a self-contained **render runtime** per OS (`pnpm deploy` of @neon/render → `render-runtime-<platform>.tar.gz` on every release); installed apps download it automatically on the first render into `~/.neon-video/render-runtime/v<version>` and render from it. Override via `renderRuntimeDir` in settings.json or `NEON_RENDER_RUNTIME_DIR`; dev checkouts keep using the repo. The Remotion headless-browser cache is shared across runtime versions (symlink → `~/.neon-video/remotion-bin`), and the worker now runs with its cwd pinned to the runtime so packaged apps (cwd = /) can't trip Remotion's cwd-relative paths.

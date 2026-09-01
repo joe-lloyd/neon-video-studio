@@ -78,9 +78,16 @@ jobs:
           set -euo pipefail
           # Self-contained render runtime (worker + compositions + Remotion toolchain incl. the
           # platform compositor). Installed apps download this on their first render.
-          pnpm --filter @neon/render deploy --legacy --prod "$RUNNER_TEMP/render-runtime"
+          # node-linker=hoisted: a plain npm-style node_modules with REAL directories — pnpm's
+          # default .pnpm layout is symlinks, which Windows cannot extract without admin rights
+          # (v0.6.3's windows pack shipped 435 symlinks and broke every render).
+          pnpm --filter @neon/render deploy --legacy --prod --config.node-linker=hoisted "$RUNNER_TEMP/render-runtime"
           mkdir -p release
-          tar -C "$RUNNER_TEMP/render-runtime" -czf "release/render-runtime-${{ matrix.label }}.tar.gz" .
+          tar -C "$RUNNER_TEMP/render-runtime" --exclude './node_modules/.bin' -czf "release/render-runtime-${{ matrix.label }}.tar.gz" .
+          # The pack must extract everywhere, so it must not contain a single link entry.
+          if tar -tvf "release/render-runtime-${{ matrix.label }}.tar.gz" | grep -E '^l' | head -5 | grep -q .; then
+            echo "::error::render runtime pack contains symlinks — it would break on Windows"; exit 1
+          fi
           ls -la release
       - uses: actions/upload-artifact@v4
         with:

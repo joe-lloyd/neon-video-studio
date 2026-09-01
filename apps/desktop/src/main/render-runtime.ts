@@ -100,30 +100,35 @@ async function downloadRuntime(dir: string, version: string, onLog: (line: strin
   const asset = `render-runtime-${label}.tar.gz`;
   const curl = (await which('curl')) ?? 'curl';
   const tar = (await which('tar')) ?? 'tar';
-  const partial = `${dir}.partial`;
-  await rm(partial, { recursive: true, force: true }).catch(() => undefined);
-  await mkdir(partial, { recursive: true });
-  const archive = join(partial, asset);
   const { runOrThrow } = await import('@neon/ai');
-  // Exact version first (app and runtime must match), then latest as a best-effort fallback.
+  // Exact version first (app and runtime must match), then latest — which also rescues a
+  // release whose runtime pack turned out broken once a fixed one is published.
   const urls = [`${RELEASE_BASE}/download/v${version}/${asset}`, `${RELEASE_BASE}/latest/download/${asset}`];
-  let fetched = false;
+  let lastError = 'no download attempted';
   for (const url of urls) {
+    const partial = `${dir}.partial`;
+    await rm(partial, { recursive: true, force: true }).catch(() => undefined);
+    await mkdir(partial, { recursive: true });
+    const archive = join(partial, asset);
     onLog(`Downloading render runtime (~150 MB, one time): ${url}`);
     try {
       await runOrThrow(curl, ['-fL', '--retry', '3', '-o', archive, url], {});
-      fetched = true;
-      break;
+      onLog('Extracting render runtime…');
+      await runOrThrow(tar, ['-xzf', archive, '-C', partial], {});
+      await rm(archive, { force: true });
+      if (!isRenderRuntime(partial)) {
+        const p = runtimePaths(partial);
+        throw new Error(`extracted runtime is incomplete (missing ${existsSync(p.workerPath) ? p.entryPoint : p.workerPath})`);
+      }
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+      await rename(partial, dir);
+      onLog(`Render runtime ready at ${dir}`);
+      return;
     } catch (err) {
-      onLog(`Download failed: ${(err as Error).message}`);
+      lastError = (err as Error).message;
+      onLog(`Render runtime from ${url} failed: ${lastError}`);
+      await rm(partial, { recursive: true, force: true }).catch(() => undefined);
     }
   }
-  if (!fetched) throw new Error(`Could not download the render runtime (${asset}) — check your connection, or set renderRuntimeDir in ${join(neonHome(), 'settings.json')} / NEON_RENDER_RUNTIME_DIR`);
-  onLog('Extracting render runtime…');
-  await runOrThrow(tar, ['-xzf', archive, '-C', partial], {});
-  await rm(archive, { force: true });
-  if (!isRenderRuntime(partial)) throw new Error('Downloaded render runtime is incomplete — please retry');
-  await rm(dir, { recursive: true, force: true }).catch(() => undefined);
-  await rename(partial, dir);
-  onLog(`Render runtime ready at ${dir}`);
+  throw new Error(`Could not set up the render runtime (${asset}): ${lastError} — check your connection, or set renderRuntimeDir in ${join(neonHome(), 'settings.json')} / NEON_RENDER_RUNTIME_DIR`);
 }
