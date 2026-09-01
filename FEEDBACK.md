@@ -2,6 +2,11 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-09-01 · round 14
+
+- ☑ **Voice-over didn't work on Windows ("can't enable my microphone / app not in the list")** — recording was macOS-only (ffmpeg avfoundation). The recorder now picks the right capture backend per OS: avfoundation (macOS), DirectShow (Windows, first device named like a microphone), PulseAudio→ALSA (Linux). Error messages explain the real permission model — on Windows, desktop apps never appear in the per-app microphone list; only the global "Microphone access" + "Let desktop apps access your microphone" toggles apply.
+- ☑ **v0.6.4 shipped without Linux builds** — the new symlink guard (correctly) rejected the Linux runtime pack: hoisted installs still symlink `.bin` in *nested* node_modules. The tar now excludes `.bin` at every level; guard stays.
+
 ## 2026-09-01 · round 13
 
 - ☑ **Bug: "Downloaded render runtime is incomplete" on Windows** — the v0.6.3 runtime pack contained 435 symlinks (pnpm's `.pnpm` node_modules layout); Windows can't create symlinks from tar without admin rights, so `node_modules/@neon/*` came out broken. Packs are now built with `node-linker=hoisted` (real directories, zero links — CI fails the build if a single link entry sneaks into the archive), and the downloader validates per source and falls back from the exact-version pack to `latest`, so a once-broken release heals itself after the next good one.
