@@ -231,12 +231,20 @@ export const AiCleanRequestSchema = AiTargetSchema.extend({
   breaths: z.boolean().default(true),
   denoise: z.boolean().default(false),
 });
-export const TranscriptCutRequestSchema = z.object({
-  assetId: z.string(),
-  /** Inclusive word index range within the transcript. */
-  fromWord: z.number().int().nonnegative(),
-  toWord: z.number().int().nonnegative(),
-});
+export const TranscriptCutRequestSchema = z
+  .object({
+    assetId: z.string(),
+    /** Inclusive word index range within the transcript (legacy pair form). */
+    fromWord: z.number().int().nonnegative().optional(),
+    toWord: z.number().int().nonnegative().optional(),
+    /** Explicit word indexes — may be non-contiguous; wins over fromWord/toWord. */
+    words: z.array(z.number().int().nonnegative()).optional(),
+    /** timeline (default): ripple-cut video+audio · audio: mute just the words via volume keyframes. */
+    mode: z.enum(['timeline', 'audio']).optional(),
+  })
+  .refine((v) => (v.words && v.words.length > 0) || (v.fromWord !== undefined && v.toWord !== undefined), {
+    message: 'Provide words[] or fromWord+toWord',
+  });
 
 export const MoveClipRequestSchema = z.object({
   id: z.string().min(1),

@@ -124,7 +124,9 @@ neon-cli ai clean    <clip|asset> [--no-fillers] [--no-silences] [--no-breaths] 
 neon-cli ai matte    <clip> [--mode person|chroma] [--quality fast|balanced|accurate] [--color 0x00FF00]
 neon-cli ai reframe  <clip> [--aspect 9:16] [--resize]
 neon-cli ai broll    [<asset>] [--apply] [--no-claude] [--duration 3]
-neon-cli ai cut      <asset> <fromWord> <toWord>          # text-driven edit by word index
+neon-cli ai cut      <asset> <fromWord> <toWord>          # text-driven edit by word index (ripple cut)
+neon-cli ai cut      <asset> --words 3,7,12-15 [--audio-only]  # non-contiguous words; --audio-only
+    # mutes the words in place via volume keyframes — video and timing stay untouched (VO fixes)
 neon-cli ai jobs · ai job <id> · ai cancel <id>
 ```
 

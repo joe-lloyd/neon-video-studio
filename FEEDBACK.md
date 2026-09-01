@@ -2,6 +2,10 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-09-01 · round 16
+
+- ☑ **"Cutting a word from the transcript cuts the video as well — let me fix my voice-over instead, and remove multiple words at once"** — the Script panel now has two actions: **Cut** (video+audio, ripple — the old behaviour) and **Mute** (audio only: the words are zeroed with 40 ms ramps via volume keyframes; the picture and all timing stay untouched). Selection supports multiple words: click = select, shift-click = range, ⌘/Ctrl-click = add/remove individual words — both actions apply to everything selected, including non-contiguous words. CLI: `ai cut <asset> --words 3,7,12-15 [--audio-only]`.
+
 ## 2026-09-01 · round 15
 
 - ☑ **Transcribe on Windows: "Speech recognition is not installed" with a manual download command** — whisper-cli now installs automatically on every OS: brew on macOS, the official prebuilt binaries (pinned tag, CLI + its DLLs/.so libs into `~/.neon-video/tools`) on Windows and Linux. The "Install automatically" button and `neon-cli ai setup` do the whole thing — binary + speech model — on all three platforms; the error hint now just says to click the button. Linux runs the prebuilt CLI with `LD_LIBRARY_PATH` pointing at its own libs.

@@ -32,6 +32,7 @@ import {
   analyseBreaths,
   analyseSilences,
   breathKeyframes,
+  muteRangeKeyframes,
   chooseDenoiseEngine,
   chromaMatte,
   denoise,
@@ -663,15 +664,58 @@ export class AiManager {
     const target = await this.resolveTarget({ assetId: params.assetId });
     const transcript = this.ctx.store.doc.getTranscript(target.asset.id);
     if (!transcript) throw new Error('No transcript for this asset');
-    const from = Math.max(0, Number(params.fromWord));
-    const to = Math.min(transcript.words.length - 1, Number(params.toWord));
-    if (!(from <= to)) throw new Error('Invalid word range');
-    const startS = Math.max(transcript.words[from - 1]?.e ?? 0, transcript.words[from]!.s - 0.03);
-    const endS = Math.min(transcript.words[to + 1]?.s ?? Number.POSITIVE_INFINITY, transcript.words[to]!.e + 0.03);
-    const ranges = this.timelineRanges([{ start: startS, end: endS }], target.clips);
+    const mode = params.mode === 'audio' ? 'audio' : 'timeline';
+    // Explicit word list (may be non-contiguous) or the legacy inclusive pair.
+    const indexes = Array.isArray(params.words) && params.words.length
+      ? [...new Set((params.words as number[]).filter((i) => i >= 0 && i < transcript.words.length))].sort((a, b) => a - b)
+      : (() => {
+          const from = Math.max(0, Number(params.fromWord));
+          const to = Math.min(transcript.words.length - 1, Number(params.toWord));
+          if (!(from <= to)) throw new Error('Invalid word range');
+          return Array.from({ length: to - from + 1 }, (_, i) => from + i);
+        })();
+    if (indexes.length === 0) throw new Error('No valid word indexes');
+    // Contiguous runs → source-time segments, padded to the midpoints between neighbours.
+    const segments: { start: number; end: number }[] = [];
+    let runStart = indexes[0]!;
+    let prev = indexes[0]!;
+    const pushRun = (from: number, to: number) => {
+      segments.push({
+        start: Math.max(transcript.words[from - 1]?.e ?? 0, transcript.words[from]!.s - 0.03),
+        end: Math.min(transcript.words[to + 1]?.s ?? Number.POSITIVE_INFINITY, transcript.words[to]!.e + 0.03),
+      });
+    };
+    for (const i of indexes.slice(1)) {
+      if (i !== prev + 1) {
+        pushRun(runStart, prev);
+        runStart = i;
+      }
+      prev = i;
+    }
+    pushRun(runStart, prev);
+    const text = indexes.map((i) => transcript.words[i]!.w).join(' ');
+
+    if (mode === 'audio') {
+      // Fix the audio in place: zero the volume across each word, nothing on the timeline moves.
+      this.progress(job, 0.5, `Muting ${indexes.length} word(s) in the audio`);
+      const fps = this.ctx.store.doc.fps;
+      let clipsUpdated = 0;
+      for (const clip of target.clips) {
+        const kfs = muteRangeKeyframes(clip.volumeKeyframes, segments, clip, fps);
+        // Skip clips the segments never touch (their envelope is unchanged apart from a seed point).
+        if (kfs.some((k) => k.gain === 0)) {
+          this.ctx.store.doc.updateClip(clip.id, { volumeKeyframes: kfs }, ORIGIN_API);
+          clipsUpdated += 1;
+        }
+      }
+      if (clipsUpdated === 0) throw new Error('Those words are not on the timeline (no clip covers them)');
+      return { mode, words: text, segments, clipsUpdated, removedFrames: 0 };
+    }
+
+    const ranges = this.timelineRanges(segments, target.clips);
     this.progress(job, 0.5, 'Cutting words from the timeline');
     const r = this.ctx.store.doc.cutRanges(ranges, { ripple: true, crossfadeFrames: 2 }, ORIGIN_API);
-    return { words: transcript.words.slice(from, to + 1).map((w) => w.w).join(' '), ranges, ...r };
+    return { mode, words: text, segments, ranges, ...r };
   }
 }
 

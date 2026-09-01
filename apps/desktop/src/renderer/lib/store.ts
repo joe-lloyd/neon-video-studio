@@ -75,8 +75,8 @@ export interface UiState {
   lastActivity: ActivityEntry | null;
   aiJobs: AiJob[];
   aiCaps: AiCapabilities | null;
-  /** Word range selected in the Script panel (inclusive indexes). */
-  scriptSelection: { assetId: string; from: number; to: number } | null;
+  /** Words selected in the Script panel — possibly non-contiguous; anchor drives shift-range extension. */
+  scriptSelection: { assetId: string; words: number[]; anchor: number } | null;
   /** Right sidebar width in px (drag its left edge). */
   sidebarWidth: number;
   /** Project overview / start page. */
@@ -497,11 +497,14 @@ export class Editor {
     if (job) this.upsertAiJob(job);
   }
 
-  /** Cut the words currently selected in the Script panel out of the timeline. */
-  async cutScriptSelection(): Promise<void> {
+  /**
+   * Remove the words selected in the Script panel: 'timeline' ripple-cuts video+audio,
+   * 'audio' just mutes the words in place (volume keyframes) — the picture keeps playing.
+   */
+  async cutScriptSelection(mode: 'timeline' | 'audio' = 'timeline'): Promise<void> {
     const sel = this.ui.get().scriptSelection;
-    if (!sel) return;
-    await this.runAi('transcript-cut', { assetId: sel.assetId, fromWord: Math.min(sel.from, sel.to), toWord: Math.max(sel.from, sel.to) });
+    if (!sel || sel.words.length === 0) return;
+    await this.runAi('transcript-cut', { assetId: sel.assetId, words: [...sel.words].sort((a, b) => a - b), mode });
     this.ui.set({ scriptSelection: null });
   }
 
