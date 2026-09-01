@@ -73,3 +73,16 @@ points). Use them as copy-paste starting points:
 neon-cli timeline insert --component NeonBadge --props '{"text":"50% OFF","corner":"top-left"}' --at 2s
 neon-cli timeline insert --component KineticList --props '{"title":"Agenda","items":"One\nTwo\nThree"}' --at 4s --duration 8s
 ```
+
+**boba-expressive**: an M3-Expressive-inspired set — violet/lavender tonal palette, matte
+flatness (no glows), pills that square to 12px on exit, organic blob shapes, and
+overshoot-and-settle easing curves. `BobaTitle` (word-stagger display title), `BobaLowerThird`
+(frosted pill with center-out reveal), `BobaTag` (circle-to-pill clip reveal), `BobaBlob`
+(spinning organic shape), `BobaMorphLoader` (blob morphing through a shape sequence with 60°
+rotation snaps). Shared tokens (palette, easings, blob geometry) live in
+`packs/boba-expressive/tokens.ts`.
+
+```bash
+neon-cli timeline insert --component BobaTitle --props '{"title":"Make it expressive"}' --at 0s
+neon-cli timeline insert --component BobaMorphLoader --props '{"color":"#deb8f7"}' --at 5s
+```

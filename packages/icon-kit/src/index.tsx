@@ -65,6 +65,8 @@ export {
   Eraser,
   UserRound,
   Wind,
+  Tag,
+  Flower2,
   Brain,
   MessageSquareText,
 } from 'lucide-react';

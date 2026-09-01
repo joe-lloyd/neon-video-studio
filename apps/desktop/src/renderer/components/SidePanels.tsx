@@ -18,10 +18,12 @@ import {
   Copy,
   Download,
   Film,
+  Flower2,
   FolderOpen,
   Hash,
   ImageIcon,
   Layers,
+  Loader2,
   Music,
   NeonIcon,
   Terminal,
@@ -31,6 +33,7 @@ import {
   Radio,
   Sparkles,
   Stamp,
+  Tag,
   Timer,
   Trash2,
   Type,
@@ -199,6 +202,11 @@ const TEMPLATE_ICON: Record<string, LucideIcon> = {
   ProgressBar: BarChart3,
   Watermark: Stamp,
   SolidColor: PaintBucket,
+  BobaTitle: Type,
+  BobaLowerThird: Clapperboard,
+  BobaTag: Tag,
+  BobaBlob: Flower2,
+  BobaMorphLoader: Loader2,
 };
 
 function TemplatesPanel() {
@@ -227,7 +235,7 @@ function TemplatesPanel() {
           </div>
         ))}
         <p className="hint" style={{ marginTop: 12 }}>
-          Add your own: create a component in <span className="mono">apps/remotion-workspace/src/templates</span> and register its zod schema in <span className="mono">packages/core/src/templates.ts</span>.
+          Add your own: create an FX pack in <span className="mono">apps/remotion-workspace/src/templates/packs</span> — see <span className="mono">docs/fx-packs.md</span>.
         </p>
       </div>
     </>
