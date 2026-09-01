@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type { Transcript, TranscriptWord } from '@neon/core';
 import { runOrThrow } from './exec.ts';
 import { transcriptsDir } from './tools.ts';
@@ -157,7 +157,9 @@ export async function transcribe(file: string, opts: TranscribeOptions): Promise
     const outBase = join(dir, 'out');
     const args = ['-m', opts.model, '-f', wav, '-ojf', '-of', outBase, '-np'];
     if (opts.language) args.push('-l', opts.language);
-    await runOrThrow(opts.whisper, args, { onStderr: opts.onLog, onStdout: opts.onLog });
+    // The prebuilt Linux whisper-cli ships its .so files next to the binary without an rpath.
+    const env = process.platform === 'linux' ? { LD_LIBRARY_PATH: dirname(opts.whisper) } : undefined;
+    await runOrThrow(opts.whisper, args, { onStderr: opts.onLog, onStdout: opts.onLog, env });
     const json = JSON.parse(await readFile(`${outBase}.json`, 'utf8')) as WhisperJson;
     const { stat } = await import('node:fs/promises');
     const wavBytes = (await stat(wav)).size;
