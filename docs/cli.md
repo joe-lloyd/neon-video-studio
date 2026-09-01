@@ -50,7 +50,7 @@ neon-cli timeline split <clip> --at T
 neon-cli timeline remove <clip...>
 neon-cli timeline cut --from 4s --to 6s [--track REF] [--no-ripple]   # remove a range across tracks
 neon-cli timeline detach <clip>     # split a video's audio onto an audio track (video muted)
-neon-cli timeline update <clip> --pos 0.8,0.2 --scale 0.4     # canvas placement (fractions of the frame)
+neon-cli timeline update <clip> --pos 0.8,0.2 --scale 0.4 --rotation 15   # canvas placement (fractions of the frame; rotation in degrees)
 neon-cli timeline update <clip> --in pop:12 --out fade:10     # enter/exit animation (type:frames; 'none' clears)
 neon-cli record start · record stop [--at T]                  # mic voice-over → VO track (macOS mic permission applies)
 neon-cli tracks add --kind video|audio|overlay [--name N]

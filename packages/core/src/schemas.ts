@@ -34,6 +34,7 @@ export const ClipTransformSchema = z.object({
   x: z.number().min(-1).max(2),
   y: z.number().min(-1).max(2),
   scale: z.number().min(0.05).max(10),
+  rotation: z.number().min(-360).max(360).optional(),
 });
 export const ClipAnimationSchema = z.object({
   type: z.enum(['fade', 'slide-up', 'slide-down', 'slide-left', 'slide-right', 'pop']),

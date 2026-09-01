@@ -148,6 +148,7 @@ const ElementWrapper: React.FC<{ clip: Clip; scale: number; children: React.Reac
   if (dx !== 0 || dy !== 0) parts.push(`translate(${dx.toFixed(3)}%, ${dy.toFixed(3)}%)`);
   const totalScale = (t?.scale ?? 1) * popScale;
   if (totalScale !== 1) parts.push(`scale(${totalScale.toFixed(4)})`);
+  if (t?.rotation) parts.push(`rotate(${t.rotation.toFixed(2)}deg)`);
   if (parts.length) style.transform = parts.join(' ');
   return <AbsoluteFill style={style}>{children}</AbsoluteFill>;
 };

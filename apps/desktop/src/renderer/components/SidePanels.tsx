@@ -343,6 +343,9 @@ function PropField({ name, schema, value, onChange }: { name: string; schema: Sc
   );
 }
 
+/** Current transform with defaults filled in, for patching one field at a time. */
+const tfDefaults = (clip: Clip) => ({ x: clip.transform?.x ?? 0.5, y: clip.transform?.y ?? 0.5, scale: clip.transform?.scale ?? 1, rotation: clip.transform?.rotation ?? 0 });
+
 function InspectorPanel() {
   const editor = useEditor();
   const { project } = useStoreValue(editor.project);
@@ -428,18 +431,21 @@ function InspectorPanel() {
           <>
             <div className="panel-header" style={{ padding: '10px 0 6px' }}><span className="title">Canvas & animation</span></div>
             <div className="grid-2">
-              <div className="field"><label>Position X · %</label><input className="input mono" type="number" step={1} value={Math.round((clip.transform?.x ?? 0.5) * 100)} onChange={(e) => editor.setTransform(clip.id, { x: Number(e.target.value) / 100, y: clip.transform?.y ?? 0.5, scale: clip.transform?.scale ?? 1 })} /></div>
-              <div className="field"><label>Position Y · %</label><input className="input mono" type="number" step={1} value={Math.round((clip.transform?.y ?? 0.5) * 100)} onChange={(e) => editor.setTransform(clip.id, { x: clip.transform?.x ?? 0.5, y: Number(e.target.value) / 100, scale: clip.transform?.scale ?? 1 })} /></div>
+              <div className="field"><label>Position X · %</label><input className="input mono" type="number" step={1} value={Math.round((clip.transform?.x ?? 0.5) * 100)} onChange={(e) => editor.setTransform(clip.id, { ...tfDefaults(clip), x: Number(e.target.value) / 100 })} /></div>
+              <div className="field"><label>Position Y · %</label><input className="input mono" type="number" step={1} value={Math.round((clip.transform?.y ?? 0.5) * 100)} onChange={(e) => editor.setTransform(clip.id, { ...tfDefaults(clip), y: Number(e.target.value) / 100 })} /></div>
             </div>
-            <div className="field">
-              <label>Scale · {Math.round((clip.transform?.scale ?? 1) * 100)}% {clip.transform ? <button className="btn sm ghost" onClick={() => editor.setTransform(clip.id, null)}>reset</button> : null}</label>
-              <input type="range" min={0.05} max={3} step={0.01} value={clip.transform?.scale ?? 1} onChange={(e) => editor.setTransform(clip.id, { x: clip.transform?.x ?? 0.5, y: clip.transform?.y ?? 0.5, scale: Number(e.target.value) })} />
+            <div className="grid-2">
+              <div className="field">
+                <label>Scale · {Math.round((clip.transform?.scale ?? 1) * 100)}% {clip.transform ? <button className="btn sm ghost" onClick={() => editor.setTransform(clip.id, null)}>reset</button> : null}</label>
+                <input type="range" min={0.05} max={3} step={0.01} value={clip.transform?.scale ?? 1} onChange={(e) => editor.setTransform(clip.id, { ...tfDefaults(clip), scale: Number(e.target.value) })} />
+              </div>
+              <div className="field"><label>Rotation · °</label><input className="input mono" type="number" step={1} min={-180} max={180} value={Math.round((clip.transform?.rotation ?? 0) * 10) / 10} onChange={(e) => editor.setTransform(clip.id, { ...tfDefaults(clip), rotation: Number(e.target.value) })} /></div>
             </div>
             <div className="grid-2">
               <AnimationField label="Animate in" value={clip.animateIn} onChange={(a) => editor.updateClip(clip.id, { animateIn: a })} fps={fps} />
               <AnimationField label="Animate out" value={clip.animateOut} onChange={(a) => editor.updateClip(clip.id, { animateOut: a })} fps={fps} />
             </div>
-            <p className="hint">Drag the element in the preview to position it (snaps to centre/margins/other elements; hold ⌘ to disable). Corners scale, double-click resets.</p>
+            <p className="hint">Drag the element in the preview to position it, corners to scale, the knob above to rotate; double-click resets. Soft snapping to centre/margins/other elements — toggle with the magnet (N), pause with ⌘.</p>
           </>
         ) : null}
         <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>

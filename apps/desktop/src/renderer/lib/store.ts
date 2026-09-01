@@ -427,11 +427,15 @@ export class Editor {
     }
   }
 
-  setTransform(clipId: string, transform: { x: number; y: number; scale: number } | null): void {
+  setTransform(clipId: string, transform: { x: number; y: number; scale: number; rotation?: number } | null): void {
+    // Normalise rotation to (-180, 180] so "one full turn" lands back on 0.
+    let rot = Math.round(((transform?.rotation ?? 0) % 360) * 10) / 10;
+    if (rot > 180) rot -= 360;
+    if (rot <= -180) rot += 360;
     const t = transform
-      ? { x: Math.round(transform.x * 1000) / 1000, y: Math.round(transform.y * 1000) / 1000, scale: Math.round(transform.scale * 1000) / 1000 }
+      ? { x: Math.round(transform.x * 1000) / 1000, y: Math.round(transform.y * 1000) / 1000, scale: Math.round(transform.scale * 1000) / 1000, ...(rot !== 0 ? { rotation: rot } : {}) }
       : null;
-    this.updateClip(clipId, { transform: t && t.x === 0.5 && t.y === 0.5 && t.scale === 1 ? null : t });
+    this.updateClip(clipId, { transform: t && t.x === 0.5 && t.y === 0.5 && t.scale === 1 && rot === 0 ? null : t });
   }
 
   detachAudio(clipId: string): void {
