@@ -82,6 +82,69 @@ export async function ensureFfmpeg(opts: { onProgress?: (p: number, message: str
 }
 
 /**
+ * Prebuilt whisper.cpp binaries from the official releases, pinned to one tag so the archive
+ * layout we tested stays the layout we get. macOS has no prebuilt CLI — brew covers it.
+ */
+const WHISPER_TAG = 'b4938';
+const WHISPER_DOWNLOADS: Partial<Record<NodeJS.Platform, { url: string; archive: string; binary: string; libs: RegExp }>> = {
+  win32: {
+    url: `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_TAG}/whisper-bin-x64.zip`,
+    archive: 'whisper.zip',
+    binary: 'whisper-cli.exe',
+    libs: /\.dll$/i,
+  },
+  linux: {
+    url: `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_TAG}/whisper-bin-ubuntu-x64.tar.gz`,
+    archive: 'whisper.tar.gz',
+    binary: 'whisper-cli',
+    libs: /\.so(\.\d+)*$/,
+  },
+};
+
+/**
+ * Make sure whisper-cli exists: brew on macOS, official prebuilt binaries (CLI + its shared
+ * libraries, dropped next to each other in ~/.neon-video/tools) on Windows/Linux.
+ * Returns how it got there, or null when nothing worked.
+ */
+export async function ensureWhisperCli(opts: { onProgress?: (p: number, message: string) => void; onLog?: (line: string) => void } = {}): Promise<string | null> {
+  if (await which('whisper-cli')) return 'already installed';
+  if (process.platform === 'darwin') {
+    const brew = await which('brew');
+    if (!brew) return null;
+    opts.onProgress?.(0.1, 'brew install whisper-cpp (a few minutes)…');
+    const r = await run(brew, ['install', 'whisper-cpp'], { onStderr: opts.onLog, onStdout: opts.onLog });
+    return r.code === 0 && (await which('whisper-cli')) ? 'via brew' : null;
+  }
+  const dl = WHISPER_DOWNLOADS[process.platform];
+  if (!dl) return null;
+  const curl = (await which('curl')) ?? 'curl';
+  const tar = (await which('tar')) ?? 'tar';
+  await mkdir(toolsDir(), { recursive: true });
+  const work = await mkdtemp(join(tmpdir(), 'neon-whisper-dl-'));
+  try {
+    const archive = join(work, dl.archive);
+    opts.onProgress?.(0.15, `Downloading whisper-cli (${WHISPER_TAG})…`);
+    await runOrThrow(curl, ['-fL', '--retry', '3', '-o', archive, dl.url], { onStderr: opts.onLog });
+    await runOrThrow(tar, ['-xf', archive, '-C', work], { onStderr: opts.onLog });
+    const found = new Map<string, string>();
+    await findBinaries(work, new Set([dl.binary]), found);
+    const cli = found.get(dl.binary);
+    if (!cli) throw new Error(`archive did not contain ${dl.binary}`);
+    // The CLI loads its shared libraries from its own directory — install them together.
+    const sourceDir = cli.slice(0, cli.length - dl.binary.length - 1);
+    for (const entry of await readdir(sourceDir)) {
+      if (entry !== dl.binary && !dl.libs.test(entry)) continue;
+      const target = join(toolsDir(), entry);
+      await copyFile(join(sourceDir, entry), target);
+      if (process.platform !== 'win32') await chmod(target, 0o755);
+    }
+    return `→ ${join(toolsDir(), dl.binary)}`;
+  } finally {
+    await rm(work, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/**
  * Make sure yt-dlp is available: package manager when one exists (brew / winget), otherwise the
  * official static binary into ~/.neon-video/tools. Used by `ai setup` and on demand by the first
  * rip. Returns a short description of how it got there, or null when nothing worked.
@@ -152,16 +215,10 @@ export async function runSetup(opts: SetupOptions): Promise<{ installed: string[
   if (opts.whisper) {
     if (await which('whisper-cli')) {
       skipped.push('whisper-cpp (already installed)');
-    } else if (process.platform === 'darwin') {
-      const brew = await which('brew');
-      if (!brew) throw new Error('Homebrew is required to install whisper-cpp automatically — run: ' + setupCommands(opts.model).join(' && '));
-      opts.onProgress?.(0.05, 'brew install whisper-cpp (a few minutes)…');
-      const r = await run(brew, ['install', 'whisper-cpp'], { onStderr: opts.onLog, onStdout: opts.onLog });
-      if (r.code !== 0) throw new Error(`brew install whisper-cpp failed: ${r.stderr.slice(-200)}`);
-      installed.push('whisper-cpp');
     } else {
-      // No trustworthy unattended install path off-macOS — models still download below once it's there.
-      throw new Error(`whisper-cli can't be installed automatically on this platform — ${setupHints().whisper}`);
+      const how = await ensureWhisperCli({ onProgress: (p, m) => opts.onProgress?.(0.05 + p * 0.3, m), onLog: opts.onLog });
+      if (!how) throw new Error(`whisper-cli could not be installed automatically — ${setupHints().whisper}`);
+      installed.push(`whisper-cpp (${how})`);
     }
     const target = join(modelsDir(), `ggml-${opts.model}.bin`);
     const exists = await import('node:fs/promises').then((fs) => fs.access(target).then(() => true, () => false));

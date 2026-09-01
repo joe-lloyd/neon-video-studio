@@ -119,7 +119,7 @@ export function setupHints(platform: NodeJS.Platform = process.platform): Record
   if (platform === 'win32') {
     return {
       ...shared,
-      whisper: `download whisper-cli from https://github.com/ggml-org/whisper.cpp/releases into %USERPROFILE%\\.neon-video\\tools, then: curl.exe -L -o %USERPROFILE%\\.neon-video\\models\\ggml-base.en.bin ${MODEL_URL}`,
+      whisper: 'use “Install automatically” in the AI panel (or `neon-cli ai setup`) — it downloads whisper-cli and the speech model for you',
       rnnoise: `curl.exe -L -o %USERPROFILE%\\.neon-video\\models\\std.rnnn ${RNNOISE_URL}`,
       vision: 'macOS only — person matting is unavailable on Windows',
       ytdlp: 'winget install yt-dlp.yt-dlp (or let “Install automatically” download it)',
@@ -129,7 +129,7 @@ export function setupHints(platform: NodeJS.Platform = process.platform): Record
   if (platform === 'linux') {
     return {
       ...shared,
-      whisper: `build whisper-cli from https://github.com/ggml-org/whisper.cpp (cmake) into ~/.neon-video/tools, then: curl -L -o ~/.neon-video/models/ggml-base.en.bin ${MODEL_URL}`,
+      whisper: 'use “Install automatically” in the AI panel (or `neon-cli ai setup`) — it downloads whisper-cli and the speech model for you',
       rnnoise: `curl -L -o ~/.neon-video/models/std.rnnn ${RNNOISE_URL}`,
       vision: 'macOS only — person matting is unavailable on Linux',
       ytdlp: 'sudo apt install yt-dlp (or let “Install automatically” download it)',

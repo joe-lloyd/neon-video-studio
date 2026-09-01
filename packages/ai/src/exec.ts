@@ -10,10 +10,10 @@ export interface RunResult {
 export function run(
   cmd: string,
   args: string[],
-  opts: { onStderr?: (line: string) => void; onStdout?: (line: string) => void; cwd?: string; maxBuffer?: number } = {},
+  opts: { onStderr?: (line: string) => void; onStdout?: (line: string) => void; cwd?: string; maxBuffer?: number; env?: Record<string, string> } = {},
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], cwd: opts.cwd });
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], cwd: opts.cwd, env: opts.env ? { ...process.env, ...opts.env } : undefined });
     let stdout = '';
     let stderr = '';
     let errBuf = '';

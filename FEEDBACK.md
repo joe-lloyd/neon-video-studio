@@ -2,6 +2,10 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-09-01 · round 15
+
+- ☑ **Transcribe on Windows: "Speech recognition is not installed" with a manual download command** — whisper-cli now installs automatically on every OS: brew on macOS, the official prebuilt binaries (pinned tag, CLI + its DLLs/.so libs into `~/.neon-video/tools`) on Windows and Linux. The "Install automatically" button and `neon-cli ai setup` do the whole thing — binary + speech model — on all three platforms; the error hint now just says to click the button. Linux runs the prebuilt CLI with `LD_LIBRARY_PATH` pointing at its own libs.
+
 ## 2026-09-01 · round 14
 
 - ☑ **Voice-over didn't work on Windows ("can't enable my microphone / app not in the list")** — recording was macOS-only (ffmpeg avfoundation). The recorder now picks the right capture backend per OS: avfoundation (macOS), DirectShow (Windows, first device named like a microphone), PulseAudio→ALSA (Linux). Error messages explain the real permission model — on Windows, desktop apps never appear in the per-app microphone list; only the global "Microphone access" + "Let desktop apps access your microphone" toggles apply.
