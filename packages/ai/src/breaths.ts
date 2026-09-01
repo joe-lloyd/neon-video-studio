@@ -1,4 +1,4 @@
-import type { VolumeKeyframe } from '@neon/core';
+import { volumeAt, type VolumeKeyframe } from '@neon/core';
 import { decodePcm, energyVad, frameEnergies, segmentsWhere, type Segment } from './pcm.ts';
 
 export interface BreathAnalysis {
@@ -55,4 +55,38 @@ export function breathKeyframes(
   for (const k of kfs) map.set(k.frame, k.gain);
   map.set(clip.durationFrames, 1);
   return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([frame, g]) => ({ frame, gain: g }));
+}
+
+/**
+ * Merge full-mute spans into a clip's existing volume envelope: each source-time segment drops the
+ * gain to 0 with 40 ms ramps, keyframes previously inside the span are removed, and the envelope
+ * outside the spans is preserved (sampled at the ramp edges). Used by audio-only word cuts.
+ */
+export function muteRangeKeyframes(
+  existing: VolumeKeyframe[] | undefined,
+  segments: Segment[],
+  clip: { trimBefore: number; durationFrames: number },
+  fps: number,
+): VolumeKeyframe[] {
+  const ramp = Math.max(1, Math.round(fps * 0.04));
+  const pts = new Map<number, number>();
+  for (const k of existing ?? []) pts.set(k.frame, k.gain);
+  for (const seg of segments) {
+    const s = Math.round(seg.start * fps) - clip.trimBefore;
+    const e = Math.round(seg.end * fps) - clip.trimBefore;
+    if (e <= 0 || s >= clip.durationFrames) continue;
+    const a = Math.max(0, s);
+    const z = Math.min(clip.durationFrames, e);
+    const rampIn = Math.max(0, a - ramp);
+    const rampOut = Math.min(clip.durationFrames, z + ramp);
+    const gainIn = volumeAt(existing, rampIn);
+    const gainOut = volumeAt(existing, rampOut);
+    for (const f of [...pts.keys()]) if (f >= rampIn && f <= rampOut) pts.delete(f);
+    pts.set(rampIn, gainIn);
+    pts.set(a, 0);
+    pts.set(z, 0);
+    pts.set(rampOut, gainOut);
+  }
+  if (!pts.has(0)) pts.set(0, volumeAt(existing, 0));
+  return [...pts.entries()].sort((x, y) => x[0] - y[0]).map(([frame, gain]) => ({ frame, gain }));
 }

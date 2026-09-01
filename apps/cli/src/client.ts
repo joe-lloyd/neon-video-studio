@@ -107,7 +107,8 @@ export class NeonClient {
   aiCancel = (id: string) => this.call<AiJob>('POST', `${API_ROUTES.aiJobs}/${encodeURIComponent(id)}/cancel`);
   aiRun = (op: string, body: Record<string, unknown>) => this.call<AiJob>('POST', `${API_ROUTES.ai}/${op}`, body);
   transcript = (assetId: string) => this.call<Transcript>('GET', `${API_ROUTES.aiTranscript}/${assetId}`);
-  transcriptCut = (assetId: string, fromWord: number, toWord: number) => this.call<AiJob>('POST', `${API_ROUTES.aiTranscript}/cut`, { assetId, fromWord, toWord });
+  transcriptCut = (assetId: string, opts: { fromWord?: number; toWord?: number; words?: number[]; mode?: 'timeline' | 'audio' }) =>
+    this.call<AiJob>('POST', `${API_ROUTES.aiTranscript}/cut`, { assetId, ...opts });
 
   /** Generic escape hatch for new endpoints. */
   call2 = (method: 'GET' | 'POST', path: string, body?: unknown) => this.call<unknown>(method, path, body);

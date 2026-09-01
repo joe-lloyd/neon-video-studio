@@ -66,6 +66,7 @@ AI (local engines: whisper.cpp, ffmpeg, Apple Vision; Claude optional for B-roll
   ai broll [<asset>] [--apply] [--no-claude] [--duration 3]        Suggest/place B-roll from the transcript
   ai clean <clip> [--no-fillers] [--no-silences] [--no-breaths] [--denoise]   One-shot voice clean-up
   ai cut <asset> <fromWord> <toWord>      Text-driven edit: delete words → cut the video
+  ai cut <asset> --words 3,7,12-15 [--audio-only]   Non-contiguous words; --audio-only mutes them in place
   ai jobs | ai job <id> | ai cancel <id>
   preview play|pause|toggle|seek <T>      Drive the app's preview player (watch your edits play back)
   ui panel <media|fx|inspect|room|ai|script|render|live> | ui select <clip...> | ui select none | ui dialog <render|room|shortcuts|none>
@@ -142,6 +143,7 @@ const { values: flags, positionals } = parseArgs({
     pos: { type: 'string' },
     scale: { type: 'string' },
     rotation: { type: 'string' },
+    'audio-only': { type: 'boolean' },
     in: { type: 'string' },
     resize: { type: 'boolean', default: false },
     claude: { type: 'boolean', default: true },
@@ -756,9 +758,21 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     case 'cut': {
-      if (rest.length < 3) throw new ApiError('USAGE', 'ai cut <asset> <fromWord> <toWord>');
+      // Word list: positional pair (33 35 = inclusive range) or --words 3,7,12-15 (non-contiguous).
+      if (rest.length < 2 && !flags.words) throw new ApiError('USAGE', 'ai cut <asset> <fromWord> <toWord> · ai cut <asset> --words 3,7,12-15 [--audio-only]');
       const asset = await api.resolveAsset(rest[0]!);
-      await finish(await api.transcriptCut(asset.id, Number(rest[1]), Number(rest[2])), (j) => `Cut “${(j.result as { words: string }).words}” — ${(j.result as { removedFrames: number }).removedFrames} frames removed`);
+      const words = flags.words
+        ? flags.words.split(',').flatMap((part) => {
+            const m = /^(\d+)-(\d+)$/.exec(part.trim());
+            if (m) return Array.from({ length: Number(m[2]) - Number(m[1]) + 1 }, (_, i) => Number(m[1]) + i);
+            return [Number(part.trim())];
+          }).filter((n) => Number.isInteger(n) && n >= 0)
+        : undefined;
+      const mode = flags['audio-only'] ? 'audio' : 'timeline';
+      await finish(await api.transcriptCut(asset.id, { fromWord: words ? undefined : Number(rest[1]), toWord: words ? undefined : Number(rest[2]), words, mode }), (j) => {
+        const r = j.result as { words: string; mode: string; removedFrames: number; clipsUpdated?: number };
+        return r.mode === 'audio' ? `Muted “${r.words}” in the audio (${r.clipsUpdated} clip(s), timeline unchanged)` : `Cut “${r.words}” — ${r.removedFrames} frames removed`;
+      });
       return;
     }
     default:

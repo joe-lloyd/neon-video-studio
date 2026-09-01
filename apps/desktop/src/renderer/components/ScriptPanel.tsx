@@ -1,13 +1,15 @@
 import { useMemo } from 'react';
 import type { MediaClip } from '@neon/core';
-import { Captions, NeonIcon, Scissors } from '@neon/icon-kit';
+import { Captions, NeonIcon, Scissors, VolumeX } from '@neon/icon-kit';
 import { useEditor } from '../lib/context.ts';
+import { kbdFor } from '../lib/kbd.ts';
 import { useSelector, useStoreValue } from '../lib/store.ts';
 
 /**
  * Text-driven editing: the transcript of the selected clip's asset (or the first transcript in
- * the project). Click a word to jump there; shift-click to extend a selection; ⌫ / "Cut" removes
- * the selected words from the timeline (all tracks, ripple, tiny crossfades).
+ * the project). Click a word to jump there; shift-click extends a range; ⌘/Ctrl-click adds
+ * individual words. "Cut video" ripple-cuts video+audio (all tracks); "Mute words" only zeroes
+ * the audio in place — the fix-my-voice-over case, nothing on the timeline moves.
  */
 export function ScriptPanel() {
   const editor = useEditor();
@@ -57,22 +59,57 @@ export function ScriptPanel() {
     );
   }
 
-  const inSelection = (i: number) => scriptSel && scriptSel.assetId === transcript.assetId && i >= Math.min(scriptSel.from, scriptSel.to) && i <= Math.max(scriptSel.from, scriptSel.to);
-  const selectedCount = scriptSel && scriptSel.assetId === transcript.assetId ? Math.abs(scriptSel.to - scriptSel.from) + 1 : 0;
+  const kbd = kbdFor(editor.bridge.bootstrap.platform);
+  const selWords = scriptSel && scriptSel.assetId === transcript.assetId ? scriptSel.words : [];
+  const inSelection = (i: number) => selWords.includes(i);
+  const selectedCount = selWords.length;
   const fillers = transcript.words.filter((w) => w.filler).length;
+  const label = selectedCount ? `${selectedCount} word${selectedCount === 1 ? '' : 's'}` : '';
+
+  const selectWord = (i: number, e: React.MouseEvent) => {
+    const addKey = e.metaKey || e.ctrlKey;
+    if (e.shiftKey && scriptSel && scriptSel.assetId === transcript.assetId) {
+      // Extend a contiguous range from the anchor; ⌘/Ctrl keeps previously added words too.
+      const lo = Math.min(scriptSel.anchor, i);
+      const hi = Math.max(scriptSel.anchor, i);
+      const range = Array.from({ length: hi - lo + 1 }, (_, n) => lo + n);
+      const words = addKey ? [...new Set([...scriptSel.words, ...range])] : range;
+      editor.ui.set({ scriptSelection: { assetId: transcript.assetId, words, anchor: scriptSel.anchor } });
+    } else if (addKey && scriptSel && scriptSel.assetId === transcript.assetId) {
+      const words = scriptSel.words.includes(i) ? scriptSel.words.filter((w) => w !== i) : [...scriptSel.words, i];
+      editor.ui.set({ scriptSelection: words.length ? { assetId: transcript.assetId, words, anchor: i } : null });
+    } else {
+      editor.ui.set({ scriptSelection: { assetId: transcript.assetId, words: [i], anchor: i } });
+    }
+    const frame = editor.timelineFrameForSource(transcript.assetId, transcript.words[i]!.s);
+    if (frame !== null) editor.seek(frame);
+  };
 
   return (
     <>
       <div className="panel-header">
         <NeonIcon icon={Captions} size={12} tone="green" />
         <span className="title">Script · {asset?.name ?? transcript.assetId.slice(0, 8)}</span>
-        <button className="btn sm danger" disabled={selectedCount === 0} onClick={() => void editor.cutScriptSelection()} title="Remove the selected words from the video (⌫)">
-          <NeonIcon icon={Scissors} size={12} tone="red" /> Cut {selectedCount ? `${selectedCount} word${selectedCount === 1 ? '' : 's'}` : ''}
+        <button
+          className="btn sm"
+          disabled={selectedCount === 0}
+          onClick={() => void editor.cutScriptSelection('audio')}
+          title="Mute just these words in the audio — the video keeps playing, nothing moves (fix a voice-over)"
+        >
+          <NeonIcon icon={VolumeX} size={12} tone="cyan" /> Mute {label}
+        </button>
+        <button
+          className="btn sm danger"
+          disabled={selectedCount === 0}
+          onClick={() => void editor.cutScriptSelection('timeline')}
+          title="Remove these words from the video AND audio (all tracks, ripple) (⌫)"
+        >
+          <NeonIcon icon={Scissors} size={12} tone="red" /> Cut {label}
         </button>
       </div>
       <div className="panel-body script-body" tabIndex={0}>
         <p className="hint" style={{ marginBottom: 8 }}>
-          {transcript.words.length} words · {fillers} fillers highlighted · click = jump, shift-click = select range, ⌫ = cut
+          {transcript.words.length} words · {fillers} fillers highlighted · click = jump · shift = range · {kbd.isMac ? '⌘' : 'Ctrl'}-click = add words · ⌫ = cut video
           {fillers ? <> · <button className="btn sm ghost" onClick={() => void editor.runAi('fillers', { assetId: transcript.assetId, apply: true })}>remove all fillers</button></> : null}
         </p>
         <div className="script-words">
@@ -81,12 +118,7 @@ export function ScriptPanel() {
               key={i}
               className={`word${w.filler ? ' filler' : ''}${i === activeIndex ? ' active' : ''}${inSelection(i) ? ' selected' : ''}`}
               title={`${w.s.toFixed(2)}s – ${w.e.toFixed(2)}s${w.p !== undefined ? ` · p=${w.p.toFixed(2)}` : ''}`}
-              onClick={(e) => {
-                if (e.shiftKey && scriptSel && scriptSel.assetId === transcript.assetId) editor.ui.set({ scriptSelection: { ...scriptSel, to: i } });
-                else editor.ui.set({ scriptSelection: { assetId: transcript.assetId, from: i, to: i } });
-                const frame = editor.timelineFrameForSource(transcript.assetId, w.s);
-                if (frame !== null) editor.seek(frame);
-              }}
+              onClick={(e) => selectWord(i, e)}
             >
               {w.w}
             </span>
