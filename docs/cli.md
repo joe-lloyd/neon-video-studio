@@ -75,8 +75,10 @@ neon-cli rip "https://www.youtube.com/watch?v=…" [--quality 1080|720|best|audi
 ```
 
 Downloads via yt-dlp (`ai setup` installs it), remuxes to mp4/m4a, imports into the media library
-(content-addressed like any import) and optionally places it on the timeline at `--at`. Then slice
-away: `timeline split/cut/trim`, `ai transcribe`, etc. Respect the source platform's terms and
+(content-addressed like any import) and optionally places it on the timeline at `--at`. Rips prefer
+H.264 + AAC (the preview's WKWebView can't decode AV1/VP9); when a site only offers those codecs,
+the file is automatically converted to H.264 after download. Then slice away:
+`timeline split/cut/trim`, `ai transcribe`, etc. Respect the source platform's terms and
 copyright — intended for your own/licensed/CC content.
 
 ## AI (local engines)
