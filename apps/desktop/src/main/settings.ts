@@ -8,6 +8,12 @@ export interface Settings {
   peerName: string;
   lastProjectPath: string | null;
   recent: string[];
+  /**
+   * Override where the self-contained render runtime lives. Normally absent: the app uses the
+   * dev repo when running from source, otherwise ~/.neon-video/render-runtime/v<version>
+   * (downloaded automatically on first render). NEON_RENDER_RUNTIME_DIR beats this.
+   */
+  renderRuntimeDir?: string;
 }
 
 function defaults(): Settings {

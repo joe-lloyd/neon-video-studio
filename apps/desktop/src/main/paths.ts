@@ -27,5 +27,7 @@ export const paths = {
   recentFile: () => join(neonHome(), 'recent.json'),
   settingsFile: () => join(neonHome(), 'settings.json'),
   bundleCache: () => join(neonHome(), 'remotion-bundle'),
+  /** Where @remotion/renderer keeps its headless browser + compositor (cwd-independent). */
+  remotionBin: () => join(neonHome(), 'remotion-bin'),
   renders: () => join(neonHome(), 'renders'),
 };

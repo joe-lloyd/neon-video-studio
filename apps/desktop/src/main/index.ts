@@ -24,6 +24,7 @@ import { EventHub } from './events.ts';
 import { AiManager } from './ai-manager.ts';
 import { registerAllPacks } from '@neon/remotion-workspace/packs';
 import { VoiceRecorder } from './recorder.ts';
+import { ensureRenderRuntime } from './render-runtime.ts';
 import { UpdateManager } from './updates.ts';
 import type { Bootstrap, DesktopRPC } from '../shared/rpc.ts';
 
@@ -87,6 +88,7 @@ async function main(): Promise<void> {
     getProject: () => store.toJSON(),
     projectDir: () => store.dir,
     assetBaseUrl: () => `http://127.0.0.1:${ctx.localPort}/assets`,
+    renderRuntime: (onLog) => ensureRenderRuntime({ version: VERSION, settings }, onLog),
     onUpdate: (job) => {
       ctx.rpc?.send.renderUpdate({ job });
       ctx.events.emit({ type: 'render', job });

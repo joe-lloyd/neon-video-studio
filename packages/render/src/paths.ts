@@ -28,3 +28,23 @@ export function renderPaths(repoRoot: string): RenderPaths {
     watchDirs: [join(repoRoot, 'apps/remotion-workspace/src'), join(repoRoot, 'packages/core/src')],
   };
 }
+
+/**
+ * Paths inside a self-contained render runtime: the output of
+ * `pnpm --filter @neon/render deploy --legacy --prod <dir>` — this package's sources at the root
+ * plus a real node_modules with @neon/* (as TS source) and the Remotion toolchain.
+ */
+export function runtimePaths(dir: string): RenderPaths {
+  return {
+    repoRoot: dir,
+    workerPath: join(dir, 'src/worker.ts'),
+    entryPoint: join(dir, 'node_modules/@neon/remotion-workspace/src/index.ts'),
+    watchDirs: [join(dir, 'node_modules/@neon/remotion-workspace/src'), join(dir, 'node_modules/@neon/core/src')],
+  };
+}
+
+/** True when `dir` holds a complete render runtime (worker + composition entry). */
+export function isRenderRuntime(dir: string): boolean {
+  const p = runtimePaths(dir);
+  return existsSync(p.workerPath) && existsSync(p.entryPoint);
+}
