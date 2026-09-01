@@ -24,6 +24,7 @@ import {
   DEFAULT_FILLERS,
   SETUP_HINTS,
   enhanceVoice,
+  ensureYtdlp,
   ripUrl,
   runSetup,
   analyseBreaths,
@@ -422,10 +423,28 @@ export class AiManager {
   }
 
   private async opRip(job: AiJob, params: Params) {
-    const paths = await this.paths();
+    let paths = await this.paths();
     if (!paths.ytdlp) {
       this.tools = null;
-      if (!(await this.paths()).ytdlp) throw new Error(`yt-dlp is not installed. ${SETUP_HINTS.ytdlp} (or use “Install automatically” / neon-cli ai setup)`);
+      if (!(await this.paths()).ytdlp) {
+        // Self-heal instead of failing: install yt-dlp as the first step of this rip job.
+        this.progress(job, 0.01, 'yt-dlp is missing — installing it first…');
+        const how = await ensureYtdlp({
+          onProgress: (p, message) => this.progress(job, 0.01 + p * 0.05, message),
+          onLog: (line) => this.log(job, line),
+        }).catch((err) => {
+          this.log(job, String((err as Error).message ?? err));
+          return null;
+        });
+        this.tools = null;
+        if (!how || !(await this.paths()).ytdlp) throw new Error(`Couldn't install yt-dlp automatically — ${SETUP_HINTS.ytdlp}`);
+        this.log(job, `Installed yt-dlp (${how})`);
+        this.ctx.events.activity('ai', 'setup.ytdlp', `Installed yt-dlp on demand (${how})`);
+      }
+      paths = await this.paths();
+    }
+    if (!(await this.capabilities()).ffmpeg.available) {
+      throw new Error(`ffmpeg is required to merge and convert rips — ${SETUP_HINTS.ffmpeg}`);
     }
     const url = String(params.url ?? '');
     const dir = await mkdtemp(join(tmpdir(), 'neon-rip-'));

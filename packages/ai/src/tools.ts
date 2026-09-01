@@ -111,7 +111,7 @@ const MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggm
 const RNNOISE_URL = 'https://raw.githubusercontent.com/GregorR/rnnoise-models/master/somnolent-hogwash-2018-09-01/sh.rnnn';
 
 /** Copy-able install commands for the platform this process runs on (the app and CLI are always local). */
-export function setupHints(platform: NodeJS.Platform = process.platform): Record<'whisper' | 'rnnoise' | 'deepfilter' | 'vision' | 'ytdlp' | 'claude', string> {
+export function setupHints(platform: NodeJS.Platform = process.platform): Record<'whisper' | 'rnnoise' | 'deepfilter' | 'vision' | 'ytdlp' | 'ffmpeg' | 'claude', string> {
   const shared = {
     deepfilter: 'optional: install DeepFilterNet (deep-filter) from https://github.com/Rikorose/DeepFilterNet/releases',
     claude: 'optional: export ANTHROPIC_API_KEY=… (or `ant auth login`) to let Claude pick B-roll concepts',
@@ -123,6 +123,7 @@ export function setupHints(platform: NodeJS.Platform = process.platform): Record
       rnnoise: `curl.exe -L -o %USERPROFILE%\\.neon-video\\models\\std.rnnn ${RNNOISE_URL}`,
       vision: 'macOS only — person matting is unavailable on Windows',
       ytdlp: 'winget install yt-dlp.yt-dlp (or let “Install automatically” download it)',
+      ffmpeg: 'winget install Gyan.FFmpeg',
     };
   }
   if (platform === 'linux') {
@@ -132,6 +133,7 @@ export function setupHints(platform: NodeJS.Platform = process.platform): Record
       rnnoise: `curl -L -o ~/.neon-video/models/std.rnnn ${RNNOISE_URL}`,
       vision: 'macOS only — person matting is unavailable on Linux',
       ytdlp: 'sudo apt install yt-dlp (or let “Install automatically” download it)',
+      ffmpeg: 'sudo apt install ffmpeg',
     };
   }
   return {
@@ -140,6 +142,7 @@ export function setupHints(platform: NodeJS.Platform = process.platform): Record
     rnnoise: `curl -L -o ~/.neon-video/models/std.rnnn ${RNNOISE_URL}`,
     vision: 'macOS only: xcode-select --install (the helper compiles itself on first use)',
     ytdlp: 'brew install yt-dlp',
+    ffmpeg: 'brew install ffmpeg',
   };
 }
 

@@ -18,6 +18,35 @@ const YTDLP_DOWNLOADS: Partial<Record<NodeJS.Platform, { url: string; file: stri
   win32: { url: 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe', file: 'yt-dlp.exe' },
 };
 
+/**
+ * Make sure yt-dlp is available: package manager when one exists (brew / winget), otherwise the
+ * official static binary into ~/.neon-video/tools. Used by `ai setup` and on demand by the first
+ * rip. Returns a short description of how it got there, or null when nothing worked.
+ */
+export async function ensureYtdlp(opts: { onProgress?: (p: number, message: string) => void; onLog?: (line: string) => void } = {}): Promise<string | null> {
+  if (await which('yt-dlp')) return 'already installed';
+  const pm = process.platform === 'darwin' ? await which('brew') : process.platform === 'win32' ? await which('winget') : undefined;
+  if (pm) {
+    const pmName = pm.split(/[\\/]/).pop() ?? pm;
+    const args = process.platform === 'darwin'
+      ? ['install', 'yt-dlp']
+      : ['install', '--id', 'yt-dlp.yt-dlp', '-e', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity'];
+    opts.onProgress?.(0.1, `${pmName} install yt-dlp…`);
+    const r = await run(pm, args, { onStderr: opts.onLog, onStdout: opts.onLog });
+    if (r.code === 0 && (await which('yt-dlp'))) return `via ${pmName}`;
+    opts.onLog?.(`package-manager install failed (${r.code}) — falling back to direct download`);
+  }
+  const dl = YTDLP_DOWNLOADS[process.platform];
+  if (!dl) return null;
+  await mkdir(toolsDir(), { recursive: true });
+  const target = join(toolsDir(), dl.file);
+  const curl = (await which('curl')) ?? 'curl';
+  opts.onProgress?.(0.4, `Downloading yt-dlp (${dl.url.split('/').pop()})…`);
+  await runOrThrow(curl, ['-fL', '--retry', '3', '-o', target, dl.url], { onStderr: opts.onLog });
+  if (process.platform !== 'win32') await chmod(target, 0o755);
+  return `→ ${target}`;
+}
+
 /** Copy-able commands for manual installation (platform-aware). */
 export function setupCommands(model: keyof typeof WHISPER_MODELS = 'base.en'): string[] {
   const hints = setupHints();
@@ -73,31 +102,12 @@ export async function runSetup(opts: SetupOptions): Promise<{ installed: string[
   if (opts.ytdlp) {
     if (await which('yt-dlp')) skipped.push('yt-dlp (already installed)');
     else {
-      // Prefer the platform package manager (gets updates), fall back to the official static binary.
-      let done = false;
-      const pm = process.platform === 'darwin' ? await which('brew') : process.platform === 'win32' ? await which('winget') : undefined;
-      if (pm) {
-        const args = process.platform === 'darwin'
-          ? ['install', 'yt-dlp']
-          : ['install', '--id', 'yt-dlp.yt-dlp', '-e', '--accept-source-agreements', '--accept-package-agreements', '--disable-interactivity'];
-        opts.onProgress?.(0.75, `${pm.split(/[\\/]/).pop()} install yt-dlp…`);
-        const r = await run(pm, args, { onStderr: opts.onLog, onStdout: opts.onLog });
-        if (r.code === 0) {
-          installed.push('yt-dlp');
-          done = true;
-        } else opts.onLog?.(`package-manager install failed (${r.code}) — falling back to direct download`);
-      }
-      const dl = YTDLP_DOWNLOADS[process.platform];
-      if (!done && dl) {
-        await mkdir(toolsDir(), { recursive: true });
-        const target = join(toolsDir(), dl.file);
-        opts.onProgress?.(0.78, `Downloading yt-dlp (${dl.url.split('/').pop()})…`);
-        await runOrThrow(curl, ['-fL', '--retry', '3', '-o', target, dl.url], { onStderr: opts.onLog });
-        if (process.platform !== 'win32') await chmod(target, 0o755);
-        installed.push(`yt-dlp (→ ${target})`);
-        done = true;
-      }
-      if (!done) opts.onLog?.(`yt-dlp could not be installed automatically — ${setupHints().ytdlp}`);
+      const how = await ensureYtdlp({ onProgress: (p, m) => opts.onProgress?.(0.75 + p * 0.1, m), onLog: opts.onLog }).catch((err) => {
+        opts.onLog?.(String((err as Error).message ?? err));
+        return null;
+      });
+      if (how) installed.push(`yt-dlp (${how})`);
+      else opts.onLog?.(`yt-dlp could not be installed automatically — ${setupHints().ytdlp}`);
     }
   }
   if (opts.rnnoise) {
