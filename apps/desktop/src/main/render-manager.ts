@@ -1,13 +1,16 @@
 /** Sequential render queue driving @neon/render's Node worker. */
 import { join, resolve } from 'node:path';
 import { newId, getPreset, projectPreset, type Project, type RenderJob, type RenderPreset } from '@neon/core';
-import { renderPaths, runRenderWorker, type RunningRender } from '@neon/render';
-import { paths, repoRoot } from './paths.ts';
+import { runRenderWorker, type RunningRender } from '@neon/render';
+import { paths } from './paths.ts';
+import type { RenderRuntime } from './render-runtime.ts';
 
 export interface RenderManagerDeps {
   getProject(): Project;
   projectDir(): string;
   assetBaseUrl(): string;
+  /** Resolve (or download on first use) the render runtime; log lines land in the job log. */
+  renderRuntime(onLog: (line: string) => void): Promise<RenderRuntime>;
   onUpdate(job: RenderJob): void;
 }
 
@@ -95,9 +98,12 @@ export class RenderManager {
     this.active = true;
     const { job, opts } = next;
     try {
-      const root = repoRoot();
-      const rp = renderPaths(root);
       this.update(job, { status: 'bundling' });
+      const runtime = await this.deps.renderRuntime((line) => {
+        job.log.push(line);
+        this.update(job, {});
+      });
+      const rp = runtime.paths;
       const run = runRenderWorker(
         {
           project: opts.project,
@@ -112,6 +118,7 @@ export class RenderManager {
         },
         {
           workerPath: rp.workerPath,
+          cwd: runtime.cwd,
           // Run the worker on the Bun runtime that ships inside the app bundle (verified with
           // Electrobun 2.0.1 / Bun 1.4.0 + Remotion 4.0.515) so packaged builds do not need Node.
           // NEON_RENDER_RUNTIME=node forces Node (useful when debugging Remotion issues).

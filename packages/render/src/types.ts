@@ -17,8 +17,14 @@ export interface RenderJobSpec {
   watchDirs: string[];
   licenseKey?: string;
   concurrency?: number | string | null;
-  /** Chrome download/cache dir override for @remotion/renderer. */
+  /** Existing Chrome/Chromium binary to use instead of Remotion's downloaded headless shell. */
   browserExecutable?: string | null;
+  /**
+   * Directory that already CONTAINS Remotion's binaries (compositor + browser) — Remotion does
+   * not populate it. Leave unset to let Remotion manage node_modules/.remotion relative to the
+   * worker cwd (the render runtime root, which is writable).
+   */
+  binariesDirectory?: string | null;
 }
 
 export type WorkerEvent =

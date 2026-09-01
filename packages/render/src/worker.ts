@@ -100,6 +100,7 @@ async function main(): Promise<void> {
     id: TIMELINE_COMPOSITION_ID,
     inputProps,
     logLevel: 'warn',
+    binariesDirectory: spec.binariesDirectory ?? null,
   });
 
   const scale = composition.fps / projectFps;
@@ -127,6 +128,7 @@ async function main(): Promise<void> {
     overwrite: true,
     logLevel: 'warn',
     browserExecutable: spec.browserExecutable ?? null,
+    binariesDirectory: spec.binariesDirectory ?? null,
     ...(spec.licenseKey ? { licenseKey: spec.licenseKey } : {}),
     onProgress: ({ progress, renderedFrames, encodedFrames }) => {
       emit({ type: 'progress', progress, renderedFrames, encodedFrames });

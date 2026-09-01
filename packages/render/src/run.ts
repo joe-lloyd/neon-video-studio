@@ -11,6 +11,8 @@ import type { RenderJobSpec, WorkerEvent } from './types.ts';
 export interface RunRenderOptions {
   workerPath: string;
   nodeBinary?: string;
+  /** Working directory for the worker — the render runtime root, so relative resolution works in packaged apps. */
+  cwd?: string;
   onEvent?: (event: WorkerEvent) => void;
   onLog?: (line: string) => void;
   env?: Record<string, string>;
@@ -38,6 +40,7 @@ export function runRenderWorker(spec: RenderJobSpec, opts: RunRenderOptions): Ru
         const isBun = /(^|\/)bun(\.exe)?$/.test(runtime);
         child = spawn(runtime, [...(isBun ? ['run'] : ['--no-warnings']), opts.workerPath, '--job', jobFile], {
           stdio: ['ignore', 'pipe', 'pipe'],
+          cwd: opts.cwd,
           env: { ...process.env, ...opts.env },
         });
         child.on('error', (err) => reject(new Error(`Could not start render worker (${opts.nodeBinary ?? 'node'}): ${err.message}`)));

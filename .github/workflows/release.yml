@@ -72,6 +72,16 @@ jobs:
           # (dmg / Setup.exe / AppImage) that electrobun build drops in artifacts/.
           cp artifacts/* ../../release/ 2>/dev/null || echo "::warning::no update artifacts produced"
           ls -la ../../release
+      - name: Render runtime pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Self-contained render runtime (worker + compositions + Remotion toolchain incl. the
+          # platform compositor). Installed apps download this on their first render.
+          pnpm --filter @neon/render deploy --legacy --prod "$RUNNER_TEMP/render-runtime"
+          mkdir -p release
+          tar -C "$RUNNER_TEMP/render-runtime" -czf "release/render-runtime-${{ matrix.label }}.tar.gz" .
+          ls -la release
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.label }}
