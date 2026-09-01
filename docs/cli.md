@@ -74,7 +74,9 @@ curl -X POST "http://127.0.0.1:$PORT/api/assets/upload?name=take.m4a&at=120&trac
 neon-cli rip "https://www.youtube.com/watch?v=…" [--quality 1080|720|best|audio] [--at T]
 ```
 
-Downloads via yt-dlp (`ai setup` installs it), remuxes to mp4/m4a, imports into the media library
+Downloads via yt-dlp — if it isn't installed yet, the rip job installs it first (brew/winget when
+present, otherwise the official static binary into `~/.neon-video/tools`) and then continues.
+Remuxes to mp4/m4a, imports into the media library
 (content-addressed like any import) and optionally places it on the timeline at `--at`. Rips prefer
 H.264 + AAC (the preview's WKWebView can't decode AV1/VP9); when a site only offers those codecs,
 the file is automatically converted to H.264 after download. Then slice away:

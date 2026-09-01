@@ -2,6 +2,10 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-09-01 · round 10
+
+- ☑ **Rip installs yt-dlp by itself** — "when the popup says we don't have the thing to rip, just install it": the rip job now self-heals. If yt-dlp is missing it installs it as the job's first step (brew/winget when available, otherwise the official static binary into `~/.neon-video/tools`) and then downloads the video — no error popup, no manual step. The install shows as job progress and in the Live feed. A missing ffmpeg now fails with the exact platform install command instead of a cryptic yt-dlp merge error.
+
 ## 2026-09-01 · round 9
 
 - ☑ **App was mac-coded on Windows** — tooltips/shortcut hints showed ⌘ everywhere. All shortcut labels now render per platform (⌘I → Ctrl+I, ⇧⌘Z → Ctrl+Shift+Z, ⌫ → Del, snap-pause ⌘ → Alt) via `lib/kbd.ts`; the handlers always accepted Ctrl, only the text was wrong.
