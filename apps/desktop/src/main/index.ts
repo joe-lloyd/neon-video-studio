@@ -28,7 +28,7 @@ import { ensureRenderRuntime } from './render-runtime.ts';
 import { UpdateManager } from './updates.ts';
 import type { Bootstrap, DesktopRPC } from '../shared/rpc.ts';
 
-const VERSION = '0.6.3';
+const VERSION = '0.6.4';
 const DEV_SERVER_URL = 'http://localhost:5173';
 
 async function resolveViewUrl(port: number, token: string): Promise<{ url: string; isDev: boolean }> {
