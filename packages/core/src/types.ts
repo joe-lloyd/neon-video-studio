@@ -42,6 +42,8 @@ export interface ClipTransform {
   y: number;
   /** 1 = full size. */
   scale: number;
+  /** Clockwise rotation in degrees around the element centre. Absent = 0. */
+  rotation?: number;
 }
 
 export type ClipAnimationType = 'fade' | 'slide-up' | 'slide-down' | 'slide-left' | 'slide-right' | 'pop';

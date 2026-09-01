@@ -47,7 +47,7 @@ COMMANDS
   events [--history N]                    Live-tail everything the app does (CLI actions, renders, peers) — Ctrl-C to stop
   timeline cut --from T --to T [--track REF] [--no-ripple]   Remove a timeline range (all tracks, ripple)
   timeline detach <clip>                  Split a video clip's audio onto an audio track (video muted)
-  timeline update <clip> --pos 0.5,0.3 --scale 0.6 --in pop:12 --out fade:10   Canvas placement + enter/exit animation
+  timeline update <clip> --pos 0.5,0.3 --scale 0.6 --rotation -15 --in pop:12 --out fade:10   Canvas placement + enter/exit animation
   record start | record stop [--at T]     Record a mic voice-over in the app (take lands on the VO track)
   rip <url> [--quality 1080|720|best|audio] [--at T]   Download a YouTube/web video into the media library (yt-dlp)
 
@@ -141,6 +141,7 @@ const { values: flags, positionals } = parseArgs({
     model: { type: 'string' },
     pos: { type: 'string' },
     scale: { type: 'string' },
+    rotation: { type: 'string' },
     in: { type: 'string' },
     resize: { type: 'boolean', default: false },
     claude: { type: 'boolean', default: true },
@@ -350,13 +351,15 @@ async function main(): Promise<void> {
           return { type, durationFrames: frames ? Number(frames) : 12 };
         };
         let transform;
-        if (flags.pos !== undefined || flags.scale !== undefined) {
-          const prev = target.kind !== 'component' || true ? (target as { transform?: { x: number; y: number; scale: number } }).transform : undefined;
+        if (flags.pos !== undefined || flags.scale !== undefined || flags.rotation !== undefined) {
+          const prev = (target as { transform?: { x: number; y: number; scale: number; rotation?: number } }).transform;
           const [px, py] = (flags.pos ?? '').split(',').map(Number);
+          const rotation = flags.rotation !== undefined ? Number(flags.rotation) : prev?.rotation ?? 0;
           transform = {
             x: Number.isFinite(px) ? px : prev?.x ?? 0.5,
             y: Number.isFinite(py) ? py : prev?.y ?? 0.5,
             scale: flags.scale !== undefined ? Number(flags.scale) : prev?.scale ?? 1,
+            ...(rotation !== 0 ? { rotation } : {}),
           };
         }
         const clip = await api.update(target.id, {

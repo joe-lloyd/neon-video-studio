@@ -2,6 +2,11 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-09-01 · round 8
+
+- ☑ **Direct manipulation for every FX** — all visible FX/images get a draggable box on the preview (click selects, drag moves — no inputs needed); the selected one has corner scale handles and a rotate knob. Soft snapping to canvas centre/margins/thirds and other elements' centres/edges (e.g. aligning two text blocks on the same y), rotation soft-snaps to 45° steps. The magnet toggle (N / transport button) now controls canvas snapping too; ⌘/Alt pauses it while held. Rotation is a first-class transform: inspector field + `neon-cli timeline update --rotation deg`, renders in preview and export.
+- ☑ **Bug: CLI couldn't set transforms/animations** — the control server's timeline/update handler silently dropped `transform`, `animateIn`, `animateOut`, `volumeKeyframes` and `reframe` (UI drags worked because they bypass that route). `--pos/--scale/--rotation/--in/--out` now persist via the API.
+
 ## 2026-09-01 · round 7
 
 - ☑ **Raspberry Pi build orchestrator write-up** — "can a Pi run a build queue that calls my mac/windows/ubuntu machines to build the app?" → added §6 to the self-hosted-builder concept review (three shapes: machines as labelled GitHub runners with the Pi as wake-on-LAN kicker; a real CI server like Woodpecker/Forgejo on the Pi; full DIY SSH fan-out with sketch code). The Pi itself builds nothing — it's arm64, all three targets are covered by the machines.

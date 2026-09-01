@@ -500,6 +500,11 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
           trackId: patch.trackId,
           color: patch.color,
           props: patch.props,
+          transform: patch.transform,
+          animateIn: patch.animateIn,
+          animateOut: patch.animateOut,
+          volumeKeyframes: patch.volumeKeyframes,
+          reframe: patch.reframe,
         },
         ORIGIN_API,
       );
