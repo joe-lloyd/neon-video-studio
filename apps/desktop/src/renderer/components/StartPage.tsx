@@ -3,6 +3,7 @@ import { FolderOpen, NeonIcon, NeonLogo, Plus, X } from '@neon/icon-kit';
 import { useEditor } from '../lib/context.ts';
 import { useSelector } from '../lib/store.ts';
 
+
 const SIZES = [
   { label: '1080p (16:9)', width: 1920, height: 1080 },
   { label: 'Vertical (9:16)', width: 1080, height: 1920 },
@@ -100,7 +101,33 @@ export function StartPage() {
             <p className="hint" style={{ marginTop: 10 }}>Projects are folders (<span className="mono">Name.neon</span>) with the media inside — copy them anywhere, open them on any machine.</p>
           </div>
         </div>
+        <div className="row between" style={{ marginTop: 14, alignItems: 'center' }}>
+          <span className="hint mono">v{editor.bridge.bootstrap.version}</span>
+          <UpdateRow />
+        </div>
       </div>
     </div>
+  );
+}
+
+/** "Search for updates" + live status; the actual install button lives in the title bar pill. */
+function UpdateRow() {
+  const editor = useEditor();
+  const update = useSelector(editor.ui, (u) => u.update);
+  const label =
+    update.phase === 'checking' ? 'Checking…'
+    : update.phase === 'downloading' ? `Downloading ${Math.round((update.progress ?? 0) * 100)}%`
+    : update.phase === 'installing' ? 'Restarting…'
+    : 'Check for updates';
+  return (
+    <span className="row" style={{ gap: 8, alignItems: 'center' }}>
+      {update.phase === 'available' ? (
+        <button className="btn sm magenta" onClick={() => void editor.applyUpdate()}>⬆ Install {update.version} & restart</button>
+      ) : (
+        <button className="btn sm" disabled={update.phase === 'checking' || update.phase === 'downloading' || update.phase === 'installing'} onClick={() => void editor.checkForUpdates()}>
+          {label}
+        </button>
+      )}
+    </span>
   );
 }

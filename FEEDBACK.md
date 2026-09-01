@@ -2,6 +2,14 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-09-01 · round 9
+
+- ☑ **App was mac-coded on Windows** — tooltips/shortcut hints showed ⌘ everywhere. All shortcut labels now render per platform (⌘I → Ctrl+I, ⇧⌘Z → Ctrl+Shift+Z, ⌫ → Del, snap-pause ⌘ → Alt) via `lib/kbd.ts`; the handlers always accepted Ctrl, only the text was wrong.
+- ☑ **FX grab boxes covered the whole frame** — the canvas editor now measures each element's *painted* content (text glyph runs, media, styled boxes) in the live composition and fits the box to it; scale/rotate handles, snapping and guides all work on the content box. Snap targets are other elements' content centres/edges, so two text blocks align on their actual text.
+- ☑ **Ripper suggested `brew` on Windows** — engine install hints and `ai setup` are platform-aware: brew (macOS), winget (Windows), apt/manual (Linux); yt-dlp falls back to the official static binary downloaded into `~/.neon-video/tools` on every platform. Also fixed `which()` for Windows (`;` PATH, `.exe`, winget links dir, tools dir).
+- ☑ **Auto-update** — Electrobun updater wired to GitHub Releases (`release.baseUrl` → `releases/latest/download`; CI uploads the update feed + native installers). The app checks on boot & every 4 h; an ⬆ Update pill appears in the title bar (accept = download, install, restart), plus "Check for updates" on the Projects overview and in the app menu. Apps ≤ 0.5.0 predate the feed and need one manual reinstall.
+- ☑ **Icon had a white background** — qlmanage composites SVGs onto white; icons are now rasterised with AppKit (`scripts/svg2png.swift`) with true transparency and regenerated for mac/win/linux.
+
 ## 2026-09-01 · round 8
 
 - ☑ **Direct manipulation for every FX** — all visible FX/images get a draggable box on the preview (click selects, drag moves — no inputs needed); the selected one has corner scale handles and a rotate knob. Soft snapping to canvas centre/margins/thirds and other elements' centres/edges (e.g. aligning two text blocks on the same y), rotation soft-snaps to 45° steps. The magnet toggle (N / transport button) now controls canvas snapping too; ⌘/Alt pauses it while held. Rotation is a first-class transform: inspector field + `neon-cli timeline update --rotation deg`, renders in preview and export.

@@ -43,6 +43,7 @@ import {
 } from '@neon/icon-kit';
 import type { LucideIcon } from 'lucide-react';
 import { useEditor } from '../lib/context.ts';
+import { kbdFor } from '../lib/kbd.ts';
 import { AiPanel } from './AiPanel.tsx';
 import { ScriptPanel } from './ScriptPanel.tsx';
 import { useSelector, useStoreValue, type Panel } from '../lib/store.ts';
@@ -445,7 +446,7 @@ function InspectorPanel() {
               <AnimationField label="Animate in" value={clip.animateIn} onChange={(a) => editor.updateClip(clip.id, { animateIn: a })} fps={fps} />
               <AnimationField label="Animate out" value={clip.animateOut} onChange={(a) => editor.updateClip(clip.id, { animateOut: a })} fps={fps} />
             </div>
-            <p className="hint">Drag the element in the preview to position it, corners to scale, the knob above to rotate; double-click resets. Soft snapping to centre/margins/other elements — toggle with the magnet (N), pause with ⌘.</p>
+            <p className="hint">Drag the element in the preview to position it, corners to scale, the knob above to rotate; double-click resets. Soft snapping to centre/margins/other elements — toggle with the magnet (N), pause with {kbdFor(editor.bridge.bootstrap.platform).snapPause}.</p>
           </>
         ) : null}
         <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>

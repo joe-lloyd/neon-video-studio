@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useEditor } from '../lib/context.ts';
+import { kbdFor, type Kbd } from '../lib/kbd.ts';
 import { useSelector } from '../lib/store.ts';
 import { RenderControls, RenderJobs } from './SidePanels.tsx';
 
@@ -45,30 +46,32 @@ function JoinRoomForm({ onDone }: { onDone: () => void }) {
   );
 }
 
-const SHORTCUTS: [string, string][] = [
+const shortcutRows = (k: Kbd): [string, string][] => [
   ['Space', 'Play / pause'],
   ['J / K / L', 'Back 1s / pause / forward 1s'],
-  ['← / →', 'Step one frame (⇧ = one second)'],
+  ['← / →', `Step one frame (${k.isMac ? '⇧' : 'Shift'} = one second)`],
   ['Home / End', 'Jump to start / end'],
   ['S', 'Split clip(s) under the playhead'],
-  ['⌫', 'Delete selection'],
-  ['⌘Z / ⇧⌘Z', 'Undo / redo (your own edits only)'],
-  ['⌘I', 'Import media'],
-  ['⌘E', 'Render'],
-  ['⌘S / ⇧⌘S', 'Save / Save As'],
+  [k.isMac ? '⌫' : 'Del', 'Delete selection'],
+  [`${k.mod('Z')} / ${k.shiftMod('Z')}`, 'Undo / redo (your own edits only)'],
+  [k.mod('I'), 'Import media'],
+  [k.mod('E'), 'Render'],
+  [`${k.mod('S')} / ${k.shiftMod('S')}`, 'Save / Save As'],
   ['N', 'Toggle snapping'],
-  ['+ / −', 'Zoom timeline (⌥+wheel over timeline too)'],
-  ['⌘A', 'Select all clips'],
+  ['+ / −', `Zoom timeline (${k.isMac ? '⌥' : 'Alt'}+wheel over timeline too)`],
+  [k.mod('A'), 'Select all clips'],
   ['?', 'This list'],
 ];
 
 function Shortcuts() {
+  const editor = useEditor();
+  const kbd = kbdFor(editor.bridge.bootstrap.platform);
   return (
     <>
       <h2>Keyboard shortcuts</h2>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <tbody>
-          {SHORTCUTS.map(([k, d]) => (
+          {shortcutRows(kbd).map(([k, d]) => (
             <tr key={k}>
               <td style={{ padding: '4px 0', width: 130 }}><kbd>{k}</kbd></td>
               <td className="muted" style={{ padding: '4px 0' }}>{d}</td>

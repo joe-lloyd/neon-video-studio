@@ -1,7 +1,7 @@
 /** Locate the external engines the AI features rely on. Everything is optional and reported honestly. */
 import { access, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import type { AiCapabilities } from '@neon/core';
@@ -19,17 +19,26 @@ export interface ToolPaths {
   vision?: string;
 }
 
-const SEARCH_DIRS = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'];
+const IS_WIN = process.platform === 'win32';
+// PATH is often incomplete inside a bundled app, so also look in the usual install spots —
+// and always in ~/.neon-video/tools, where `ai setup` drops binaries it downloads directly.
+const SEARCH_DIRS = IS_WIN
+  ? [join(homedir(), 'AppData', 'Local', 'Microsoft', 'WinGet', 'Links')]
+  : ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin'];
 
 async function exists(path: string, mode = constants.F_OK): Promise<boolean> {
   return access(path, mode).then(() => true, () => false);
 }
 
 export async function which(name: string): Promise<string | undefined> {
-  const dirs = [...(process.env.PATH ?? '').split(':'), ...SEARCH_DIRS].filter(Boolean);
+  const dirs = [...(process.env.PATH ?? '').split(delimiter), ...SEARCH_DIRS, toolsDir()].filter(Boolean);
+  const names = IS_WIN && !/\.[a-z0-9]+$/i.test(name) ? [`${name}.exe`, `${name}.cmd`, `${name}.bat`, name] : [name];
   for (const dir of dirs) {
-    const candidate = join(dir, name);
-    if (await exists(candidate, constants.X_OK)) return candidate;
+    for (const n of names) {
+      const candidate = join(dir, n);
+      // X_OK is meaningless on Windows — existence is the best signal there.
+      if (await exists(candidate, IS_WIN ? constants.F_OK : constants.X_OK)) return candidate;
+    }
   }
   return undefined;
 }
@@ -98,11 +107,40 @@ export async function detectTools(opts: { compileVision?: boolean } = {}): Promi
   return { paths, capabilities };
 }
 
-export const SETUP_HINTS = {
-  whisper: 'brew install whisper-cpp && curl -L -o ~/.neon-video/models/ggml-base.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin',
-  rnnoise: 'curl -L -o ~/.neon-video/models/std.rnnn https://raw.githubusercontent.com/GregorR/rnnoise-models/master/somnolent-hogwash-2018-09-01/sh.rnnn',
-  deepfilter: 'optional: install DeepFilterNet (deep-filter) from https://github.com/Rikorose/DeepFilterNet/releases',
-  vision: 'macOS only: xcode-select --install (the helper compiles itself on first use)',
-  ytdlp: 'brew install yt-dlp',
-  claude: 'optional: export ANTHROPIC_API_KEY=… (or `ant auth login`) to let Claude pick B-roll concepts',
-};
+const MODEL_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin';
+const RNNOISE_URL = 'https://raw.githubusercontent.com/GregorR/rnnoise-models/master/somnolent-hogwash-2018-09-01/sh.rnnn';
+
+/** Copy-able install commands for the platform this process runs on (the app and CLI are always local). */
+export function setupHints(platform: NodeJS.Platform = process.platform): Record<'whisper' | 'rnnoise' | 'deepfilter' | 'vision' | 'ytdlp' | 'claude', string> {
+  const shared = {
+    deepfilter: 'optional: install DeepFilterNet (deep-filter) from https://github.com/Rikorose/DeepFilterNet/releases',
+    claude: 'optional: export ANTHROPIC_API_KEY=… (or `ant auth login`) to let Claude pick B-roll concepts',
+  };
+  if (platform === 'win32') {
+    return {
+      ...shared,
+      whisper: `download whisper-cli from https://github.com/ggml-org/whisper.cpp/releases into %USERPROFILE%\\.neon-video\\tools, then: curl.exe -L -o %USERPROFILE%\\.neon-video\\models\\ggml-base.en.bin ${MODEL_URL}`,
+      rnnoise: `curl.exe -L -o %USERPROFILE%\\.neon-video\\models\\std.rnnn ${RNNOISE_URL}`,
+      vision: 'macOS only — person matting is unavailable on Windows',
+      ytdlp: 'winget install yt-dlp.yt-dlp (or let “Install automatically” download it)',
+    };
+  }
+  if (platform === 'linux') {
+    return {
+      ...shared,
+      whisper: `build whisper-cli from https://github.com/ggml-org/whisper.cpp (cmake) into ~/.neon-video/tools, then: curl -L -o ~/.neon-video/models/ggml-base.en.bin ${MODEL_URL}`,
+      rnnoise: `curl -L -o ~/.neon-video/models/std.rnnn ${RNNOISE_URL}`,
+      vision: 'macOS only — person matting is unavailable on Linux',
+      ytdlp: 'sudo apt install yt-dlp (or let “Install automatically” download it)',
+    };
+  }
+  return {
+    ...shared,
+    whisper: `brew install whisper-cpp && curl -L -o ~/.neon-video/models/ggml-base.en.bin ${MODEL_URL}`,
+    rnnoise: `curl -L -o ~/.neon-video/models/std.rnnn ${RNNOISE_URL}`,
+    vision: 'macOS only: xcode-select --install (the helper compiles itself on first use)',
+    ytdlp: 'brew install yt-dlp',
+  };
+}
+
+export const SETUP_HINTS = setupHints();

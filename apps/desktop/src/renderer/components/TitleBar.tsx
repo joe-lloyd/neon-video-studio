@@ -1,13 +1,29 @@
 import { useState } from 'react';
 import { Download, Maximize2, Minimize2, NeonIcon, NeonLogo, Radio, Upload, X } from '@neon/icon-kit';
 import { useEditor } from '../lib/context.ts';
-import { useStoreValue } from '../lib/store.ts';
+import { kbdFor } from '../lib/kbd.ts';
+import { useSelector, useStoreValue } from '../lib/store.ts';
+
+/** Appears when the main process found an update; one click downloads, installs and restarts. */
+function UpdatePill() {
+  const editor = useEditor();
+  const update = useSelector(editor.ui, (u) => u.update);
+  if (update.phase === 'downloading') return <span className="pill cyan">update {Math.round((update.progress ?? 0) * 100)}%</span>;
+  if (update.phase === 'installing') return <span className="pill cyan">restarting…</span>;
+  if (update.phase !== 'available') return null;
+  return (
+    <button className="pill magenta" onClick={() => void editor.applyUpdate()} title={`Version ${update.version} is ready — install and restart now`}>
+      ⬆ Update {update.version}
+    </button>
+  );
+}
 
 export function TitleBar() {
   const editor = useEditor();
   const ui = useStoreValue(editor.ui);
   const [draft, setDraft] = useState<string | null>(null);
-  const isMac = editor.bridge.bootstrap.platform === 'darwin';
+  const kbd = kbdFor(editor.bridge.bootstrap.platform);
+  const isMac = kbd.isMac;
 
   return (
     <header className={`titlebar${isMac ? '' : ' no-traffic-lights'}`}>
@@ -40,10 +56,11 @@ export function TitleBar() {
           <NeonIcon icon={Radio} size={11} tone={ui.room.role === 'host' ? 'magenta' : 'cyan'} /> {ui.room.roomCode}
         </button>
       ) : null}
-      <button className="btn sm" onClick={() => void editor.importMedia()} title="Import media (⌘I)">
+      <UpdatePill />
+      <button className="btn sm" onClick={() => void editor.importMedia()} title={`Import media (${kbd.mod('I')})`}>
         <NeonIcon icon={Upload} size={14} tone="cyan" /> Import
       </button>
-      <button className="btn sm magenta" onClick={() => editor.ui.set({ dialog: 'render' })} title="Render (⌘E)">
+      <button className="btn sm magenta" onClick={() => editor.ui.set({ dialog: 'render' })} title={`Render (${kbd.mod('E')})`}>
         <NeonIcon icon={Download} size={14} tone="magenta" /> Render
       </button>
       {!isMac ? (

@@ -44,7 +44,7 @@ async function tryElectrobun(): Promise<Bridge | null> {
   const handlers: MessageHandlers = {};
   // Every message type declared in DesktopRPC['webview']['messages'] must be forwarded here;
   // a missing entry silently drops the message (a bug we hit once — keep this list in sync).
-  const MESSAGE_TYPES: (keyof Messages)[] = ['renderUpdate', 'roomUpdate', 'projectOpened', 'toast', 'menuAction', 'activity', 'previewControl', 'uiControl', 'aiUpdate'];
+  const MESSAGE_TYPES: (keyof Messages)[] = ['renderUpdate', 'roomUpdate', 'projectOpened', 'toast', 'menuAction', 'activity', 'previewControl', 'uiControl', 'aiUpdate', 'updateStatus'];
   const forward = Object.fromEntries(
     MESSAGE_TYPES.map((type) => [type, (payload: unknown) => (handlers[type] as ((p: unknown) => void) | undefined)?.(payload)]),
   ) as { [K in keyof Messages]: (payload: Messages[K]) => void };
@@ -200,6 +200,9 @@ async function httpBridge(): Promise<Bridge> {
           return true as never;
         case 'windowCommand':
           return false as never;
+        case 'updateCheck':
+        case 'updateApply':
+          return { phase: 'unsupported', currentVersion: bootstrap.version, error: 'updates need the desktop app' } as never;
         default:
           return unsupported(String(name));
       }

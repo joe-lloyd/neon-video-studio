@@ -24,6 +24,7 @@ import { EventHub } from './events.ts';
 import { AiManager } from './ai-manager.ts';
 import { registerAllPacks } from '@neon/remotion-workspace/packs';
 import { VoiceRecorder } from './recorder.ts';
+import { UpdateManager } from './updates.ts';
 import type { Bootstrap, DesktopRPC } from '../shared/rpc.ts';
 
 const VERSION = '0.5.0';
@@ -71,12 +72,14 @@ async function main(): Promise<void> {
     events: new EventHub(),
     ai: null as unknown as AiManager,
     recorder: new VoiceRecorder(),
+    updates: null as unknown as UpdateManager,
     localPort: 0,
     startedAt,
     rpc: null,
     isDev: false,
   };
   ctx.assets = new AssetManager(store, settings.peerId);
+  ctx.updates = new UpdateManager(ctx);
   ctx.sync = new SyncHub(store);
   ctx.room = new RoomManager(ctx);
   ctx.ai = new AiManager(ctx);
@@ -272,6 +275,8 @@ async function main(): Promise<void> {
           await saveSettings(settings);
           return true;
         },
+        updateCheck: () => ctx.updates.check(),
+        updateApply: () => ctx.updates.apply(),
       },
       messages: {
         rendererReady: () => {
@@ -370,6 +375,12 @@ async function main(): Promise<void> {
         case 'help:cli':
           rpc.send.toast({ kind: 'info', message: 'Run `pnpm cli --help` in the repo (or neon-cli --help when linked).' });
           break;
+        case 'help:check-updates': {
+          const state = await ctx.updates.check();
+          if (state.phase === 'up-to-date') rpc.send.toast({ kind: 'success', message: `You're on the latest version (${VERSION}).` });
+          else if (state.phase === 'error' || state.phase === 'unsupported') rpc.send.toast({ kind: 'info', message: `Update check: ${state.error ?? 'unavailable'}` });
+          break;
+        }
         case 'help:remotion-license':
           Utils.openExternal('https://www.remotion.pro/license');
           break;
@@ -411,6 +422,8 @@ async function main(): Promise<void> {
     cleanup();
     process.exit(0);
   });
+
+  ctx.updates.start();
 
   ctx.events.activity('system', 'app.ready', `Neon Video Studio ${VERSION} ready · project “${store.doc.getMeta().name}” · API :${local.port}`);
   console.log(`[main] Neon Video Studio ${VERSION} ready (project: ${store.doc.getMeta().name} @ ${store.dir})`);
