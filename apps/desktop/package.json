@@ -14,7 +14,7 @@
     "build:app": "electrobun prepare && vite build && electrobun build --env=stable",
     "build:canary": "electrobun prepare && vite build && electrobun build --env=canary",
     "typecheck": "tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json",
-    "test": "echo 'desktop is covered by the end-to-end CLI smoke test (pnpm smoke)'"
+    "test": "node --test test/*.test.ts"
   },
   "dependencies": {
     "@neon/ai": "workspace:*",

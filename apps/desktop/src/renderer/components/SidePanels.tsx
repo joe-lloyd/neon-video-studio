@@ -385,9 +385,9 @@ function InspectorPanel() {
             <div className="grid-2">
               <div className="field">
                 <label>Scale · {Math.round((clip.transform?.scale ?? 1) * 100)}% {clip.transform ? <button className="btn sm ghost" onClick={() => editor.setTransform(clip.id, null)}>reset</button> : null}</label>
-                <input type="range" min={0.05} max={3} step={0.01} value={clip.transform?.scale ?? 1} onChange={(e) => editor.setTransform(clip.id, { ...tfDefaults(clip), scale: Number(e.target.value) })} />
+                <input type="range" min={0.05} max={3} step={0.01} value={clip.transform?.scale ?? 1} onChange={(e) => editor.setTransformAnchored(clip.id, { scale: Number(e.target.value) })} />
               </div>
-              <div className="field"><label>Rotation · °</label><input className="input mono" type="number" step={1} min={-180} max={180} value={Math.round((clip.transform?.rotation ?? 0) * 10) / 10} onChange={(e) => editor.setTransform(clip.id, { ...tfDefaults(clip), rotation: Number(e.target.value) })} /></div>
+              <div className="field"><label>Rotation · °</label><input className="input mono" type="number" step={1} min={-180} max={180} value={Math.round((clip.transform?.rotation ?? 0) * 10) / 10} onChange={(e) => editor.setTransformAnchored(clip.id, { rotation: Number(e.target.value) })} /></div>
             </div>
             <div className="grid-2">
               <AnimationField label="Animate in" value={clip.animateIn} onChange={(a) => editor.updateClip(clip.id, { animateIn: a })} fps={fps} />

@@ -2,6 +2,10 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-09-02 · round 19
+
+- ☑ **"In FX, scaling or rotating pivots on a weird origin — it should be the element's centre so it stays in place"** — the composition applies `translate·scale·rotate` to a full-frame wrapper, so the CSS pivot was the *frame* centre; any off-centre element drifted when scaled/rotated. The canvas handles and the inspector's scale/rotation fields now re-solve the position on every change so the element's painted centre stays fixed (`renderer/lib/transform-math.ts`, covered by tests; the canvas editor shares its measured content bounds with the inspector via `editor.canvasBounds`). Render semantics and saved projects are unchanged. Note: `neon-cli timeline update --scale/--rotation` still pivots on the frame centre (the main process has no measurement of the element's painted bounds) — pass `--pos` alongside when precise placement matters.
+
 ## 2026-09-02 · round 18
 
 - ☑ **"Add shift-select for a lane so you can grab multiple items in the same lane"** — timeline selection now has the usual modifiers: **⇧-click** extends the selection along the lane (every clip between the last selected clip on that lane and the clicked one), **⌘/Ctrl-click** toggles a single clip, **⇧-drag on empty lane space** draws a marquee that selects the clips it sweeps over. Dragging any clip of a multi-selection moves the whole group rigidly (same delta, never past frame 0, each clip stays on its lane, collisions with outside clips resolve per clip). Delete already handled multi-selections. CLI parity: `neon-cli timeline move <clip...> --by 2s` (negative `--by=-15f`) via `POST /api/timeline/nudge`; shortcuts dialog lists the gestures.
