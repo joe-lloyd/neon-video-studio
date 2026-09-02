@@ -454,6 +454,36 @@ export class ProjectDoc {
     }, origin);
   }
 
+  /**
+   * Shift several clips by the same number of frames (multi-selection drag). The group is rigid —
+   * it never pushes its leftmost clip before frame 0 — clips keep their tracks, and collisions with
+   * clips outside the group resolve per clip to the nearest free slot.
+   */
+  moveClips(ids: string[], deltaFrames: number, origin?: unknown): Clip[] {
+    const moving = ids.map((id) => {
+      const clip = this.getClip(id);
+      if (!clip) throw new Error(`Clip ${id} not found`);
+      return clip;
+    });
+    if (moving.length === 0) return [];
+    const minStart = Math.min(...moving.map((c) => c.startFrame));
+    const delta = Math.max(Math.round(deltaFrames), -minStart);
+    if (delta === 0) return moving;
+    const pending = new Set(ids);
+    return this.transact(() => {
+      // Move the leading edge first so group members never collide with each other's old slots.
+      const ordered = [...moving].sort((a, b) => (delta > 0 ? b.startFrame - a.startFrame : a.startFrame - b.startFrame));
+      const out: Clip[] = [];
+      for (const clip of ordered) {
+        const others = this.clipsOnTrack(clip.trackId).filter((c) => !pending.has(c.id));
+        const { startFrame } = resolveFreePosition(others, clip.startFrame + delta, clip.durationFrames);
+        out.push(this.updateClip(clip.id, { startFrame }, origin));
+        pending.delete(clip.id);
+      }
+      return out;
+    }, origin);
+  }
+
   /** Change the length of a clip from either edge. Returns the updated clip. */
   trimClip(id: string, edge: 'start' | 'end', newFrame: number, origin?: unknown): Clip {
     const clip = this.getClip(id);

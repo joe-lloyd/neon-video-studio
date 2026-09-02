@@ -122,6 +122,20 @@ jobs:
             exit 1
           fi
           ls -la release
+          # The updater reads releases/latest/download/stable-<os>-<arch>-update.json. If one platform's
+          # build failed, its feed files would vanish from `latest` and every app on that platform would
+          # get a 404 on "Check for updates". Backfill them from the previous release instead, so those
+          # apps see "up to date" until the platform is rebuilt (re-run the failed job → assets are added).
+          prev=$(gh release list --exclude-drafts --exclude-pre-releases --limit 20 --json tagName --jq '.[].tagName' | grep -v "^$GITHUB_REF_NAME$" | head -1 || true)
+          for plat in macos-arm64 win-x64 linux-x64; do
+            if ! ls release/stable-${plat}-update.json >/dev/null 2>&1; then
+              echo "::warning::No ${plat} build in this release — backfilling the update feed from ${prev:-<none>}"
+              if [ -n "$prev" ]; then
+                gh release download "$prev" --pattern "stable-${plat}-*" --dir release --clobber || echo "::warning::previous release has no ${plat} feed either"
+              fi
+            fi
+          done
+          files=(release/*)
           {
             echo "## Install"
             echo
