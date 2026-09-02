@@ -1,6 +1,6 @@
 import React from 'react';
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
-import { SANS, useUiScale } from '../../shared.ts';
+import { SANS, useUiScale } from '@neon/fx-kit';
 import { BOBA, blobPath, blobRadii, easeEffects, easeExit, easeExpressiveDefault, easeExpressiveFast } from './tokens.ts';
 
 /** Display title: words drift up into place one after another, tight 1.05 leading, matte and flat. */

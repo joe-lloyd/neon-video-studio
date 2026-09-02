@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { getPreset, projectPreset, ProjectSchema, type Project } from '@neon/core';
+import { discoverInstalledPacks } from '@neon/core/node';
 import { startAssetServer } from './asset-server.ts';
 import { findRepoRoot, renderPaths } from './paths.ts';
 import { runRenderWorker } from './run.ts';
@@ -31,6 +32,8 @@ export async function renderHeadless(opts: HeadlessRenderOptions): Promise<{ out
   const project = await loadProjectDir(projectDir);
   const preset = !opts.presetId || opts.presetId === 'project' ? projectPreset(project.meta) : getPreset(opts.presetId);
   const assets = await startAssetServer(join(projectDir, 'assets'));
+  const enabled = new Set(project.meta.packs ?? []);
+  const packs = (await discoverInstalledPacks()).filter((p) => enabled.has(p.name) && p.manifest && !p.error);
   try {
     const spec: RenderJobSpec = {
       project,
@@ -40,7 +43,8 @@ export async function renderHeadless(opts: HeadlessRenderOptions): Promise<{ out
       frameRange: opts.frameRange ?? null,
       bundleCacheDir: opts.bundleCacheDir ?? join(repoRoot, '.remotion-bundle'),
       entryPoint: paths.entryPoint,
-      watchDirs: paths.watchDirs,
+      watchDirs: [...paths.watchDirs, ...packs.map((p) => p.dir)],
+      packs: packs.map((p) => ({ name: p.name, entry: p.entry })),
       licenseKey: process.env.REMOTION_LICENSE_KEY,
     };
     const run = runRenderWorker(spec, { workerPath: paths.workerPath, onEvent: opts.onEvent, onLog: opts.onLog });

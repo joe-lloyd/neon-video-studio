@@ -1,0 +1,25 @@
+{
+  "name": "@neon/fx-kit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Helpers for FX pack authors: 1080p-relative scaling, font stacks, glow — the stable import surface for external packs",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "echo 'no unit tests (helpers)'",
+    "build": "echo '@neon/fx-kit is consumed as TypeScript source'"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "remotion": "4.0.515"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "react": "^19.1.0",
+    "remotion": "4.0.515",
+    "typescript": "^5.9.0"
+  }
+}

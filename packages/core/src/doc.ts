@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import { newId } from './ids.ts';
 import { clipEnd, mergeRanges, planRippleInsert, resolveFreePosition, sortClips, sortTracks, trackEnd } from './ops.ts';
-import { getTemplate, resolveTemplateProps } from './templates.ts';
+import { CORE_PACK_NAME, getPack, getTemplate, hasTemplate, resolveTemplateProps } from './templates.ts';
 import {
   DEFAULT_PROJECT_META,
   PROJECT_SCHEMA_VERSION,
@@ -57,6 +57,8 @@ export type ClipPatch = Partial<Omit<MediaClip, 'id' | 'kind' | 'assetId' | 'vol
   };
 
 const TRACK_PREFIX: Record<TrackKind, string> = { video: 'V', audio: 'A', overlay: 'FX' };
+/** Canonical section order in the timeline, top to bottom. */
+const TRACK_SECTION_RANK: Record<TrackKind, number> = { video: 0, audio: 1, overlay: 2 };
 
 /**
  * Typed façade over the Yjs document that stores a project.
@@ -133,6 +135,21 @@ export class ProjectDoc {
       for (const clip of project.clips) this.clips.set(clip.id, clipToMap(clip));
       for (const t of project.transcripts ?? []) this.transcripts.set(t.assetId, mapFrom(t));
     }, ORIGIN_SYSTEM);
+  }
+
+  /**
+   * Bring the document to exactly `project`, touching only entities that differ. Used to step
+   * through persisted history: unchanged clips keep their Yjs items (and peers see a small diff).
+   */
+  applySnapshot(project: Project, origin: unknown = ORIGIN_SYSTEM): void {
+    this.transact(() => {
+      for (const key of [...this.meta.keys()]) if (!(key in project.meta)) this.meta.delete(key);
+      for (const [k, v] of Object.entries(project.meta)) if (stableStringify(this.meta.get(k)) !== stableStringify(v)) this.meta.set(k, v);
+      syncCollection(this.tracks, project.tracks, (t) => t.id, mapFrom, (m) => m.toJSON());
+      syncCollection(this.assets, project.assets, (a) => a.id, mapFrom, (m) => m.toJSON());
+      syncCollection(this.clips, project.clips, (c) => c.id, clipToMap, mapToClip);
+      syncCollection(this.transcripts, project.transcripts ?? [], (t) => t.assetId, mapFrom, (m) => m.toJSON());
+    }, origin);
   }
 
   static fromJSON(project: Project, doc?: Y.Doc): ProjectDoc {
@@ -240,12 +257,32 @@ export class ProjectDoc {
     return track;
   }
 
+  /**
+   * Add a track at the bottom of its section: V2 goes right under the last V lane, A2 under the
+   * last A lane, FX2 under the last FX lane. If the section is empty the track is placed after
+   * the sections that precede it (video → audio → overlay). Later tracks shift down by one.
+   */
   addTrack(kind: TrackKind, name?: string, origin?: unknown): Track {
     return this.transact(() => {
-      const existing = this.toJSON().tracks;
-      const sameKind = existing.filter((t) => t.kind === kind).length;
-      const order = existing.length === 0 ? 0 : Math.max(...existing.map((t) => t.order)) + 1;
-      const track = this.createTrack(kind, name ?? `${TRACK_PREFIX[kind]}${sameKind + 1}`, order);
+      const existing = sortTracks(this.toJSON().tracks);
+      const sameKind = existing.filter((t) => t.kind === kind);
+      let insertAt: number;
+      if (sameKind.length > 0) {
+        insertAt = existing.indexOf(sameKind[sameKind.length - 1]!) + 1;
+      } else {
+        insertAt = 0;
+        existing.forEach((t, i) => {
+          if (TRACK_SECTION_RANK[t.kind] < TRACK_SECTION_RANK[kind]) insertAt = i + 1;
+        });
+      }
+      const next = existing[insertAt];
+      const order = next ? next.order : existing.length === 0 ? 0 : Math.max(...existing.map((t) => t.order)) + 1;
+      if (next) {
+        for (const t of existing) {
+          if (t.order >= order) this.tracks.get(t.id)?.set('order', t.order + 1);
+        }
+      }
+      const track = this.createTrack(kind, name ?? `${TRACK_PREFIX[kind]}${sameKind.length + 1}`, order);
       this.touch();
       return track;
     }, origin);
@@ -301,6 +338,12 @@ export class ProjectDoc {
       if (input.kind === 'component') {
         if (!input.componentName) throw new Error('componentName is required for component clips');
         const template = getTemplate(input.componentName);
+        // Placing a component from an installed pack pulls that pack into the project so exports bundle it.
+        const packName = template.pack;
+        if (packName && packName !== CORE_PACK_NAME && getPack(packName)?.source === 'installed') {
+          const current = (this.meta.get('packs') as string[] | undefined) ?? [];
+          if (!current.includes(packName)) this.meta.set('packs', [...current, packName]);
+        }
         const props = resolveTemplateProps(input.componentName, input.props);
         const durationFrames = Math.max(1, Math.round(input.durationFrames ?? template.defaultDurationSeconds * fps));
         clip = {
@@ -387,10 +430,10 @@ export class ProjectDoc {
       }
       if (props) {
         if (m.get('kind') !== 'component') throw new Error('props can only be set on component clips');
-        const validated = resolveTemplateProps(m.get('componentName') as string, {
-          ...((m.get('props') as YMap).toJSON() as Record<string, unknown>),
-          ...props,
-        });
+        const componentName = m.get('componentName') as string;
+        const merged = { ...((m.get('props') as YMap).toJSON() as Record<string, unknown>), ...props };
+        // A clip from a pack that is not loaded here (uninstalled / disabled) keeps its props verbatim.
+        const validated = hasTemplate(componentName) ? resolveTemplateProps(componentName, merged) : merged;
         const target = m.get('props') as YMap;
         for (const [k, v] of Object.entries(validated)) target.set(k, v);
       }
@@ -646,6 +689,28 @@ export class ProjectDoc {
 }
 
 // ---- helpers ---------------------------------------------------------------------------
+
+/** Replace/insert/delete entries of a Y.Map so it mirrors `items`, leaving identical entries untouched. */
+function syncCollection<T extends object>(target: Y.Map<YMap>, items: T[], keyOf: (item: T) => string, toMap: (item: T) => YMap, fromMap: (m: YMap) => unknown): void {
+  const wanted = new Map(items.map((item) => [keyOf(item), item] as const));
+  for (const key of [...target.keys()]) if (!wanted.has(key)) target.delete(key);
+  for (const [key, item] of wanted) {
+    const existing = target.get(key);
+    if (existing && stableStringify(fromMap(existing)) === stableStringify(item)) continue;
+    target.set(key, toMap(item));
+  }
+}
+
+/** JSON with sorted object keys, so structurally equal values compare equal regardless of insertion order. */
+export function stableStringify(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  return JSON.stringify(value, (_k, v: unknown) => {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([, x]) => x !== undefined).sort(([a], [b]) => a.localeCompare(b)));
+    }
+    return v;
+  });
+}
 
 function mapFrom(obj: object): YMap {
   const m = new Y.Map<unknown>();

@@ -20,6 +20,9 @@ importers:
       '@neon/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@neon/fx-kit':
+        specifier: workspace:*
+        version: link:../../packages/fx-kit
       '@neon/remotion-workspace':
         specifier: workspace:*
         version: link:../remotion-workspace
@@ -42,6 +45,9 @@ importers:
       '@neon/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@neon/fx-kit':
+        specifier: workspace:*
+        version: link:../../packages/fx-kit
       '@neon/icon-kit':
         specifier: workspace:*
         version: link:../../packages/icon-kit
@@ -112,6 +118,9 @@ importers:
       '@neon/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@neon/fx-kit':
+        specifier: workspace:*
+        version: link:../../packages/fx-kit
       react:
         specifier: ^19.1.0
         version: 19.2.8
@@ -128,6 +137,27 @@ importers:
       '@types/react-dom':
         specifier: ^19.1.0
         version: 19.2.4(@types/react@19.2.18)
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
+  examples/packs/boba-expressive:
+    devDependencies:
+      '@neon/core':
+        specifier: workspace:*
+        version: link:../../../packages/core
+      '@neon/fx-kit':
+        specifier: workspace:*
+        version: link:../../../packages/fx-kit
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.18
+      react:
+        specifier: ^19.1.0
+        version: 19.2.8
+      remotion:
+        specifier: 4.0.515
+        version: 4.0.515(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
@@ -160,6 +190,21 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
+  packages/fx-kit:
+    devDependencies:
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.18
+      react:
+        specifier: ^19.1.0
+        version: 19.2.8
+      remotion:
+        specifier: 4.0.515
+        version: 4.0.515(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
@@ -216,6 +261,9 @@ importers:
       '@neon/core':
         specifier: workspace:*
         version: link:../core
+      '@neon/fx-kit':
+        specifier: workspace:*
+        version: link:../fx-kit
       '@neon/remotion-workspace':
         specifier: workspace:*
         version: link:../../apps/remotion-workspace

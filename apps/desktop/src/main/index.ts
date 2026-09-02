@@ -26,6 +26,10 @@ import { registerAllPacks } from '@neon/remotion-workspace/packs';
 import { VoiceRecorder } from './recorder.ts';
 import { ensureRenderRuntime } from './render-runtime.ts';
 import { UpdateManager } from './updates.ts';
+import { HistoryStore } from './history.ts';
+import { WaveformCache } from './waveforms.ts';
+import { PackManager } from './packs.ts';
+import { repoRoot } from './paths.ts';
 import type { Bootstrap, DesktopRPC } from '../shared/rpc.ts';
 
 const VERSION = '0.7.0';
@@ -74,12 +78,26 @@ async function main(): Promise<void> {
     ai: null as unknown as AiManager,
     recorder: new VoiceRecorder(),
     updates: null as unknown as UpdateManager,
+    history: null as unknown as HistoryStore,
+    waveforms: null as unknown as WaveformCache,
+    packs: null as unknown as PackManager,
     localPort: 0,
     startedAt,
     rpc: null,
     isDev: false,
   };
   ctx.assets = new AssetManager(store, settings.peerId);
+  ctx.waveforms = new WaveformCache(ctx.assets);
+  ctx.history = new HistoryStore(store);
+  await ctx.history.load();
+  let examplesDir: string | null = null;
+  try {
+    examplesDir = join(repoRoot(), 'examples/packs');
+  } catch {
+    /* packaged app: no in-repo examples */
+  }
+  ctx.packs = new PackManager({ examplesDir, onChange: (packs) => ctx.rpc?.send.packsChanged({ packs }) });
+  await ctx.packs.load();
   ctx.updates = new UpdateManager(ctx);
   ctx.sync = new SyncHub(store);
   ctx.room = new RoomManager(ctx);
@@ -89,6 +107,7 @@ async function main(): Promise<void> {
     projectDir: () => store.dir,
     assetBaseUrl: () => `http://127.0.0.1:${ctx.localPort}/assets`,
     renderRuntime: (onLog) => ensureRenderRuntime({ version: VERSION, settings }, onLog),
+    packsFor: (project) => ctx.packs.renderPacks(project.meta.packs),
     onUpdate: (job) => {
       ctx.rpc?.send.renderUpdate({ job });
       ctx.events.emit({ type: 'render', job });
@@ -122,7 +141,9 @@ async function main(): Promise<void> {
     const results: ImportAssetResponse[] = [];
     for (const file of files) {
       try {
-        results.push(await ctx.assets.import(file, { insertAt: at, trackId }));
+        const result = await ctx.assets.import(file, { insertAt: at, trackId });
+        results.push(result);
+        if (result.asset.kind !== 'image') ctx.waveforms.warm(result.asset.id);
       } catch (err) {
         ctx.rpc?.send.toast({ kind: 'error', message: `${basename(file)}: ${(err as Error).message}` });
       }
@@ -261,6 +282,7 @@ async function main(): Promise<void> {
           track ??= store.doc.addTrack('audio', 'VO', ORIGIN_LOCAL);
           const result = await ctx.assets.import(file, { insertAt: startFrame, trackId: track.id, origin: ORIGIN_LOCAL });
           await ctx.recorder.discard();
+          ctx.waveforms.warm(result.asset.id);
           ctx.events.activity('ui', 'vo.done', `Voice-over take placed on ${track.name} at frame ${startFrame}`, { clipIds: result.clip ? [result.clip.id] : [], assetIds: [result.asset.id] });
           return result;
         },
@@ -279,6 +301,19 @@ async function main(): Promise<void> {
         },
         updateCheck: () => ctx.updates.check(),
         updateApply: () => ctx.updates.apply(),
+        historyStatus: () => ctx.history.status(),
+        historyPush: () => ctx.history.push(),
+        historyMove: ({ delta }) => ctx.history.move(delta),
+        historyRestore: ({ index }) => ctx.history.restore(index),
+        listPacks: () => ctx.packs.list(),
+        reloadPacks: () => ctx.packs.load(),
+        installPack: ({ path }) => ctx.packs.install(path),
+        installPackFiles: ({ files }) => ctx.packs.installFiles(files),
+        uninstallPack: ({ name }) => ctx.packs.uninstall(name),
+        choosePackFolder: async () => {
+          const [dir] = await Utils.openFileDialog({ canChooseFiles: false, canChooseDirectory: true, allowsMultipleSelection: false });
+          return dir ?? null;
+        },
       },
       messages: {
         rendererReady: () => {
@@ -316,6 +351,7 @@ async function main(): Promise<void> {
   });
 
   store.on('doc-replaced', async () => {
+    await ctx.history.load();
     settings.lastProjectPath = store.dir;
     settings.recent = [store.dir, ...settings.recent.filter((p) => p !== store.dir)].slice(0, 10);
     await saveSettings(settings);

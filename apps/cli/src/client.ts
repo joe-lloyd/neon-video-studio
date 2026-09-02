@@ -1,5 +1,5 @@
 /** Typed HTTP client for the desktop app's control API. */
-import { API_ROUTES, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript } from '@neon/core';
+import { API_ROUTES, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary } from '@neon/core';
 import { isProcessAlive, readInstanceInfo } from '@neon/core/node';
 import type { Asset, Clip, Project, Track } from '@neon/core';
 
@@ -109,6 +109,24 @@ export class NeonClient {
   transcript = (assetId: string) => this.call<Transcript>('GET', `${API_ROUTES.aiTranscript}/${assetId}`);
   transcriptCut = (assetId: string, opts: { fromWord?: number; toWord?: number; words?: number[]; mode?: 'timeline' | 'audio' }) =>
     this.call<AiJob>('POST', `${API_ROUTES.aiTranscript}/cut`, { assetId, ...opts });
+
+  packs = () => this.call<PackSummary[]>('GET', API_ROUTES.packs);
+  packsInstall = (path: string) => this.call<PackSummary>('POST', API_ROUTES.packsInstall, { path });
+  packsReload = () => this.call<PackSummary[]>('POST', API_ROUTES.packsReload, {});
+  packsUninstall = (name: string) => this.call<{ removed: string }>('POST', API_ROUTES.packsUninstall.replace(':name', encodeURIComponent(name)), {});
+  projectPacks = (body: { enable?: string[]; disable?: string[] }) => this.call<{ packs: string[] }>('POST', API_ROUTES.projectPacks, body);
+  history = () => this.call<HistoryStatus>('GET', API_ROUTES.history);
+  historyUndo = () => this.call<HistoryStatus>('POST', API_ROUTES.historyUndo, {});
+  historyRedo = () => this.call<HistoryStatus>('POST', API_ROUTES.historyRedo, {});
+  historyCheckpoint = () => this.call<HistoryStatus>('POST', API_ROUTES.historyCheckpoint, {});
+
+  /** Waveform peaks (one byte per 10 ms, 0..255); empty array = no audio stream, null = unavailable. */
+  async waveform(assetId: string): Promise<Uint8Array | null> {
+    const res = await fetch(`${this.opts.endpoint}${API_ROUTES.waveforms}/${assetId}`, { headers: { Authorization: `Bearer ${this.opts.token}` } });
+    if (res.status === 204) return new Uint8Array(0);
+    if (!res.ok) return null;
+    return new Uint8Array(await res.arrayBuffer());
+  }
 
   /** Generic escape hatch for new endpoints. */
   call2 = (method: 'GET' | 'POST', path: string, body?: unknown) => this.call<unknown>(method, path, body);

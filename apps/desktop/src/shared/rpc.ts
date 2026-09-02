@@ -2,7 +2,7 @@
  * Typed RPC contract between the Bun main process and the webview. Types only — no runtime code.
  */
 import type { RPCSchema } from 'electrobun/view';
-import type { ActivityEntry, AiCapabilities, AiJob, AiOperation, AppStatus, ImportAssetResponse, RenderJob, RoomInfo } from '@neon/core';
+import type { ActivityEntry, AiCapabilities, AiJob, AiOperation, AppStatus, HistoryStatus, ImportAssetResponse, PackManifest, RenderJob, RoomInfo } from '@neon/core';
 
 export interface Bootstrap {
   version: string;
@@ -24,6 +24,28 @@ export type RoomState =
   | { role: 'guest'; roomCode: string; password?: string; hostUrl: string };
 
 export type WindowCommand = 'minimize' | 'maximize' | 'close' | 'toggleFullscreen';
+
+/** An FX pack as the Library panel sees it (see main/packs.ts). */
+export interface PackInfo {
+  name: string;
+  label: string;
+  version: string;
+  description?: string;
+  author?: string;
+  category?: string;
+  tags?: string[];
+  /** builtin = ships with the app · installed = ~/.neon-video/packs · example = in the repo, not installed yet */
+  source: 'builtin' | 'installed' | 'example';
+  dir?: string;
+  status: 'ready' | 'error';
+  error?: string;
+  /** Control-server path of the compiled browser bundle (installed + ready packs only). */
+  bundlePath?: string;
+  manifest: PackManifest | null;
+  templates: string[];
+}
+
+export type { HistoryStatus } from '@neon/core';
 
 /** Auto-update state, pushed by the main process and mirrored in the UI. */
 export interface UpdateState {
@@ -70,6 +92,16 @@ export type DesktopRPC = {
       voCancel: { params: Record<string, never>; response: boolean };
       updateCheck: { params: Record<string, never>; response: UpdateState };
       updateApply: { params: Record<string, never>; response: UpdateState };
+      historyStatus: { params: Record<string, never>; response: HistoryStatus };
+      historyPush: { params: Record<string, never>; response: HistoryStatus };
+      historyMove: { params: { delta: number }; response: HistoryStatus };
+      historyRestore: { params: { index: number }; response: HistoryStatus };
+      listPacks: { params: Record<string, never>; response: PackInfo[] };
+      reloadPacks: { params: Record<string, never>; response: PackInfo[] };
+      installPack: { params: { path: string }; response: PackInfo };
+      installPackFiles: { params: { files: { path: string; content: string }[] }; response: PackInfo };
+      uninstallPack: { params: { name: string }; response: boolean };
+      choosePackFolder: { params: Record<string, never>; response: string | null };
     };
     messages: {
       rendererReady: { ok: true };
@@ -88,6 +120,8 @@ export type DesktopRPC = {
       aiUpdate: { job: AiJob };
       previewControl: { action: 'play' | 'pause' | 'toggle' | 'seek'; frame?: number };
       updateStatus: { state: UpdateState };
+      packsChanged: { packs: PackInfo[] };
+      historyChanged: { status: HistoryStatus };
       uiControl: { panel?: 'assets' | 'templates' | 'inspector' | 'peers' | 'renders' | 'activity' | 'ai' | 'script'; select?: string[]; dialog?: 'render' | 'room' | 'shortcuts' | 'none' };
     };
   }>;

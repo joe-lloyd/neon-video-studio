@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import * as Y from 'yjs';
 import { ProjectDoc, ORIGIN_LOCAL, createUndoManager } from '../src/doc.ts';
 import type { Asset } from '../src/types.ts';
+import { sortTracks } from '../src/ops.ts';
+import { registerPack, unregisterPack } from '../src/templates.ts';
 
 const asset = (id: string, durationFrames = 300): Asset => ({
   id,
@@ -198,4 +200,66 @@ test('detachAudio creates a linked audio clip and mutes the video', () => {
   if (video.kind !== 'component') assert.equal(video.volume, 0);
   const audioTrack = pd.toJSON().tracks.find((t) => t.id === a.trackId)!;
   assert.equal(audioTrack.kind, 'audio');
+});
+
+test('addTrack groups new lanes under the last lane of the same kind', () => {
+  const pd = fresh();
+  pd.addTrack('video');
+  pd.addTrack('overlay');
+  pd.addTrack('audio');
+  pd.addTrack('video');
+  const names = sortTracks(pd.toJSON().tracks).map((t) => t.name);
+  assert.deepEqual(names, ['V1', 'V2', 'V3', 'A1', 'A2', 'FX1', 'FX2']);
+  const orders = sortTracks(pd.toJSON().tracks).map((t) => t.order);
+  assert.deepEqual(orders, [...orders].sort((a, b) => a - b));
+  assert.equal(new Set(orders).size, orders.length, 'orders stay unique');
+});
+
+test('addTrack places an empty section after the sections that precede it', () => {
+  const pd = fresh();
+  for (const t of pd.toJSON().tracks) if (t.kind !== 'overlay') pd.removeTrack(t.id);
+  pd.addTrack('audio');
+  pd.addTrack('video');
+  pd.addTrack('audio');
+  assert.deepEqual(sortTracks(pd.toJSON().tracks).map((t) => t.name), ['V1', 'A1', 'A2', 'FX1']);
+});
+
+test('applySnapshot restores an earlier state with a minimal diff and is not undoable', () => {
+  const pd = fresh();
+  const undo = createUndoManager(pd);
+  const before = pd.toJSON();
+  const a = pd.insertClip({ kind: 'component', componentName: 'TextOverlay' }, ORIGIN_LOCAL);
+  pd.insertClip({ kind: 'component', componentName: 'Countdown' }, ORIGIN_LOCAL);
+  const mid = pd.toJSON();
+  pd.updateClip(a.id, { name: 'Renamed' }, ORIGIN_LOCAL);
+  const clipMapBefore = pd.clips.get(mid.clips[1]!.id);
+  const undoDepth = undo.undoStack.length;
+
+  pd.applySnapshot(mid);
+  assert.equal(pd.getClip(a.id)?.name, mid.clips.find((c) => c.id === a.id)!.name);
+  assert.equal(pd.toJSON().clips.length, 2);
+  // the untouched clip keeps its Yjs identity (no churn for peers)
+  assert.equal(pd.clips.get(mid.clips[1]!.id), clipMapBefore);
+  // system-origin restore does not enter the local undo stack
+  assert.equal(undo.undoStack.length, undoDepth);
+
+  pd.applySnapshot(before);
+  assert.equal(pd.toJSON().clips.length, 0);
+  assert.equal(pd.toJSON().tracks.length, 3);
+  assert.equal(pd.toJSON().meta.updatedAt, before.meta.updatedAt);
+});
+
+test('inserting a component from an installed pack enables the pack in the project', () => {
+  registerPack({ name: 'test-installed', label: 'Test', version: '1', templates: [{ name: 'InstalledThing', label: 'x', description: '', defaultDurationSeconds: 2, fields: [] }] }, 'installed', '/tmp/test-installed');
+  try {
+    const pd = fresh();
+    assert.equal(pd.toJSON().meta.packs, undefined);
+    pd.insertClip({ kind: 'component', componentName: 'InstalledThing' }, ORIGIN_LOCAL);
+    assert.deepEqual(pd.toJSON().meta.packs, ['test-installed']);
+    pd.insertClip({ kind: 'component', componentName: 'TextOverlay' }, ORIGIN_LOCAL);
+    pd.insertClip({ kind: 'component', componentName: 'InstalledThing' }, ORIGIN_LOCAL);
+    assert.deepEqual(pd.toJSON().meta.packs, ['test-installed']);
+  } finally {
+    unregisterPack('test-installed');
+  }
 });

@@ -31,7 +31,7 @@ commands fall back to the whole asset, which is usually what you want.
 
 ```bash
 neon-cli status                     # app, project, room, renders, engines
-neon-cli list [templates|tracks|clips|assets|presets]   # `--json` includes JSON Schemas for template props
+neon-cli list [templates|packs|tracks|clips|assets|presets]   # `--json` includes JSON Schemas for template props; templates carry pack + category
 neon-cli state dump [--json] [--out project.json]       # full project document
 neon-cli project new [--name N] [--fps 30] [--width W] [--height H]
 neon-cli project open <dir.neon>
@@ -67,6 +67,7 @@ neon-cli tracks remove <track>
 ```bash
 neon-cli assets import <file...> [--at T] [--track REF]   # copies into the project, probes duration/size
 neon-cli assets remove <ref>
+neon-cli assets waveform <ref> [--buckets 60]             # audio envelope (peaks per 10 ms) — ASCII bars, or raw buckets with --json
 # Binary upload (voice-over takes, agent-generated audio/images):
 curl -X POST "http://127.0.0.1:$PORT/api/assets/upload?name=take.m4a&at=120&track=$TRACK_ID" \
      -H "Authorization: Bearer $TOKEN" --data-binary @take.m4a
@@ -156,6 +157,37 @@ neon-cli ui panel media|fx|inspect|room|ai|script|render|live
 neon-cli ui select <clip...> | ui select none            # selects + flashes + jumps to the clip
 neon-cli ui dialog render|room|shortcuts|none
 ```
+
+## FX packs
+
+Packs are folders (`pack.json` + `index.tsx`) — see [fx-packs.md](fx-packs.md). Installed packs live in
+`~/.neon-video/packs`; a pack is *enabled per project* (stored in `meta.packs`) so exports know what
+to bundle. Inserting a component from an installed pack enables the pack automatically.
+
+```bash
+neon-cli packs                       # built-in, installed and example packs + whether they're in this project
+neon-cli packs install ./my-pack     # validate, copy to ~/.neon-video/packs, compile, add to the project
+neon-cli packs install examples/packs/boba-expressive   # the shipped example (from a source checkout)
+neon-cli packs add boba-expressive   # enable an installed pack for this project · packs remove … disables it
+neon-cli packs uninstall boba-expressive
+neon-cli packs reload                # re-scan + recompile after editing a pack in place
+neon-cli timeline insert --component BobaTitle --props '{"title":"Hello"}' --at 2s
+```
+
+## Edit history
+
+The app keeps the last 30 whole-project checkpoints in `<project>.neon/history/`; they survive
+closing the project and rebooting. The UI's undo button uses them once its in-memory stack is
+empty, and agents can drive them directly:
+
+```bash
+neon-cli history                     # "Checkpoint 12 of 14 · 11 undo steps · 2 redo steps"
+neon-cli history checkpoint          # record the current state (do this before a risky batch of edits)
+neon-cli history undo | history redo # step the whole project to the previous / next checkpoint
+```
+
+Checkpoints are recorded automatically after edits made in the UI. Stepping is refused while the
+app is in a room (it would overwrite peers' work).
 
 ## Rooms (P2P collaboration)
 

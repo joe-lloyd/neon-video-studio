@@ -1,6 +1,6 @@
 import React from 'react';
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
-import { useUiScale } from '../../shared.ts';
+import { useUiScale } from '@neon/fx-kit';
 import { type BlobShape, blobPath, blobRadii, easeExit, easeExpressiveDefault, easeExpressiveFast, lerpRadii } from './tokens.ts';
 
 const SEQUENCE: BlobShape[] = ['oval', 'sunny', 'clover', 'flower', 'cookie'];

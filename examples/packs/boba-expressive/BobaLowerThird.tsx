@@ -1,6 +1,6 @@
 import React from 'react';
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
-import { SANS, useUiScale } from '../../shared.ts';
+import { SANS, useUiScale } from '@neon/fx-kit';
 import { BOBA, RADIUS_ACTIVE, RADIUS_PILL, blobPath, blobRadii, easeEffects, easeExit, easeExpressiveFast, easeExpressiveSlow } from './tokens.ts';
 
 /**

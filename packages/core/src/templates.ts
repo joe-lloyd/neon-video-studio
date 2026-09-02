@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { PackManifest, PackRecord, PackSource } from './packs.ts';
 
 /**
  * Registry of React component templates that can be placed on overlay tracks.
@@ -80,7 +81,17 @@ export interface ComponentTemplate<S extends z.ZodObject = z.ZodObject> {
   schema: S;
   /** Pack this template came from ("core" for built-ins). */
   pack?: string;
+  /** Grouping in the FX panel (e.g. "Titles", "Lower thirds"). */
+  category?: string;
+  /** Extra search terms. */
+  tags?: string[];
+  /** Icon name from the app's icon kit (falls back to a sparkle). */
+  icon?: string;
+  /** Prop overrides used when rendering the library thumbnail/preview. */
+  previewProps?: Record<string, unknown>;
 }
+
+export const CORE_PACK_NAME = 'core';
 
 // ---- FX packs -------------------------------------------------------------------------
 // Packs describe their props with a plain field spec (no zod import needed in pack code);
@@ -100,6 +111,10 @@ export interface TemplatePackMeta {
   description: string;
   defaultDurationSeconds: number;
   fields: TemplateField[];
+  category?: string;
+  tags?: string[];
+  icon?: string;
+  previewProps?: Record<string, unknown>;
 }
 
 export function schemaFromFields(fields: TemplateField[]): z.ZodObject {
@@ -131,19 +146,89 @@ export function schemaFromFields(fields: TemplateField[]): z.ZodObject {
 }
 
 const EXTRA_TEMPLATES = new Map<string, ComponentTemplate>();
+const PACKS = new Map<string, PackRecord>();
+const TEMPLATE_LISTENERS = new Set<() => void>();
+let templatesVersion = 0;
 
-/** Register FX-pack templates (idempotent). Call once at startup in every process that needs them. */
-export function registerTemplatePack(pack: string, templates: TemplatePackMeta[]): void {
-  for (const t of templates) {
+function notifyTemplates(): void {
+  templatesVersion++;
+  for (const l of TEMPLATE_LISTENERS) l();
+}
+
+/** Subscribe to registry changes (packs registered/removed at runtime). Returns an unsubscribe. */
+export function subscribeTemplates(listener: () => void): () => void {
+  TEMPLATE_LISTENERS.add(listener);
+  return () => TEMPLATE_LISTENERS.delete(listener);
+}
+
+/** Monotonic counter bumped on every registry change — handy as a React store snapshot. */
+export function getTemplatesVersion(): number {
+  return templatesVersion;
+}
+
+/**
+ * Register (or re-register) a pack's templates. Template names are global — a name already owned
+ * by the core set or another pack is skipped and reported in `conflicts`, so one pack cannot
+ * silently shadow another.
+ */
+export function registerPack(manifest: PackManifest, source: PackSource = 'builtin', dir?: string): { conflicts: string[] } {
+  const previous = PACKS.get(manifest.name);
+  if (previous) for (const t of previous.manifest.templates) if (EXTRA_TEMPLATES.get(t.name)?.pack === manifest.name) EXTRA_TEMPLATES.delete(t.name);
+  const conflicts: string[] = [];
+  for (const t of manifest.templates) {
+    const owner = (COMPONENT_TEMPLATES as Record<string, ComponentTemplate>)[t.name] ? CORE_PACK_NAME : EXTRA_TEMPLATES.get(t.name)?.pack;
+    if (owner && owner !== manifest.name) {
+      conflicts.push(`${t.name} (already provided by ${owner})`);
+      continue;
+    }
     EXTRA_TEMPLATES.set(t.name, {
       name: t.name,
       label: t.label,
       description: t.description,
       defaultDurationSeconds: t.defaultDurationSeconds,
       schema: schemaFromFields(t.fields),
-      pack,
+      pack: manifest.name,
+      category: t.category ?? manifest.category,
+      tags: t.tags,
+      icon: t.icon,
+      previewProps: t.previewProps,
     });
   }
+  PACKS.set(manifest.name, { manifest, source, dir });
+  notifyTemplates();
+  return { conflicts };
+}
+
+export function unregisterPack(name: string): void {
+  const record = PACKS.get(name);
+  if (!record) return;
+  for (const t of record.manifest.templates) if (EXTRA_TEMPLATES.get(t.name)?.pack === name) EXTRA_TEMPLATES.delete(t.name);
+  PACKS.delete(name);
+  notifyTemplates();
+}
+
+/** Every registered pack, with the built-in core set first. */
+export function listPacks(): PackRecord[] {
+  const core: PackRecord = {
+    source: 'builtin',
+    manifest: {
+      name: CORE_PACK_NAME,
+      label: 'Neon Core',
+      version: '1',
+      description: 'The built-in overlay set: text, lower thirds, titles, countdown, progress, watermark, colour.',
+      templates: [],
+    },
+  };
+  return [core, ...PACKS.values()];
+}
+
+export function getPack(name: string): PackRecord | undefined {
+  return PACKS.get(name);
+}
+
+/** Built-in packs shipped with the app: a plain (label, templates) shorthand for registerPack(). */
+export function registerTemplatePack(pack: string, templates: TemplatePackMeta[], opts: { label?: string; description?: string; category?: string } = {}): void {
+  registerPack({ name: pack, label: opts.label ?? pack, version: '1', description: opts.description, category: opts.category, templates }, 'builtin');
 }
 
 export const COMPONENT_TEMPLATES = {
@@ -153,6 +238,8 @@ export const COMPONENT_TEMPLATES = {
     description: 'Animated headline text with a neon glow.',
     defaultDurationSeconds: 4,
     schema: TEXT_OVERLAY_SCHEMA,
+    icon: 'Type',
+    category: 'Text',
   },
   LowerThird: {
     name: 'LowerThird',
@@ -160,6 +247,8 @@ export const COMPONENT_TEMPLATES = {
     description: 'Name/title bar that slides in from the side.',
     defaultDurationSeconds: 5,
     schema: LOWER_THIRD_SCHEMA,
+    icon: 'Clapperboard',
+    category: 'Lower thirds',
   },
   TitleCard: {
     name: 'TitleCard',
@@ -167,6 +256,8 @@ export const COMPONENT_TEMPLATES = {
     description: 'Full-frame chapter title on a solid background.',
     defaultDurationSeconds: 3,
     schema: TITLE_CARD_SCHEMA,
+    icon: 'Layers',
+    category: 'Titles',
   },
   Countdown: {
     name: 'Countdown',
@@ -174,6 +265,8 @@ export const COMPONENT_TEMPLATES = {
     description: 'Big numeric countdown.',
     defaultDurationSeconds: 5,
     schema: COUNTDOWN_SCHEMA,
+    icon: 'Timer',
+    category: 'Utilities',
   },
   ProgressBar: {
     name: 'ProgressBar',
@@ -181,6 +274,8 @@ export const COMPONENT_TEMPLATES = {
     description: 'Thin bar that fills over the clip duration.',
     defaultDurationSeconds: 10,
     schema: PROGRESS_BAR_SCHEMA,
+    icon: 'BarChart3',
+    category: 'Utilities',
   },
   Watermark: {
     name: 'Watermark',
@@ -188,6 +283,8 @@ export const COMPONENT_TEMPLATES = {
     description: 'Small corner text watermark.',
     defaultDurationSeconds: 10,
     schema: WATERMARK_SCHEMA,
+    icon: 'Stamp',
+    category: 'Branding',
   },
   SolidColor: {
     name: 'SolidColor',
@@ -195,17 +292,24 @@ export const COMPONENT_TEMPLATES = {
     description: 'Full-frame colour fill (backgrounds, flashes, tints).',
     defaultDurationSeconds: 3,
     schema: SOLID_COLOR_SCHEMA,
+    icon: 'PaintBucket',
+    category: 'Backgrounds',
   },
 } as const satisfies Record<string, ComponentTemplate>;
 
 export type ComponentTemplateName = keyof typeof COMPONENT_TEMPLATES;
 
 export function listTemplates(): ComponentTemplate[] {
-  return [...Object.values(COMPONENT_TEMPLATES).map((t) => ({ ...t, pack: 'core' })), ...EXTRA_TEMPLATES.values()];
+  return [...Object.values(COMPONENT_TEMPLATES).map((t) => ({ ...t, pack: CORE_PACK_NAME })), ...EXTRA_TEMPLATES.values()];
+}
+
+export function hasTemplate(name: string): boolean {
+  return name in COMPONENT_TEMPLATES || EXTRA_TEMPLATES.has(name);
 }
 
 export function getTemplate(name: string): ComponentTemplate {
-  const template = (COMPONENT_TEMPLATES as Record<string, ComponentTemplate>)[name] ?? EXTRA_TEMPLATES.get(name);
+  const core = (COMPONENT_TEMPLATES as Record<string, ComponentTemplate>)[name];
+  const template = core ? { ...core, pack: CORE_PACK_NAME } : EXTRA_TEMPLATES.get(name);
   if (!template) {
     throw new Error(`Unknown component "${name}". Available: ${listTemplates().map((t) => t.name).join(', ')}`);
   }

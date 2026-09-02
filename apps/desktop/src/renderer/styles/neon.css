@@ -337,6 +337,10 @@ input, select, textarea { user-select: text; }
 .clip .handle.r { right: 0; border-right: 2px solid #fff; }
 .clip:hover .handle, .clip.selected .handle { opacity: 0.8; }
 .clip .wave { position: absolute; left: 0; right: 0; bottom: 0; height: 40%; opacity: 0.35; background: repeating-linear-gradient(90deg, var(--clip-color) 0 2px, transparent 2px 5px); mask-image: linear-gradient(180deg, transparent, #000); }
+.clip .wave-canvas { position: absolute; left: 0; right: 0; pointer-events: none; display: block; }
+.clip .wave-canvas.audio { top: 50%; transform: translateY(-50%); }
+.clip .wave-canvas.video { bottom: 0; }
+.clip .clip-name, .clip .clip-len, .clip .clip-badge { position: relative; z-index: 1; }
 .playhead {
   position: absolute;
   top: 0;
@@ -470,3 +474,45 @@ kbd { font-family: var(--mono); font-size: 10px; padding: 1px 5px; border: 1px s
 .canvas-guide { position: absolute; background: var(--magenta); box-shadow: 0 0 6px var(--glow-m); pointer-events: none; }
 .canvas-guide.x { top: 0; bottom: 0; width: 1px; }
 .canvas-guide.y { left: 0; right: 0; height: 1px; }
+
+/* ---- FX panel ------------------------------------------------------------------------ */
+.seg { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--border-subtle); border-radius: 6px; }
+.seg button { padding: 3px 10px; border: none; border-radius: 4px; background: transparent; color: var(--muted); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; }
+.seg button:hover { color: var(--text); }
+.seg button.active { background: rgba(255, 0, 127, 0.15); color: var(--text); }
+button.link { background: none; border: none; padding: 0; color: var(--cyan); cursor: pointer; font: inherit; text-decoration: underline; }
+.fx-search { width: 100%; margin-bottom: 6px; }
+.fx-cat { display: flex; align-items: center; gap: 8px; margin: 12px 0 6px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.fx-cat .count, .fx-section .count { color: var(--faint); font-family: var(--mono); letter-spacing: 0; }
+.fx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.fx-card { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 6px; border-radius: 8px; border: 1px solid var(--border-subtle); background: rgba(255, 255, 255, 0.02); cursor: grab; transition: border-color 120ms ease, box-shadow 120ms ease; }
+.fx-card:hover { border-color: var(--border-strong); box-shadow: 0 0 14px rgba(255, 0, 127, 0.15); }
+.fx-card:active { cursor: grabbing; }
+.fx-thumb { aspect-ratio: 16 / 9; border-radius: 5px; overflow: hidden; position: relative; pointer-events: none; background:
+  linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.03) 75%),
+  linear-gradient(45deg, rgba(255, 255, 255, 0.03) 25%, transparent 25%, transparent 75%, rgba(255, 255, 255, 0.03) 75%), #0b0b0e;
+  background-size: 12px 12px; background-position: 0 0, 6px 6px; }
+.fx-thumb > * { width: 100% !important; height: 100% !important; }
+.fx-thumb-missing { display: grid; place-items: center; height: 100%; color: var(--faint); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+.fx-card-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; min-width: 0; }
+.fx-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-pack { position: absolute; top: 10px; right: 10px; font-size: 9px; padding: 1px 5px; border-radius: 3px; background: rgba(9, 9, 11, 0.8); color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; pointer-events: none; }
+.fx-library { border: 1px solid transparent; border-radius: 6px; }
+.fx-library.dropping { border-color: var(--cyan); background: rgba(0, 243, 255, 0.04); }
+.fx-section { margin-top: 14px; }
+.fx-section h4 { margin: 0 0 6px; display: flex; gap: 8px; align-items: center; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.fx-section h4 .hint { text-transform: none; letter-spacing: 0; }
+.pack-zone { padding: 6px; margin: 8px -6px 0; border-radius: 8px; border: 1px dashed transparent; }
+.pack-zone.active { border-color: var(--success); background: rgba(57, 255, 20, 0.05); }
+.pack-drop { border: 1px dashed var(--border-subtle); border-radius: 8px; padding: 14px; text-align: center; color: var(--faint); font-size: 11px; line-height: 1.6; }
+.pack-drop b { color: var(--muted); }
+.pack-card { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 8px; border: 1px solid var(--border-subtle); background: rgba(255, 255, 255, 0.02); margin-bottom: 8px; }
+.pack-card[draggable='true'] { cursor: grab; }
+.pack-card.enabled { border-color: rgba(57, 255, 20, 0.35); }
+.pack-card.error { border-color: rgba(255, 59, 59, 0.4); }
+.pack-card .head { display: flex; align-items: center; gap: 8px; }
+.pack-card .head .name { flex: 1; font-weight: 600; font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pack-card .desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+.pack-card .err { font-size: 11px; color: var(--danger); line-height: 1.4; word-break: break-word; }
+.pack-card .templates { font-family: var(--mono); font-size: 10px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pack-card .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }

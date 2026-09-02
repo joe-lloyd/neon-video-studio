@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import { sortClips, sortTracks, volumeAt, type Asset, type Clip, type MediaClip, type Project, type Track } from '@neon/core';
-import { TEMPLATES } from '../templates/index.ts';
+import { getTemplateComponent } from '../templates/index.ts';
 
 /** Kept as a type alias (not an interface) so it satisfies Remotion's Record<string, unknown> constraint. */
 export type TimelineProps = {
@@ -171,7 +171,7 @@ const MissingBox: React.FC<{ label: string }> = ({ label }) => (
 );
 
 const ComponentClipView: React.FC<{ clip: Extract<Clip, { kind: 'component' }> }> = ({ clip }) => {
-  const Template = TEMPLATES[clip.componentName];
+  const Template = getTemplateComponent(clip.componentName);
   if (!Template) return <MissingBox label={`Unknown component ${clip.componentName}`} />;
   return <Template {...clip.props} />;
 };

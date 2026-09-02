@@ -4,6 +4,7 @@ import {
   RENDER_PRESETS,
   formatDuration,
   framesToTimecode,
+  hasTemplate,
   listTemplates,
   parseTimecode,
   templateJsonSchema,
@@ -12,29 +13,22 @@ import {
   type RenderJob,
 } from '@neon/core';
 import {
-  BarChart3,
   Check,
   Clapperboard,
   Copy,
   Download,
   Film,
-  Flower2,
   FolderOpen,
   Hash,
   ImageIcon,
   Layers,
-  Loader2,
   Music,
   NeonIcon,
   Terminal,
   CircleDot,
-  PaintBucket,
   Plus,
   Radio,
   Sparkles,
-  Stamp,
-  Tag,
-  Timer,
   Trash2,
   Type,
   Upload,
@@ -45,6 +39,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useEditor } from '../lib/context.ts';
 import { kbdFor } from '../lib/kbd.ts';
 import { AiPanel } from './AiPanel.tsx';
+import { FxPanel } from './FxPanel.tsx';
 import { ScriptPanel } from './ScriptPanel.tsx';
 import { useSelector, useStoreValue, type Panel } from '../lib/store.ts';
 
@@ -102,7 +97,7 @@ export function SidePanels() {
           ))}
         </div>
         {panel === 'assets' ? <AssetsPanel /> : null}
-        {panel === 'templates' ? <TemplatesPanel /> : null}
+        {panel === 'templates' ? <FxPanel /> : null}
         {panel === 'inspector' ? <InspectorPanel /> : null}
         {panel === 'peers' ? <PeersPanel /> : null}
         {panel === 'renders' ? <RendersPanel /> : null}
@@ -188,56 +183,6 @@ function AssetsPanel() {
             </div>
           ))
         )}
-      </div>
-    </>
-  );
-}
-
-// ---- templates ------------------------------------------------------------------------
-
-const TEMPLATE_ICON: Record<string, LucideIcon> = {
-  TextOverlay: Type,
-  LowerThird: Clapperboard,
-  TitleCard: Layers,
-  Countdown: Timer,
-  ProgressBar: BarChart3,
-  Watermark: Stamp,
-  SolidColor: PaintBucket,
-  BobaTitle: Type,
-  BobaLowerThird: Clapperboard,
-  BobaTag: Tag,
-  BobaBlob: Flower2,
-  BobaMorphLoader: Loader2,
-};
-
-function TemplatesPanel() {
-  const editor = useEditor();
-  return (
-    <>
-      <div className="panel-header"><span className="title">React templates</span></div>
-      <div className="panel-body">
-        {listTemplates().map((t) => (
-          <div
-            key={t.name}
-            className="list-item"
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData('application/x-neon-template', t.name);
-              e.dataTransfer.effectAllowed = 'copy';
-            }}
-            onClick={() => editor.insertTemplate(t.name)}
-            title="Click to add at the playhead, or drag onto an FX track"
-          >
-            <NeonIcon icon={TEMPLATE_ICON[t.name] ?? Sparkles} size={18} tone="green" />
-            <div className="name">
-              <div>{t.label} <span className="hint mono">{t.name}</span></div>
-              <div className="meta">{t.description} · {t.defaultDurationSeconds}s</div>
-            </div>
-          </div>
-        ))}
-        <p className="hint" style={{ marginTop: 12 }}>
-          Add your own: create an FX pack in <span className="mono">apps/remotion-workspace/src/templates/packs</span> — see <span className="mono">docs/fx-packs.md</span>.
-        </p>
       </div>
     </>
   );
@@ -374,7 +319,8 @@ function InspectorPanel() {
   }
 
   const asset = clip.kind !== 'component' ? project.assets.find((a) => a.id === clip.assetId) : undefined;
-  const schema = clip.kind === 'component' ? (templateJsonSchema(clip.componentName) as { properties?: Record<string, SchemaProp> }) : null;
+  const schema = clip.kind === 'component' && hasTemplate(clip.componentName) ? (templateJsonSchema(clip.componentName) as { properties?: Record<string, SchemaProp> }) : null;
+  const missingPack = clip.kind === 'component' && !hasTemplate(clip.componentName);
 
   return (
     <>
@@ -423,6 +369,7 @@ function InspectorPanel() {
           </>
         ) : (
           <>
+            {missingPack ? <p className="hint" style={{ color: 'var(--warning)' }}>This component comes from an FX pack that is not loaded — enable or install it in FX → Library to edit its props.</p> : null}
             {Object.entries(schema?.properties ?? {}).map(([name, prop]) => (
               <PropField key={name} name={name} schema={prop} value={clip.props[name]} onChange={(v) => editor.updateClip(clip.id, { props: { [name]: v } })} />
             ))}

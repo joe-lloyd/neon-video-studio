@@ -19,13 +19,17 @@ import {
   type Project,
   type RenderJob,
   type RoomInfo,
+  registerPack,
+  unregisterPack,
 } from '@neon/core';
 import { PeerSession, type SessionSnapshot } from '@neon/p2p/browser';
 import { registerAllPacks } from '@neon/remotion-workspace/packs';
 
 registerAllPacks();
 import type { Bridge } from './bridge.ts';
-import type { RoomState, UpdateState } from '../../shared/rpc.ts';
+import type { HistoryStatus, PackInfo, RoomState, UpdateState } from '../../shared/rpc.ts';
+import { registerRuntimeComponents, unregisterRuntimeComponents } from '@neon/remotion-workspace/templates';
+import { importPackBundle } from './pack-host.ts';
 
 export function createStore<T>(initial: T) {
   let state = initial;
@@ -86,6 +90,12 @@ export interface UiState {
   recording: { startFrame: number; startedAt: number } | null;
   /** Auto-update state pushed by the main process. */
   update: UpdateState;
+  /** Undo/redo availability — in-memory stack or persisted history (see main/history.ts). */
+  canUndo: boolean;
+  canRedo: boolean;
+  /** FX packs known to the main process (built-in, installed, examples). */
+  packs: PackInfo[];
+  packsBusy: boolean;
 }
 
 export interface PlayheadState {
@@ -133,12 +143,23 @@ export class Editor {
     recentProjects: [],
     recording: null,
     update: { phase: 'idle', currentVersion: '' },
+    canUndo: false,
+    canRedo: false,
+    packs: [],
+    packsBusy: false,
   });
   readonly playhead = createStore<PlayheadState>({ frame: 0, playing: false });
   /** Set by the Preview component so the editor can drive the Remotion Player. */
   player: { seekTo(frame: number): void; play(): void; pause(): void; toggle(): void; getCurrentFrame(): number } | null = null;
   private teardown: (() => void)[] = [];
   private projectId: string;
+  /** Mirror of the persisted history position; the main process owns the files. */
+  private history: HistoryStatus = { count: 0, cursor: -1 };
+  private historyPushTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True while we drive Y.UndoManager ourselves, so its stack events are not mistaken for new edits. */
+  private replaying = false;
+  /** Installed pack bundles loaded into this renderer: pack → bundle path + component names. */
+  private readonly loadedPacks = new Map<string, { path: string; names: string[] }>();
 
   constructor(bridge: Bridge) {
     this.bridge = bridge;
@@ -150,6 +171,7 @@ export class Editor {
       roomUpdate: ({ room, info }) => {
         this.ui.set({ room, roomInfo: info });
         this.applyRoom(room);
+        this.refreshUndoState();
       },
       projectOpened: ({ projectId, name, path }) => {
         this.ui.set({ projectName: name, projectPath: path, selection: [] });
@@ -160,6 +182,8 @@ export class Editor {
       },
       toast: ({ kind, message }) => this.toast(kind, message),
       updateStatus: ({ state }) => this.ui.set({ update: state }),
+      packsChanged: ({ packs }) => void this.applyPacks(packs),
+      historyChanged: ({ status }) => this.setHistory(status),
       menuAction: ({ action }) => this.handleMenuAction(action),
       activity: ({ entry }) => this.pushActivity(entry),
       aiUpdate: ({ job }) => this.upsertAiJob(job),
@@ -199,6 +223,7 @@ export class Editor {
     bridge.request('aiJobs', {}).then((jobs) => this.ui.set({ aiJobs: jobs })).catch(() => undefined);
     void this.loadAiStatus();
     void this.refreshRecentProjects();
+    void this.refreshPacks();
     // Media diagnostics: WKWebView surfaces <video>/<audio> failures only on the element, so
     // capture them here and forward to the main-process log.
     const mediaLog = (e: Event) => {
@@ -218,6 +243,7 @@ export class Editor {
     this.teardown = [];
     this.doc = new ProjectDoc();
     this.undo = createUndoManager(this.doc, [ORIGIN_LOCAL]);
+    this.bindHistory();
     const b = this.bridge.bootstrap;
     this.session = new PeerSession({
       doc: this.doc.doc,
@@ -650,9 +676,9 @@ export class Editor {
 
   // ---- editing (all local, undoable) ---------------------------------------------------
 
-  insertTemplate(componentName: string, atFrame?: number): void {
+  insertTemplate(componentName: string, atFrame?: number, props?: Record<string, unknown>): void {
     try {
-      const clip = this.doc.insertClip({ kind: 'component', componentName, startFrame: atFrame ?? this.playhead.get().frame, placement: 'free' }, ORIGIN_LOCAL);
+      const clip = this.doc.insertClip({ kind: 'component', componentName, props, startFrame: atFrame ?? this.playhead.get().frame, placement: 'free' }, ORIGIN_LOCAL);
       this.select([clip.id]);
       this.noteUiAction('timeline.insert', `Added ${componentName} at frame ${clip.startFrame}`, [clip.id]);
       this.setPanel('inspector');
@@ -751,12 +777,215 @@ export class Editor {
     if (name.trim()) this.doc.updateMeta({ name: name.trim() }, ORIGIN_LOCAL);
   }
 
+  // ---- FX packs ------------------------------------------------------------------------
+
+  async refreshPacks(): Promise<void> {
+    try {
+      await this.applyPacks(await this.bridge.request('listPacks', {}));
+    } catch (err) {
+      this.bridge.log('warn', `listPacks failed: ${(err as Error).message}`);
+    }
+  }
+
+  /** Mirror the main process's pack list: register metadata + load compiled bundles for ready installed packs. */
+  private async applyPacks(packs: PackInfo[]): Promise<void> {
+    this.ui.set({ packs });
+    const seen = new Set<string>();
+    for (const p of packs) {
+      if (p.source !== 'installed') continue;
+      seen.add(p.name);
+      if (p.status === 'ready' && p.manifest && p.bundlePath) {
+        const loaded = this.loadedPacks.get(p.name);
+        if (loaded?.path !== p.bundlePath) {
+          try {
+            const mod = await importPackBundle(`http://127.0.0.1:${this.bridge.bootstrap.port}${p.bundlePath}`);
+            if (loaded) unregisterRuntimeComponents(loaded.names);
+            const names = registerRuntimeComponents(p.name, mod);
+            this.loadedPacks.set(p.name, { path: p.bundlePath, names });
+          } catch (err) {
+            this.bridge.log('error', `pack ${p.name} failed to load: ${(err as Error).message}`);
+            this.ui.set((u) => ({ packs: u.packs.map((x) => (x.name === p.name ? { ...x, status: 'error', error: `Load failed: ${(err as Error).message}` } : x)) }));
+            continue;
+          }
+        }
+        // (Re)register after the components exist so template listeners see a renderable pack.
+        registerPack(p.manifest, 'installed');
+      } else {
+        this.unloadPack(p.name);
+      }
+    }
+    for (const name of [...this.loadedPacks.keys()]) if (!seen.has(name)) this.unloadPack(name);
+  }
+
+  private unloadPack(name: string): void {
+    const loaded = this.loadedPacks.get(name);
+    if (loaded) unregisterRuntimeComponents(loaded.names);
+    this.loadedPacks.delete(name);
+    unregisterPack(name);
+  }
+
+  /** Enable/disable an installed pack for the current project (stored in project.meta.packs). */
+  setPackEnabled(name: string, enabled: boolean): void {
+    const current = this.project.get().project.meta.packs ?? [];
+    const next = enabled ? [...new Set([...current, name])] : current.filter((n) => n !== name);
+    if (next.length === current.length && next.every((n, i) => n === current[i])) return;
+    this.doc.updateMeta({ packs: next }, ORIGIN_LOCAL);
+    this.noteUiAction('packs.toggle', `${enabled ? 'Added' : 'Removed'} FX pack ${name} ${enabled ? 'to' : 'from'} the project`);
+  }
+
+  private async packOp<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
+    this.ui.set({ packsBusy: true });
+    try {
+      const result = await fn();
+      await this.refreshPacks();
+      return result;
+    } catch (err) {
+      this.toast('error', `${label}: ${(err as Error).message}`);
+      return null;
+    } finally {
+      this.ui.set({ packsBusy: false });
+    }
+  }
+
+  async installPackFromDialog(): Promise<void> {
+    const dir = await this.bridge.request('choosePackFolder', {}).catch(() => null);
+    if (!dir) return;
+    await this.installPackDir(dir);
+  }
+
+  async installPackDir(dir: string): Promise<void> {
+    const info = await this.packOp('Install pack', () => this.bridge.request('installPack', { path: dir }));
+    if (info) this.afterInstall(info);
+  }
+
+  async installPackFiles(files: { path: string; content: string }[]): Promise<void> {
+    const info = await this.packOp('Install pack', () => this.bridge.request('installPackFiles', { files }));
+    if (info) this.afterInstall(info);
+  }
+
+  private afterInstall(info: PackInfo): void {
+    if (info.status === 'ready') {
+      this.toast('success', `Installed ${info.label} (${info.templates.length} component${info.templates.length === 1 ? '' : 's'})`);
+      this.setPackEnabled(info.name, true);
+    } else {
+      this.toast('error', `${info.label}: ${info.error ?? 'failed to load'}`);
+    }
+  }
+
+  async uninstallPack(name: string): Promise<void> {
+    await this.packOp('Uninstall pack', () => this.bridge.request('uninstallPack', { name }));
+  }
+
+  async reloadPacks(): Promise<void> {
+    await this.packOp('Reload packs', () => this.bridge.request('reloadPacks', {}));
+  }
+
+  // ---- undo / redo ---------------------------------------------------------------------
+  //
+  // Two layers: Y.UndoManager for this session (fine-grained, only our own edits — safe in a
+  // room), and the persisted checkpoint history in the main process so undo still works after
+  // the app was closed. Every in-memory step is mirrored as a cursor move so both stay aligned;
+  // when the in-memory stack is empty we step through the persisted checkpoints instead.
+
+  private bindHistory(): void {
+    this.history = { count: 0, cursor: -1 };
+    if (this.historyPushTimer) clearTimeout(this.historyPushTimer);
+    this.historyPushTimer = null;
+    const onAdded = (ev: { type: 'undo' | 'redo' }) => {
+      if (!this.replaying && ev.type === 'undo') this.scheduleHistoryPush();
+      this.refreshUndoState();
+    };
+    const onUpdated = (ev: { type: 'undo' | 'redo' }) => {
+      if (!this.replaying && ev.type === 'undo') this.scheduleHistoryPush();
+    };
+    const onChanged = () => this.refreshUndoState();
+    this.undo.on('stack-item-added', onAdded);
+    this.undo.on('stack-item-updated', onUpdated);
+    this.undo.on('stack-item-popped', onChanged);
+    this.undo.on('stack-cleared', onChanged);
+    this.teardown.push(() => {
+      this.undo.off('stack-item-added', onAdded);
+      this.undo.off('stack-item-updated', onUpdated);
+      this.undo.off('stack-item-popped', onChanged);
+      this.undo.off('stack-cleared', onChanged);
+    });
+    this.refreshUndoState();
+    this.bridge
+      .request('historyStatus', {})
+      .then((status) => this.setHistory(status))
+      .catch(() => undefined);
+  }
+
+  /** Persisted history is whole-project state, so it is only safe to step through when nobody else is editing. */
+  private get coldHistoryUsable(): boolean {
+    return this.ui.get().room.role === 'none';
+  }
+
+  private setHistory(status: HistoryStatus): void {
+    this.history = status;
+    this.refreshUndoState();
+  }
+
+  private refreshUndoState(): void {
+    const cold = this.coldHistoryUsable;
+    const canUndo = this.undo.undoStack.length > 0 || (cold && this.history.cursor > 0);
+    const canRedo = this.undo.redoStack.length > 0 || (cold && this.history.cursor >= 0 && this.history.cursor < this.history.count - 1);
+    const ui = this.ui.get();
+    if (ui.canUndo !== canUndo || ui.canRedo !== canRedo) this.ui.set({ canUndo, canRedo });
+  }
+
+  private scheduleHistoryPush(): void {
+    if (this.historyPushTimer) clearTimeout(this.historyPushTimer);
+    // A little longer than the undo manager's 300ms capture window so one checkpoint = one undo step.
+    this.historyPushTimer = setTimeout(() => this.flushHistoryPush(), 400);
+  }
+
+  private flushHistoryPush(): void {
+    if (!this.historyPushTimer) return;
+    clearTimeout(this.historyPushTimer);
+    this.historyPushTimer = null;
+    this.bridge
+      .request('historyPush', {})
+      .then((status) => this.setHistory(status))
+      .catch((err: Error) => this.bridge.log('warn', `history push failed: ${err.message}`));
+  }
+
+  private historyRequest(name: 'historyMove' | 'historyRestore', params: { delta: number } | { index: number }): void {
+    this.bridge
+      .request(name as 'historyMove', params as { delta: number })
+      .then((status) => this.setHistory(status))
+      .catch((err: Error) => this.toast('error', `History: ${err.message}`));
+  }
+
   undoEdit(): void {
-    this.undo.undo();
+    if (this.undo.undoStack.length > 0) {
+      this.flushHistoryPush();
+      this.replaying = true;
+      try {
+        this.undo.undo();
+      } finally {
+        this.replaying = false;
+      }
+      this.historyRequest('historyMove', { delta: -1 });
+    } else if (this.coldHistoryUsable && this.history.cursor > 0) {
+      this.historyRequest('historyRestore', { index: this.history.cursor - 1 });
+    }
+    this.refreshUndoState();
   }
 
   redoEdit(): void {
-    this.undo.redo();
+    if (this.undo.redoStack.length > 0) {
+      this.replaying = true;
+      try {
+        this.undo.redo();
+      } finally {
+        this.replaying = false;
+      }
+      this.historyRequest('historyMove', { delta: 1 });
+    } else if (this.coldHistoryUsable && this.history.cursor >= 0 && this.history.cursor < this.history.count - 1) {
+      this.historyRequest('historyRestore', { index: this.history.cursor + 1 });
+    }
+    this.refreshUndoState();
   }
 
   selectedClip(): Clip | undefined {

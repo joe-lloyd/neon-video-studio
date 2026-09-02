@@ -8,6 +8,8 @@ import { homedir } from 'node:os';
 import { extname, join } from 'node:path';
 import type { InstanceInfo } from './api.ts';
 import type { AssetKind } from './types.ts';
+import { PACK_DEFAULT_ENTRY, PACK_MANIFEST_FILE, parsePackManifest, type PackManifest } from './packs.ts';
+import { registerPack } from './templates.ts';
 
 export function neonHome(): string {
   return process.env.NEON_HOME ?? join(homedir(), '.neon-video');
@@ -90,4 +92,61 @@ export function mediaTypeForFile(path: string): { mime: string; kind: AssetKind 
 export function extensionForMime(mime: string): string {
   const entry = Object.entries(MIME).find(([, v]) => v.mime === mime);
   return entry ? entry[0] : '';
+}
+
+// ---- installed FX packs -----------------------------------------------------------------
+
+export function packsDir(): string {
+  return join(neonHome(), 'packs');
+}
+
+export interface DiscoveredPack {
+  /** Folder name (== manifest.name when valid). */
+  name: string;
+  dir: string;
+  manifest: PackManifest | null;
+  /** Absolute path of the component entry module. */
+  entry: string;
+  error?: string;
+}
+
+/** Read a single pack folder: parse + validate pack.json and check the entry module exists. */
+export async function readPackDir(dir: string): Promise<DiscoveredPack> {
+  const { access } = await import('node:fs/promises');
+  const { basename } = await import('node:path');
+  const name = basename(dir);
+  try {
+    const manifest = parsePackManifest(JSON.parse(await readFile(join(dir, PACK_MANIFEST_FILE), 'utf8')));
+    const entry = join(dir, manifest.entry ?? PACK_DEFAULT_ENTRY);
+    if (manifest.name !== name) return { name, dir, manifest, entry, error: `folder is "${name}" but pack.json says "${manifest.name}"` };
+    await access(entry);
+    return { name, dir, manifest, entry };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    const message = code === 'ENOENT' ? `no ${PACK_MANIFEST_FILE} found in ${dir}` : (err as Error).message;
+    return { name, dir, manifest: null, entry: join(dir, PACK_DEFAULT_ENTRY), error: message };
+  }
+}
+
+/** Every pack folder under `dir` (default ~/.neon-video/packs), valid or not. */
+export async function discoverInstalledPacks(dir = packsDir()): Promise<DiscoveredPack[]> {
+  const { readdir } = await import('node:fs/promises');
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  const out: DiscoveredPack[] = [];
+  for (const e of entries) {
+    if (!e.isDirectory() || e.name.startsWith('.')) continue;
+    out.push(await readPackDir(join(dir, e.name)));
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Register the templates of every valid installed pack in this process's registry. */
+export async function registerInstalledPacks(dir = packsDir()): Promise<DiscoveredPack[]> {
+  const packs = await discoverInstalledPacks(dir);
+  for (const p of packs) {
+    if (!p.manifest || p.error) continue;
+    const { conflicts } = registerPack(p.manifest, 'installed', p.dir);
+    if (conflicts.length) p.error = `skipped: ${conflicts.join(', ')}`;
+  }
+  return packs;
 }
