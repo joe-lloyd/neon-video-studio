@@ -708,6 +708,22 @@ export class Editor {
     }
   }
 
+  /** ⌘/Ctrl-click: add or remove one clip from the selection. */
+  toggleSelect(id: string): void {
+    const current = this.ui.get().selection;
+    this.select(current.includes(id) ? current.filter((x) => x !== id) : [...current, id]);
+  }
+
+  /** Move a multi-selection together by the same number of frames. */
+  moveClips(ids: string[], deltaFrames: number): void {
+    try {
+      const moved = this.doc.moveClips(ids, deltaFrames, ORIGIN_LOCAL);
+      this.noteUiAction('timeline.move', `Moved ${moved.length} clips by ${deltaFrames > 0 ? '+' : ''}${deltaFrames} frames`, ids);
+    } catch (err) {
+      this.toast('error', (err as Error).message);
+    }
+  }
+
   moveClip(id: string, startFrame: number, trackId?: string): void {
     try {
       const moved = this.doc.moveClip(id, startFrame, trackId, ORIGIN_LOCAL);

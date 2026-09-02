@@ -59,7 +59,10 @@ export class UpdateManager {
     this.set({ phase: 'checking', error: undefined });
     const info = await Updater.checkForUpdate();
     if (info.error) {
-      this.set({ phase: 'error', error: info.error });
+      // A 404 on the feed means the latest release has no build for this platform (a failed CI job);
+      // the release pipeline backfills the feed, but say what happened instead of showing "HTTP 404".
+      const missing = /\b404\b/.test(info.error);
+      this.set({ phase: 'error', error: missing ? `No ${process.platform === 'darwin' ? 'macOS' : process.platform === 'win32' ? 'Windows' : 'Linux'} ${process.arch} build in the latest release yet — try again later` : info.error });
     } else if (info.updateAvailable) {
       this.set({ phase: 'available', version: info.version });
       if (this.promptedVersion !== info.version) {

@@ -46,6 +46,7 @@ neon-cli timeline insert --asset intro.mp4 --at 0 [--trim 2s] [--volume 0.8]
     # placement: media with --at ripples later clips; overlays place exactly; add --ripple/--overlap/--free to override
 neon-cli timeline update <clip> [--start T] [--duration T] [--trim T] [--volume 0.5] [--props '{"text":"New"}'] [--track REF] [--name N]
 neon-cli timeline move  <clip> --at T [--track REF]
+neon-cli timeline move  <clip...> --by 2s        # several clips together, same delta (negative: --by=-15f); the UI equivalent is dragging a multi-selection
 neon-cli timeline split <clip> --at T
 neon-cli timeline remove <clip...>
 neon-cli timeline cut --from 4s --to 6s [--track REF] [--no-ripple]   # remove a range across tracks

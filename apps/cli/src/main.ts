@@ -33,7 +33,7 @@ COMMANDS
       placement: --ripple = insert edit (later clips shift; default for media with --at)
                  --overlap = exact position (default for overlays with --at) · --free = nearest gap (default without --at)
   timeline update <clip> [--props JSON] [--start T] [--duration T] [--trim T] [--name N] [--volume V] [--track REF]
-  timeline move <clip> --at T [--track REF]
+  timeline move <clip> --at T [--track REF]  |  timeline move <clip...> --by T    (--by moves several clips together; negative: --by=-2s)
   timeline split <clip> --at T
   timeline remove <clip...>
   tracks add --kind video|audio|overlay [--name N]
@@ -138,6 +138,7 @@ const { values: flags, positionals } = parseArgs({
     'host-url': { type: 'string' },
     history: { type: 'string' },
     buckets: { type: 'string' },
+    by: { type: 'string' },
     force: { type: 'boolean', default: false },
     apply: { type: 'boolean', default: false },
     words: { type: 'string' },
@@ -395,11 +396,19 @@ async function main(): Promise<void> {
         });
         out(clip, () => `Updated ${clip.id}: start ${clip.startFrame}, length ${clip.durationFrames}`);
       } else if (sub === 'move') {
-        if (!rest[0] || !flags.at) throw new ApiError('USAGE', 'timeline move <clip> --at T [--track REF]');
-        const target = await api.resolveClip(rest[0]);
-        const trackId = flags.track ? (await api.resolveTrack(flags.track)).id : undefined;
-        const clip = await api.move(target.id, flags.at, trackId);
-        out(clip, () => `Moved ${clip.id} to frame ${clip.startFrame}`);
+        if (rest.length === 0 || (!flags.at && !flags.by)) throw new ApiError('USAGE', 'timeline move <clip> --at T [--track REF]  |  timeline move <clip...> --by T (negative allowed: --by=-2s)');
+        const all = (await api.list()).clips;
+        const targets = [];
+        for (const ref of rest) targets.push(await api.resolveClip(ref, all));
+        if (flags.by !== undefined) {
+          const moved = await api.nudge(targets.map((c) => c.id), flags.by);
+          out(moved, () => moved.map((c) => `Moved ${c.id} to frame ${c.startFrame}`).join('\n'));
+        } else {
+          if (targets.length > 1) throw new ApiError('USAGE', 'Use --by to move several clips together (--at positions exactly one clip)');
+          const trackId = flags.track ? (await api.resolveTrack(flags.track)).id : undefined;
+          const clip = await api.move(targets[0]!.id, flags.at!, trackId);
+          out(clip, () => `Moved ${clip.id} to frame ${clip.startFrame}`);
+        }
       } else if (sub === 'split') {
         if (!rest[0] || !flags.at) throw new ApiError('USAGE', 'timeline split <clip> --at T');
         const target = await api.resolveClip(rest[0]);

@@ -60,6 +60,9 @@ const shortcutRows = (k: Kbd): [string, string][] => [
   ['N', 'Toggle snapping'],
   ['+ / −', `Zoom timeline (${k.isMac ? '⌥' : 'Alt'}+wheel over timeline too)`],
   [k.mod('A'), 'Select all clips'],
+  [`${k.isMac ? '⇧' : 'Shift'}-click / ${k.isMac ? '⌘' : 'Ctrl'}-click`, 'Extend the selection along the lane / toggle one clip'],
+  [`${k.isMac ? '⇧' : 'Shift'}-drag on a lane`, 'Marquee-select the clips in that lane'],
+  ['Drag a selected clip', 'Moves the whole selection together'],
   ['?', 'This list'],
 ];
 

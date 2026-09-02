@@ -77,6 +77,7 @@ export class NeonClient {
   move = (id: string, at: string | number, trackId?: string) => this.call<Clip>('POST', API_ROUTES.timelineMove, { id, at, trackId });
   split = (id: string, at: string | number) => this.call<[Clip, Clip]>('POST', API_ROUTES.timelineSplit, { id, at });
   remove = (ids: string[]) => this.call<{ removed: number }>('POST', API_ROUTES.timelineRemove, { ids });
+  nudge = (ids: string[], by: string) => this.call<Clip[]>('POST', API_ROUTES.timelineNudge, { ids, by });
 
   trackAdd = (kind: string, name?: string) => this.call<Track>('POST', API_ROUTES.trackAdd, { kind, name });
   trackUpdate = (id: string, patch: Record<string, unknown>) => this.call<Track>('POST', API_ROUTES.trackUpdate, { id, patch });

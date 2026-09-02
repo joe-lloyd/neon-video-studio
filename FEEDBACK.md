@@ -2,6 +2,11 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-09-02 · round 18
+
+- ☑ **"Add shift-select for a lane so you can grab multiple items in the same lane"** — timeline selection now has the usual modifiers: **⇧-click** extends the selection along the lane (every clip between the last selected clip on that lane and the clicked one), **⌘/Ctrl-click** toggles a single clip, **⇧-drag on empty lane space** draws a marquee that selects the clips it sweeps over. Dragging any clip of a multi-selection moves the whole group rigidly (same delta, never past frame 0, each clip stays on its lane, collisions with outside clips resolve per clip). Delete already handled multi-selections. CLI parity: `neon-cli timeline move <clip...> --by 2s` (negative `--by=-15f`) via `POST /api/timeline/nudge`; shortcuts dialog lists the gestures.
+- ☑ **"Checking for updates gives me a 404"** — cause: the v0.8.0 Windows CI build failed, so `releases/latest/download/stable-win-x64-update.json` did not exist and Windows apps got HTTP 404 (mac/linux feeds were fine). Fixes: the publish step now **backfills** a missing platform's feed files (`stable-<plat>-update.json` + `.tar.zst`) from the previous release, so `latest` always carries every platform and those apps see "up to date" until the platform is rebuilt (re-run the failed job from the Actions UI → its assets are added to the same release); the updater turns a 404 into a readable "No Windows x64 build in the latest release yet" instead of a raw HTTP error. The Windows build failure itself could not be diagnosed from here (job logs need repo-admin auth) — if v0.8.1's Windows job fails again, open its log in Actions.
+
 ## 2026-09-02 · round 17
 
 - ☑ **"New lanes always append to the bottom — V2 should go under V1, A2 under A1, FX2 under FX1"** — `ProjectDoc.addTrack` now inserts a lane directly after the last lane of its kind (shifting later lanes down inside the same transaction, so one undo reverts it); an empty section goes after the sections that precede it (video → audio → FX). Covered by tests.

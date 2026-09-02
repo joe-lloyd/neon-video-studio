@@ -262,6 +262,12 @@ export const RemoveClipRequestSchema = z.object({
   ids: z.array(z.string().min(1)).min(1),
 });
 
+/** Move several clips together by a signed time expression (e.g. "2s", "-15f"). */
+export const NudgeClipsRequestSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1),
+  by: z.string().min(1),
+});
+
 export const AddTrackRequestSchema = z.object({
   kind: z.enum(['video', 'audio', 'overlay']),
   name: z.string().optional(),

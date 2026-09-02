@@ -263,3 +263,21 @@ test('inserting a component from an installed pack enables the pack in the proje
     unregisterPack('test-installed');
   }
 });
+
+test('moveClips shifts a selection rigidly, clamps at frame 0 and dodges outside clips', () => {
+  const pd = fresh();
+  const fx = pd.toJSON().tracks.find((t) => t.kind === 'overlay')!;
+  const a = pd.insertClip({ kind: 'component', componentName: 'TextOverlay', startFrame: 10, durationFrames: 10, trackId: fx.id, placement: 'overlap' }, ORIGIN_LOCAL);
+  const b = pd.insertClip({ kind: 'component', componentName: 'TextOverlay', startFrame: 30, durationFrames: 10, trackId: fx.id, placement: 'overlap' }, ORIGIN_LOCAL);
+  const blocker = pd.insertClip({ kind: 'component', componentName: 'TextOverlay', startFrame: 60, durationFrames: 10, trackId: fx.id, placement: 'overlap' }, ORIGIN_LOCAL);
+  pd.moveClips([a.id, b.id], 5, ORIGIN_LOCAL);
+  assert.deepEqual([pd.getClip(a.id)!.startFrame, pd.getClip(b.id)!.startFrame], [15, 35]);
+  // clamp: leftmost cannot go below 0, the group keeps its spacing
+  pd.moveClips([a.id, b.id], -100, ORIGIN_LOCAL);
+  assert.deepEqual([pd.getClip(a.id)!.startFrame, pd.getClip(b.id)!.startFrame], [0, 20]);
+  // b would land on the blocker (60..70) → resolves to the nearest free slot, a moves freely
+  pd.moveClips([a.id, b.id], 42, ORIGIN_LOCAL);
+  assert.equal(pd.getClip(a.id)!.startFrame, 42);
+  assert.ok(pd.getClip(b.id)!.startFrame === 50 || pd.getClip(b.id)!.startFrame === 70, `b at ${pd.getClip(b.id)!.startFrame}`);
+  assert.equal(pd.getClip(blocker.id)!.startFrame, 60);
+});

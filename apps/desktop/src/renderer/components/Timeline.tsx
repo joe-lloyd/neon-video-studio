@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { CLIP_COLORS, framesToTimecode, snapFrame, sortTracks, trackKindForClip, type Clip, type Track, type TrackKind } from '@neon/core';
+import { CLIP_COLORS, framesToTimecode, snapFrame, sortClips, sortTracks, trackKindForClip, type Clip, type Track, type TrackKind } from '@neon/core';
 import { Eye, EyeOff, Lock, NeonIcon, Plus, Trash2, Unlock, Volume2, VolumeX } from '@neon/icon-kit';
 import { useEditor } from '../lib/context.ts';
 import { kbdFor } from '../lib/kbd.ts';
@@ -13,7 +13,7 @@ const SNAP_PX = 8;
 const TRACK_COLOR: Record<TrackKind, string> = { video: CLIP_COLORS.video, audio: CLIP_COLORS.audio, overlay: CLIP_COLORS.component };
 
 type Drag =
-  | { kind: 'move'; id: string; originX: number; originStart: number; startFrame: number; trackId: string; duration: number; clipKind: Clip['kind'] }
+  | { kind: 'move'; id: string; ids: string[]; delta: number; originX: number; originStart: number; startFrame: number; trackId: string; duration: number; clipKind: Clip['kind'] }
   | { kind: 'trim'; id: string; edge: 'start' | 'end'; originX: number; frame: number; clipStart: number; clipEnd: number };
 
 function tickIntervalFrames(pxPerFrame: number, fps: number): number {
@@ -39,6 +39,7 @@ export function Timeline() {
   const [drag, setDrag] = useState<Drag | null>(null);
   const [snapLine, setSnapLine] = useState<number | null>(null);
   const [dropTrack, setDropTrack] = useState<string | null>(null);
+  const [marquee, setMarquee] = useState<{ trackId: string; from: number; to: number } | null>(null);
 
   const tracks = useMemo(() => sortTracks(project.tracks), [project.tracks]);
   const totalFrames = Math.max(durationFrames + fps * 10, Math.ceil((lanesSize.width || 800) / pxPerFrame));
@@ -95,19 +96,42 @@ export function Timeline() {
   };
 
   // ---- clip drag / trim --------------------------------------------------------------
+  /** Shift-click: extend the selection along the lane, from the last selected clip on it to this one. */
+  const selectRange = (clip: Clip) => {
+    const lane = sortClips(clipsByTrack.get(clip.trackId) ?? []);
+    const anchorId = [...selection].reverse().find((id) => lane.some((c) => c.id === id));
+    const anchor = anchorId ? lane.find((c) => c.id === anchorId) : undefined;
+    if (!anchor) return editor.select([clip.id], true);
+    const lo = Math.min(anchor.startFrame, clip.startFrame);
+    const hi = Math.max(anchor.startFrame + anchor.durationFrames, clip.startFrame + clip.durationFrames);
+    editor.select(lane.filter((c) => c.startFrame >= lo && c.startFrame + c.durationFrames <= hi).map((c) => c.id), true);
+  };
+
   const beginMove = (e: ReactPointerEvent<HTMLDivElement>, clip: Clip) => {
     if (e.button !== 0) return;
     e.stopPropagation();
     const track = tracks.find((t) => t.id === clip.trackId);
     if (track?.locked) return;
-    if (!selection.includes(clip.id)) editor.select([clip.id], e.shiftKey);
+    // Modifier clicks only change the selection — no drag starts.
+    if (e.shiftKey) return selectRange(clip);
+    if (e.metaKey || e.ctrlKey) return editor.toggleSelect(clip.id);
+    // Dragging one clip of a multi-selection moves the whole selection (clips on locked lanes stay).
+    const lockedTracks = new Set(tracks.filter((t) => t.locked).map((t) => t.id));
+    const ids = (selection.includes(clip.id) ? selection : [clip.id]).filter((id) => {
+      const c = project.clips.find((x) => x.id === id);
+      return c !== undefined && !lockedTracks.has(c.trackId);
+    });
+    if (!selection.includes(clip.id)) editor.select([clip.id]);
+    const group = ids.length > 1;
+    const groupMinStart = Math.min(...ids.map((id) => project.clips.find((c) => c.id === id)?.startFrame ?? clip.startFrame));
     // Window-level tracking (not element pointer capture): WKWebView drops capture when React
     // re-renders the clip mid-drag, which froze vertical moves between FX tracks.
-    const state: Drag = { kind: 'move', id: clip.id, originX: e.clientX, originStart: clip.startFrame, startFrame: clip.startFrame, trackId: clip.trackId, duration: clip.durationFrames, clipKind: clip.kind };
+    const state: Drag = { kind: 'move', id: clip.id, ids, delta: 0, originX: e.clientX, originStart: clip.startFrame, startFrame: clip.startFrame, trackId: clip.trackId, duration: clip.durationFrames, clipKind: clip.kind };
     setDrag(state);
     let latest = state;
     const move = (ev: PointerEvent) => {
-      const delta = Math.round((ev.clientX - state.originX) / pxPerFrame);
+      // A group moves rigidly: its leftmost clip never crosses frame 0.
+      const delta = Math.max(-groupMinStart, Math.round((ev.clientX - state.originX) / pxPerFrame));
       let start = Math.max(0, state.originStart + delta);
       let line: number | null = null;
       if (snapping) {
@@ -123,9 +147,11 @@ export function Timeline() {
           line = snappedEnd;
         }
       }
+      start = Math.max(state.originStart - groupMinStart, start);
       const over = trackAt(ev.clientY);
-      const trackId = over && over.kind === trackKindForClip(state.clipKind) && !over.locked ? over.id : latest.trackId;
-      latest = { ...state, startFrame: start, trackId };
+      // Only a single clip changes lanes; a group keeps every clip on its own lane.
+      const trackId = !group && over && over.kind === trackKindForClip(state.clipKind) && !over.locked ? over.id : latest.trackId;
+      latest = { ...state, startFrame: start, trackId, delta: start - state.originStart };
       setDrag(latest);
       setSnapLine(line);
     };
@@ -135,7 +161,9 @@ export function Timeline() {
       window.removeEventListener('pointercancel', up);
       setDrag(null);
       setSnapLine(null);
-      if (latest.startFrame !== clip.startFrame || latest.trackId !== clip.trackId) editor.moveClip(clip.id, latest.startFrame, latest.trackId);
+      if (group) {
+        if (latest.delta !== 0) editor.moveClips(ids, latest.delta);
+      } else if (latest.startFrame !== clip.startFrame || latest.trackId !== clip.trackId) editor.moveClip(clip.id, latest.startFrame, latest.trackId);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -169,6 +197,32 @@ export function Timeline() {
       setDrag(null);
       setSnapLine(null);
       if (latest.frame !== state.frame) editor.trimClip(clip.id, edge, latest.frame);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  };
+
+  // ---- marquee: shift-drag on a lane selects the clips it sweeps over ---------------
+  const beginMarquee = (e: ReactPointerEvent<HTMLElement>) => {
+    const track = trackAt(e.clientY);
+    if (!track) return;
+    const base = selection;
+    const from = frameAt(e.clientX);
+    setMarquee({ trackId: track.id, from, to: from });
+    const move = (ev: PointerEvent) => {
+      const to = frameAt(ev.clientX);
+      setMarquee({ trackId: track.id, from, to });
+      const lo = Math.min(from, to);
+      const hi = Math.max(from, to);
+      const hit = (clipsByTrack.get(track.id) ?? []).filter((c) => c.startFrame < hi && c.startFrame + c.durationFrames > lo).map((c) => c.id);
+      editor.select([...base, ...hit]);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      setMarquee(null);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -253,7 +307,7 @@ export function Timeline() {
           <TrackHeader key={t.id} track={t} />
         ))}
       </div>
-      <div className="tl-lanes" ref={lanesRef} onScroll={syncScroll} onPointerDown={(e) => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('lane')) { editor.select([]); scrub(e); } }}>
+      <div className="tl-lanes" ref={lanesRef} onScroll={syncScroll} onPointerDown={(e) => { if (!(e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('lane'))) return; if (e.shiftKey) return beginMarquee(e); editor.select([]); scrub(e); }}>
         <div className="tl-lanes-inner" style={{ width, height: tracks.length * ROW_H, ['--grid-px' as string]: `${interval * pxPerFrame}px` }}>
           {tracks.map((track) => (
             <div
@@ -274,6 +328,9 @@ export function Timeline() {
                 ))}
               {drag?.kind === 'move' && drag.trackId === track.id && !(clipsByTrack.get(track.id) ?? []).some((c) => c.id === drag.id) ? (
                 <GhostClip drag={drag} pxPerFrame={pxPerFrame} clip={project.clips.find((c) => c.id === drag.id)!} fps={fps} />
+              ) : null}
+              {marquee?.trackId === track.id ? (
+                <div className="marquee" style={{ left: Math.min(marquee.from, marquee.to) * pxPerFrame, width: Math.max(2, Math.abs(marquee.to - marquee.from) * pxPerFrame) }} />
               ) : null}
             </div>
           ))}
@@ -374,11 +431,12 @@ function ClipView({ clip, drag, pxPerFrame, fps, selected, flashing, onMove, onT
 }) {
   let start = clip.startFrame;
   let end = clip.startFrame + clip.durationFrames;
-  if (drag?.id === clip.id) {
-    if (drag.kind === 'move') {
-      start = drag.startFrame;
-      end = start + drag.duration;
-    } else if (drag.edge === 'start') start = drag.frame;
+  const inGroup = drag?.kind === 'move' && drag.ids.includes(clip.id);
+  if (drag?.kind === 'move' && inGroup) {
+    start = drag.id === clip.id ? drag.startFrame : clip.startFrame + drag.delta;
+    end = start + clip.durationFrames;
+  } else if (drag?.kind === 'trim' && drag.id === clip.id) {
+    if (drag.edge === 'start') start = drag.frame;
     else end = drag.frame;
   }
   const color = clip.color ?? CLIP_COLORS[clip.kind];
@@ -390,7 +448,7 @@ function ClipView({ clip, drag, pxPerFrame, fps, selected, flashing, onMove, onT
   const widthPx = Math.max(4, (end - start) * pxPerFrame);
   return (
     <div
-      className={`clip kind-${clip.kind}${selected ? ' selected' : ''}${drag?.id === clip.id ? ' dragging' : ''}${flashing ? ' flash' : ''}`}
+      className={`clip kind-${clip.kind}${selected ? ' selected' : ''}${drag?.id === clip.id || inGroup ? ' dragging' : ''}${flashing ? ' flash' : ''}`}
       style={{ left: start * pxPerFrame, width: Math.max(4, (end - start) * pxPerFrame), ['--clip-color' as string]: color }}
       onPointerDown={(e) => onMove(e, clip)}
       onDoubleClick={(e) => {

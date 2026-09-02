@@ -204,6 +204,7 @@ export const API_ROUTES = {
   preview: '/api/preview',
   ui: '/api/ui',
   timelineCut: '/api/timeline/cut',
+  timelineNudge: '/api/timeline/nudge',
   timelineDetach: '/api/timeline/detach',
   assetsUpload: '/api/assets/upload',
   ai: '/api/ai',

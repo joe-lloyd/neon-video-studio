@@ -29,6 +29,7 @@ import {
   AiSetupRequestSchema,
   AiRipRequestSchema,
   DetachAudioRequestSchema,
+  NudgeClipsRequestSchema,
   PacksInstallRequestSchema,
   ProjectPacksRequestSchema,
   type PackSummary,
@@ -600,6 +601,16 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     case `POST ${API_ROUTES.timelineMove}`: {
       const { id, at, trackId } = MoveClipRequestSchema.parse(body);
       return doc.moveClip(id, T(at)!, trackId, ORIGIN_API);
+    }
+
+    case `POST ${API_ROUTES.timelineNudge}`: {
+      const { ids, by } = NudgeClipsRequestSchema.parse(body);
+      const expr = by.trim();
+      const negative = expr.startsWith('-');
+      const frames = parseTimecode(negative ? expr.slice(1) : expr, fps) * (negative ? -1 : 1);
+      const moved = doc.moveClips(ids, frames, ORIGIN_API);
+      ctx.events.activity('cli', 'timeline.move', `Moved ${moved.length} clip${moved.length === 1 ? '' : 's'} by ${frames >= 0 ? '+' : ''}${frames} frames`, { clipIds: ids });
+      return moved;
     }
 
     case `POST ${API_ROUTES.timelineSplit}`: {
