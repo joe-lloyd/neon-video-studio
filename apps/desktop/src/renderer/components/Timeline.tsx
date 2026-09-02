@@ -5,6 +5,8 @@ import { useEditor } from '../lib/context.ts';
 import { kbdFor } from '../lib/kbd.ts';
 import { useElementSize } from '../lib/hooks.ts';
 import { useSelector, useStoreValue } from '../lib/store.ts';
+import { useWaveform } from '../lib/waveforms.ts';
+import { Waveform } from './Waveform.tsx';
 
 const ROW_H = 52;
 const SNAP_PX = 8;
@@ -380,6 +382,12 @@ function ClipView({ clip, drag, pxPerFrame, fps, selected, flashing, onMove, onT
     else end = drag.frame;
   }
   const color = clip.color ?? CLIP_COLORS[clip.kind];
+  const editor = useEditor();
+  const hasAudio = clip.kind === 'audio' || clip.kind === 'video';
+  const peaks = useWaveform(`http://127.0.0.1:${editor.bridge.bootstrap.port}`, hasAudio ? clip.assetId : null);
+  // Trimming the start edge slides the source window along with it (mirrors ProjectDoc.trimClip).
+  const trimBefore = clip.kind !== 'component' ? clip.trimBefore + (drag?.id === clip.id && drag.kind === 'trim' && drag.edge === 'start' ? start - clip.startFrame : 0) : 0;
+  const widthPx = Math.max(4, (end - start) * pxPerFrame);
   return (
     <div
       className={`clip kind-${clip.kind}${selected ? ' selected' : ''}${drag?.id === clip.id ? ' dragging' : ''}${flashing ? ' flash' : ''}`}
@@ -392,7 +400,11 @@ function ClipView({ clip, drag, pxPerFrame, fps, selected, flashing, onMove, onT
       }}
       title={`${clip.name} · ${framesToTimecode(start, fps)} → ${framesToTimecode(end, fps)}`}
     >
-      {clip.kind === 'audio' || clip.kind === 'video' ? <div className="wave" /> : null}
+      {hasAudio && peaks && peaks.length > 0 ? (
+        <Waveform peaks={peaks} trimBefore={trimBefore} durationFrames={end - start} fps={fps} widthPx={widthPx} color={color} mode={clip.kind === 'audio' ? 'audio' : 'video'} />
+      ) : hasAudio && peaks === null ? (
+        <div className="wave" />
+      ) : null}
       {clip.kind !== 'component' && clip.volumeKeyframes
         ? clip.volumeKeyframes.filter((k) => k.gain < 0.99).map((k, i) => <span key={i} className="vol-dot" style={{ left: k.frame * pxPerFrame }} />)
         : null}

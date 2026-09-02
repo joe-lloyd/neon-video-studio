@@ -29,6 +29,9 @@ import {
   AiSetupRequestSchema,
   AiRipRequestSchema,
   DetachAudioRequestSchema,
+  PacksInstallRequestSchema,
+  ProjectPacksRequestSchema,
+  type PackSummary,
   AiMatteRequestSchema,
   AiReframeRequestSchema,
   AiBrollRequestSchema,
@@ -57,6 +60,7 @@ import {
 } from '@neon/core';
 import { mediaTypeForFile } from '@neon/core/node';
 import { parseRange } from '@neon/render';
+import { WAVEFORM_RATE } from './waveforms.ts';
 import type { SignalSocket, SyncSocket } from '@neon/p2p/server';
 import { ffprobeAvailable } from './assets.ts';
 import type { MainContext } from './context.ts';
@@ -150,6 +154,27 @@ async function start(ctx: MainContext, scope: Scope, hostname: string, port: num
         if (asset) {
           if (scope === 'lan' && !authorized(req, url)) return new Response('forbidden', { status: 403 });
           return await serveAsset(ctx, asset[1]!, req);
+        }
+
+        // -- compiled FX pack bundles for the renderer (loopback only) ------------------------
+        const packJs = /^\/packs\/([a-z][a-z0-9-]*)\.js$/.exec(path);
+        if (packJs && scope === 'local') {
+          const file = ctx.packs.bundleFile(packJs[1]!);
+          if (!file) return new Response('pack not found', { status: 404, headers: CORS });
+          return new Response(Bun.file(file), { status: 200, headers: { ...CORS, 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache' } });
+        }
+
+        // -- waveform peaks (same trust model as assets) ------------------------------------
+        const wave = /^\/waveforms\/([a-f0-9]{64})$/.exec(path);
+        if (wave) {
+          if (scope === 'lan' && !authorized(req, url)) return new Response('forbidden', { status: 403 });
+          const peaks = await ctx.waveforms.get(wave[1]!);
+          if (!peaks) return new Response('waveform unavailable', { status: 404, headers: CORS });
+          if (peaks.length === 0) return new Response(null, { status: 204, headers: CORS });
+          return new Response(peaks.slice().buffer as ArrayBuffer, {
+            status: 200,
+            headers: { ...CORS, 'Content-Type': 'application/octet-stream', 'Cache-Control': 'public, max-age=31536000, immutable', 'X-Waveform-Rate': String(WAVEFORM_RATE), 'Access-Control-Expose-Headers': 'X-Waveform-Rate' },
+          });
         }
 
         if (path === '/room') {
@@ -319,6 +344,15 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
   const T = (v: string | number | undefined): number | undefined => (v === undefined ? undefined : parseTimecode(v, fps));
   const key = `${method} ${path}`;
 
+  // FX packs: uninstall carries the pack name in the path.
+  const packUninstall = /^POST \/api\/packs\/([a-z][a-z0-9-]*)\/uninstall$/.exec(key);
+  if (packUninstall) {
+    const name = packUninstall[1]!;
+    if (!(await ctx.packs.uninstall(name))) throw new HttpError(404, 'NOT_FOUND', `Pack "${name}" is not installed`);
+    ctx.events.activity('cli', 'packs.uninstall', `Uninstalled FX pack ${name}`);
+    return { removed: name };
+  }
+
   // AI routes.
   if (key === `GET ${API_ROUTES.aiStatus}`) return ctx.ai.capabilities(true);
   if (key === `GET ${API_ROUTES.aiJobs}`) return ctx.ai.list();
@@ -416,15 +450,68 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
           label: t.label,
           description: t.description,
           defaultDurationSeconds: t.defaultDurationSeconds,
+          pack: t.pack ?? 'core',
+          category: t.category,
+          tags: t.tags,
           defaults: templateDefaults(t.name),
           jsonSchema: templateJsonSchema(t.name),
         })),
+        packs: await packSummaries(ctx),
         tracks: project.tracks,
         clips: project.clips,
         assets: project.assets,
         presets: [projectPreset(project.meta), ...RENDER_PRESETS].map((p) => ({ id: p.id, label: p.label, width: p.width, height: p.height, fps: p.fps })),
       };
       return list;
+    }
+
+    // -- FX packs ------------------------------------------------------------------------
+    case `GET ${API_ROUTES.packs}`:
+      return packSummaries(ctx);
+    case `POST ${API_ROUTES.packsReload}`:
+      await ctx.packs.load();
+      ctx.events.activity('cli', 'packs.reload', 'Reloaded FX packs');
+      return packSummaries(ctx);
+    case `POST ${API_ROUTES.packsInstall}`: {
+      const { path } = PacksInstallRequestSchema.parse(body);
+      const info = await ctx.packs.install(path);
+      if (info.status !== 'ready') throw new HttpError(400, 'PACK_INVALID', `${info.label || info.name}: ${info.error ?? 'failed to load'}`);
+      const enabled = doc.getMeta().packs ?? [];
+      if (!enabled.includes(info.name)) doc.updateMeta({ packs: [...enabled, info.name] }, ORIGIN_API);
+      ctx.events.activity('cli', 'packs.install', `Installed FX pack ${info.label} (${info.templates.length} components) and added it to the project`);
+      return (await packSummaries(ctx)).find((p) => p.name === info.name)!;
+    }
+    case `POST ${API_ROUTES.projectPacks}`: {
+      const { enable = [], disable = [] } = ProjectPacksRequestSchema.parse(body);
+      const installed = new Set((await ctx.packs.list()).filter((p) => p.source === 'installed').map((p) => p.name));
+      for (const name of enable) if (!installed.has(name)) throw new HttpError(404, 'NOT_FOUND', `Pack "${name}" is not installed — run \`neon-cli packs install <dir>\` first`);
+      const current = doc.getMeta().packs ?? [];
+      const next = [...new Set([...current.filter((n) => !disable.includes(n)), ...enable])];
+      doc.updateMeta({ packs: next }, ORIGIN_API);
+      if (enable.length) ctx.events.activity('cli', 'packs.enable', `Added FX pack${enable.length === 1 ? '' : 's'} ${enable.join(', ')} to the project`);
+      if (disable.length) ctx.events.activity('cli', 'packs.disable', `Removed FX pack${disable.length === 1 ? '' : 's'} ${disable.join(', ')} from the project`);
+      return { packs: next };
+    }
+
+    // -- persisted edit history ----------------------------------------------------------
+    case `GET ${API_ROUTES.history}`:
+      return ctx.history.status();
+    case `POST ${API_ROUTES.historyCheckpoint}`: {
+      const status = await ctx.history.push();
+      ctx.rpc?.send.historyChanged({ status });
+      return status;
+    }
+    case `POST ${API_ROUTES.historyUndo}`:
+    case `POST ${API_ROUTES.historyRedo}`: {
+      if (ctx.room.state.role !== 'none') throw new HttpError(409, 'IN_ROOM', 'History stepping is disabled while in a room (it would overwrite peers’ edits)');
+      const undo = key === `POST ${API_ROUTES.historyUndo}`;
+      const s = ctx.history.status();
+      const target = undo ? s.cursor - 1 : s.cursor + 1;
+      if (target < 0 || target >= s.count) throw new HttpError(409, undo ? 'NOTHING_TO_UNDO' : 'NOTHING_TO_REDO', undo ? 'No earlier checkpoint' : 'No later checkpoint');
+      const status = await ctx.history.restore(target);
+      ctx.rpc?.send.historyChanged({ status });
+      ctx.events.activity('cli', undo ? 'history.undo' : 'history.redo', `${undo ? 'Undid' : 'Redid'} to checkpoint ${status.cursor + 1}/${status.count}`);
+      return status;
     }
 
     case `GET ${API_ROUTES.state}`:
@@ -593,6 +680,25 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
   }
 }
 
+
+async function packSummaries(ctx: MainContext): Promise<PackSummary[]> {
+  const enabled = new Set(ctx.store.doc.getMeta().packs ?? []);
+  return (await ctx.packs.list()).map((p) => ({
+    name: p.name,
+    label: p.label,
+    version: p.version,
+    description: p.description,
+    category: p.category,
+    source: p.source,
+    status: p.status,
+    error: p.error,
+    // Built-ins are always usable; an installed pack when the project lists it. (An example pack the
+    // project still names but that is no longer installed is NOT enabled — install it again.)
+    enabled: p.source === 'builtin' || (p.source === 'installed' && enabled.has(p.name)),
+    templates: p.templates,
+    dir: p.dir,
+  }));
+}
 
 // ---- live events (SSE) --------------------------------------------------------------------
 

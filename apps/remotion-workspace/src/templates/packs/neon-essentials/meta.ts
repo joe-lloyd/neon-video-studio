@@ -13,6 +13,8 @@ export const NEON_ESSENTIALS_META: TemplatePackMeta[] = [
     label: 'Neon Badge',
     description: 'Animated pill badge — great for “NEW”, prices, category tags.',
     defaultDurationSeconds: 4,
+    category: 'Badges',
+    icon: 'Tag',
     fields: [
       { key: 'text', type: 'text', default: 'NEW' },
       { key: 'color', type: 'color', default: '#FF007F' },
@@ -27,6 +29,8 @@ export const NEON_ESSENTIALS_META: TemplatePackMeta[] = [
     label: 'Kinetic List',
     description: 'Bullet points that slide in one after another (one per line).',
     defaultDurationSeconds: 6,
+    category: 'Lists',
+    icon: 'Layers',
     fields: [
       { key: 'title', type: 'text', default: 'Three things' },
       { key: 'items', type: 'text', default: 'First point\nSecond point\nThird point', multiline: true },

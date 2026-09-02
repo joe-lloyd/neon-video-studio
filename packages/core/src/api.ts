@@ -114,12 +114,40 @@ export interface TemplateInfo {
   label: string;
   description: string;
   defaultDurationSeconds: number;
+  /** Pack that provides the template ("core" for built-ins). */
+  pack: string;
+  category?: string;
+  tags?: string[];
   defaults: Record<string, unknown>;
   jsonSchema: Record<string, unknown>;
 }
 
+/** An FX pack as seen through the control API (`neon-cli packs`). */
+export interface PackSummary {
+  name: string;
+  label: string;
+  version: string;
+  description?: string;
+  category?: string;
+  /** builtin = ships with the app · installed = ~/.neon-video/packs · example = in the repo, installable */
+  source: 'builtin' | 'installed' | 'example';
+  status: 'ready' | 'error';
+  error?: string;
+  /** Usable in the current project (built-ins always; installed packs when listed in project.meta.packs). */
+  enabled: boolean;
+  templates: string[];
+  dir?: string;
+}
+
+/** Persisted edit-history position: `cursor` is the checkpoint matching the current document. */
+export interface HistoryStatus {
+  count: number;
+  cursor: number;
+}
+
 export interface ListResponse {
   templates: TemplateInfo[];
+  packs: PackSummary[];
   tracks: Track[];
   clips: Clip[];
   assets: Asset[];
@@ -182,9 +210,19 @@ export const API_ROUTES = {
   aiStatus: '/api/ai/status',
   aiJobs: '/api/ai/jobs',
   aiTranscript: '/api/ai/transcript',
+  packs: '/api/packs',
+  packsInstall: '/api/packs/install',
+  packsReload: '/api/packs/reload',
+  packsUninstall: '/api/packs/:name/uninstall',
+  projectPacks: '/api/project/packs',
+  history: '/api/history',
+  historyUndo: '/api/history/undo',
+  historyRedo: '/api/history/redo',
+  historyCheckpoint: '/api/history/checkpoint',
   yjs: '/yjs',
   signaling: '/signaling',
   assets: '/assets',
+  waveforms: '/waveforms',
 } as const;
 
 /** Who caused an action. */

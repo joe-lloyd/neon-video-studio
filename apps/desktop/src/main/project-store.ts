@@ -167,6 +167,7 @@ export class ProjectStore {
     await this.flush();
     await mkdir(dest, { recursive: true });
     await cp(this.assetsDir, join(dest, 'assets'), { recursive: true, force: false, errorOnExist: false });
+    await cp(join(this.dir, 'history'), join(dest, 'history'), { recursive: true, force: true }).catch(() => undefined);
     const oldDir = this.dir;
     this.dir = dest;
     if (this.doc.getMeta().name === 'Untitled Project') {

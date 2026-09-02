@@ -3,7 +3,7 @@
   "version": "0.7.0",
   "private": true,
   "type": "module",
-  "description": "neon-cli — headless / agent interface to Neon Video Studio (drives the running desktop app over its local control API, or renders headlessly)",
+  "description": "neon-cli \u2014 headless / agent interface to Neon Video Studio (drives the running desktop app over its local control API, or renders headlessly)",
   "bin": {
     "neon-cli": "./src/main.ts"
   },
@@ -13,10 +13,11 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.ts",
-    "build": "echo '@neon/cli runs directly on Node ≥22.18 via type stripping'"
+    "build": "echo '@neon/cli runs directly on Node \u226522.18 via type stripping'"
   },
   "dependencies": {
     "@neon/core": "workspace:*",
+    "@neon/fx-kit": "workspace:*",
     "@neon/remotion-workspace": "workspace:*",
     "@neon/render": "workspace:*"
   },

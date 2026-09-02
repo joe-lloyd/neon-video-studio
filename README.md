@@ -21,9 +21,9 @@ watch an agent edit while you keep control of the timeline.
 ## Highlights
 
 - **Timeline editing** — video / audio / FX tracks, drag, trim, snap, ripple insert, split at playhead, undo/redo (only your own edits), keyboard shortcuts (`?`)
-- **React templates as clips** — TextOverlay, LowerThird, TitleCard, Countdown, ProgressBar, Watermark, SolidColor; props edited in the inspector, validated with zod, rendered identically in preview and export
+- **React templates as clips** — TextOverlay, LowerThird, TitleCard, Countdown, ProgressBar, Watermark, SolidColor, plus installable FX packs (see [docs/fx-packs.md](docs/fx-packs.md)); props edited in the inspector, validated with zod, rendered identically in preview and export
 - **Export** — H.264 MP4 through `@remotion/renderer` on the app's own bundled Bun runtime (no Node required at runtime); presets from draft to 4K, vertical and square
-- **Agent/CLI control** — `neon-cli` covers projects, media, timeline, tracks, render, rooms, preview transport and a live event stream; `--json` everywhere
+- **Agent/CLI control** — `neon-cli` covers projects, media, timeline, tracks, FX packs, edit history, render, rooms, preview transport and a live event stream; `--json` everywhere
 - **P2P collaboration** — host a room, others on the LAN join by code (UDP discovery, no server); Yjs CRDT keeps everyone converged, peers' playheads are visible, assets replicate by SHA‑256
 - **Local‑first** — projects are folders (`project.json` + CRDT state + content‑addressed assets); autosave; nothing leaves your machine
 

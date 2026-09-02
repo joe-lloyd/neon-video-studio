@@ -19,6 +19,7 @@
   "dependencies": {
     "@neon/ai": "workspace:*",
     "@neon/core": "workspace:*",
+    "@neon/fx-kit": "workspace:*",
     "@neon/icon-kit": "workspace:*",
     "@neon/p2p": "workspace:*",
     "@neon/remotion-workspace": "workspace:*",

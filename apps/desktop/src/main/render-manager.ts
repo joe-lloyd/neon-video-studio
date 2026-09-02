@@ -11,6 +11,8 @@ export interface RenderManagerDeps {
   assetBaseUrl(): string;
   /** Resolve (or download on first use) the render runtime; log lines land in the job log. */
   renderRuntime(onLog: (line: string) => void): Promise<RenderRuntime>;
+  /** Installed FX packs a project needs (enabled in project.meta.packs and compiled fine). */
+  packsFor(project: Project): { name: string; dir: string; entry: string }[];
   onUpdate(job: RenderJob): void;
 }
 
@@ -104,6 +106,8 @@ export class RenderManager {
         this.update(job, {});
       });
       const rp = runtime.paths;
+      const packs = this.deps.packsFor(opts.project);
+      if (packs.length) job.log.push(`FX packs: ${packs.map((p) => p.name).join(', ')}`);
       const run = runRenderWorker(
         {
           project: opts.project,
@@ -113,7 +117,8 @@ export class RenderManager {
           frameRange: opts.frameRange,
           bundleCacheDir: paths.bundleCache(),
           entryPoint: rp.entryPoint,
-          watchDirs: rp.watchDirs,
+          watchDirs: [...rp.watchDirs, ...packs.map((p) => p.dir)],
+          packs: packs.map((p) => ({ name: p.name, entry: p.entry })),
           licenseKey: process.env.REMOTION_LICENSE_KEY,
         },
         {

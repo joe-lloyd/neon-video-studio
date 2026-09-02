@@ -18,6 +18,7 @@ export const ProjectMetaSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   schemaVersion: z.number().int(),
+  packs: z.array(z.string()).optional(),
 });
 
 export const TrackSchema = z.object({
@@ -304,9 +305,12 @@ export const UpdateMetaRequestSchema = z.object({
   width: z.number().int().min(16).max(8192).optional(),
   height: z.number().int().min(16).max(8192).optional(),
   background: z.string().optional(),
+  packs: z.array(z.string()).optional(),
 });
 
 export const ProjectOpenRequestSchema = z.object({ path: z.string().min(1) });
+export const PacksInstallRequestSchema = z.object({ path: z.string().min(1) });
+export const ProjectPacksRequestSchema = z.object({ enable: z.array(z.string()).optional(), disable: z.array(z.string()).optional() });
 export const ProjectSaveRequestSchema = z.object({ path: z.string().min(1).optional() });
 export const ProjectNewRequestSchema = z.object({
   name: z.string().min(1).optional(),

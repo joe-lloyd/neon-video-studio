@@ -8,6 +8,9 @@ import type { EventHub } from './events.ts';
 import type { AiManager } from './ai-manager.ts';
 import type { VoiceRecorder } from './recorder.ts';
 import type { UpdateManager } from './updates.ts';
+import type { HistoryStore } from './history.ts';
+import type { WaveformCache } from './waveforms.ts';
+import type { PackManager } from './packs.ts';
 import type { DesktopRPC } from '../shared/rpc.ts';
 
 /** Minimal shape of the Electrobun RPC object we use from the main side. */
@@ -30,6 +33,9 @@ export interface MainContext {
   ai: AiManager;
   recorder: VoiceRecorder;
   updates: UpdateManager;
+  history: HistoryStore;
+  waveforms: WaveformCache;
+  packs: PackManager;
   localPort: number;
   startedAt: number;
   rpc: MainRpc | null;

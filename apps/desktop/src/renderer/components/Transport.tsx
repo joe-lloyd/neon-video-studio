@@ -37,6 +37,8 @@ export function Transport() {
   const snapping = useSelector(editor.ui, (u) => u.snapping);
   const muted = useSelector(editor.ui, (u) => u.previewMuted);
   const selection = useSelector(editor.ui, (u) => u.selection);
+  const canUndo = useSelector(editor.ui, (u) => u.canUndo);
+  const canRedo = useSelector(editor.ui, (u) => u.canRedo);
   const fps = project.meta.fps;
 
   return (
@@ -50,8 +52,8 @@ export function Transport() {
       <span className="timecode">{framesToTimecode(frame, fps)}</span>
       <span className="timecode total mono">/ {framesToTimecode(durationFrames, fps)}</span>
       <span className="spacer" />
-      <button className="btn icon ghost" title={`Undo (${kbd.mod('Z')})`} onClick={() => editor.undoEdit()}><NeonIcon icon={Undo2} size={15} /></button>
-      <button className="btn icon ghost" title={`Redo (${kbd.shiftMod('Z')})`} onClick={() => editor.redoEdit()}><NeonIcon icon={Redo2} size={15} /></button>
+      <button className="btn icon ghost" title={`Undo (${kbd.mod('Z')})`} disabled={!canUndo} onClick={() => editor.undoEdit()}><NeonIcon icon={Undo2} size={15} tone={canUndo ? 'white' : 'muted'} /></button>
+      <button className="btn icon ghost" title={`Redo (${kbd.shiftMod('Z')})`} disabled={!canRedo} onClick={() => editor.redoEdit()}><NeonIcon icon={Redo2} size={15} tone={canRedo ? 'white' : 'muted'} /></button>
       <button className="btn icon ghost" title="Split at playhead (S)" onClick={() => editor.splitAtPlayhead()}><NeonIcon icon={Scissors} size={15} tone="cyan" /></button>
       <button className="btn icon ghost" title={`Delete selection (${kbd.isMac ? '⌫' : 'Del'})`} disabled={selection.length === 0} onClick={() => editor.deleteSelection()}><NeonIcon icon={Trash2} size={15} tone="red" /></button>
       <span style={{ width: 8 }} />

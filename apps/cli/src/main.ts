@@ -10,6 +10,7 @@ import { resolve } from 'node:path';
 import { RENDER_PRESETS, framesToTimecode, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type ImportAssetResponse, type RenderJob } from '@neon/core';
 import { renderHeadless } from '@neon/render';
 import { registerAllPacks } from '@neon/remotion-workspace/packs';
+import { registerInstalledPacks } from '@neon/core/node';
 
 registerAllPacks();
 import { ApiError, NeonClient, discoverClient } from './client.ts';
@@ -22,7 +23,7 @@ USAGE
 
 COMMANDS
   status                                  App, project, room and render status
-  list [templates|tracks|clips|assets|presets]
+  list [templates|packs|tracks|clips|assets|presets]
   state dump [--out file]                 Full project JSON
   project new [--name N] [--fps 30] [--width W] [--height H]
   project open <dir>                      Open a .neon project directory
@@ -70,6 +71,18 @@ AI (local engines: whisper.cpp, ffmpeg, Apple Vision; Claude optional for B-roll
   ai jobs | ai job <id> | ai cancel <id>
   preview play|pause|toggle|seek <T>      Drive the app's preview player (watch your edits play back)
   ui panel <media|fx|inspect|room|ai|script|render|live> | ui select <clip...> | ui select none | ui dialog <render|room|shortcuts|none>
+
+FX PACKS (folders with pack.json + index.tsx · installed to ~/.neon-video/packs · see docs/fx-packs.md)
+  packs [list]                            Built-in, installed and example packs, with "in project" state
+  packs install <dir>                     Install a pack folder (or a repo example) and add it to the project
+  packs add <name...> | packs remove <name...>   Enable/disable installed packs for THIS project (meta.packs)
+  packs uninstall <name> | packs reload   Delete from ~/.neon-video/packs · re-scan + recompile after editing
+
+EDIT HISTORY (checkpoints persisted in <project>.neon/history — survive restarts)
+  history                                 Where you are: checkpoint N of M
+  history undo | history redo             Step the project to the previous/next checkpoint
+  history checkpoint                      Record the current state as a checkpoint (agents: do this before risky edits)
+  assets waveform <ref> [--buckets 60]    Audio envelope of an asset (peaks per 10 ms; --json for raw buckets)
 
 TIME (T)   HH:MM:SS[:FF] · MM:SS · 12.5s · 300f · 300 (frames)
 REF        id, id prefix, or name (tracks: "V1"; assets: file name or hash prefix)
@@ -124,6 +137,7 @@ const { values: flags, positionals } = parseArgs({
     password: { type: 'string' },
     'host-url': { type: 'string' },
     history: { type: 'string' },
+    buckets: { type: 'string' },
     force: { type: 'boolean', default: false },
     apply: { type: 'boolean', default: false },
     words: { type: 'string' },
@@ -212,6 +226,8 @@ async function waitForRender(api: NeonClient, job: RenderJob): Promise<RenderJob
 }
 
 async function main(): Promise<void> {
+  // Installed FX packs (~/.neon-video/packs) so --component names from packs validate locally too.
+  await registerInstalledPacks().catch(() => undefined);
   const [cmd, sub, ...rest] = positionals;
   if (flags.help || !cmd || cmd === 'help') {
     process.stdout.write(HELP);
@@ -271,14 +287,15 @@ async function main(): Promise<void> {
       if (json) {
         const templates = data.templates;
         const payload =
-          what === 'templates' ? templates : what === 'tracks' ? data.tracks : what === 'clips' ? data.clips : what === 'assets' ? data.assets : what === 'presets' ? data.presets : data;
+          what === 'templates' ? templates : what === 'packs' ? data.packs : what === 'tracks' ? data.tracks : what === 'clips' ? data.clips : what === 'assets' ? data.assets : what === 'presets' ? data.presets : data;
         out(payload, () => undefined);
         return;
       }
       const sections: string[] = [];
       if (what === 'all' || what === 'templates') {
-        sections.push('TEMPLATES (--component)\n' + table(data.templates.map((t) => [t.name, t.label, `${t.defaultDurationSeconds}s`, t.description]), ['name', 'label', 'default', 'description']));
+        sections.push('TEMPLATES (--component)\n' + table(data.templates.map((t) => [t.name, t.label, t.pack ?? 'core', t.category ?? '', `${t.defaultDurationSeconds}s`, t.description]), ['name', 'label', 'pack', 'category', 'default', 'description']));
       }
+      if (what === 'all' || what === 'packs') sections.push('FX PACKS (packs …)\n' + packsTable(data.packs));
       if (what === 'all' || what === 'tracks') {
         sections.push('TRACKS\n' + table(data.tracks.map((t) => [t.id, t.name, t.kind, t.muted ? 'muted' : '', t.locked ? 'locked' : '', t.hidden ? 'hidden' : '']), ['id', 'name', 'kind', '', '', '']));
       }
@@ -454,7 +471,68 @@ async function main(): Promise<void> {
         const asset = await api.resolveAsset(rest[0]);
         const r = await api.removeAsset(asset.id);
         out(r, () => `Removed asset ${asset.name}`);
-      } else throw new ApiError('USAGE', 'assets import|remove');
+      } else if (sub === 'waveform') {
+        if (!rest[0]) throw new ApiError('USAGE', 'assets waveform <ref> [--buckets 60]');
+        const asset = await api.resolveAsset(rest[0]);
+        const peaks = await api.waveform(asset.id);
+        if (peaks === null) throw new ApiError('UNAVAILABLE', `No waveform for ${asset.name} (ffmpeg missing or asset not readable)`);
+        const buckets = Math.max(4, Math.min(2000, num(flags.buckets) ?? 60));
+        const envelope = downsample(peaks, buckets);
+        const seconds = peaks.length / 100;
+        const summary = { assetId: asset.id, name: asset.name, seconds, rate: 100, hasAudio: peaks.length > 0, buckets: Array.from(envelope) };
+        out(summary, () => {
+          if (peaks.length === 0) return `${asset.name}: no audio stream`;
+          const glyphs = ' ▁▂▃▄▅▆▇█';
+          const bars = Array.from(envelope, (v) => glyphs[Math.min(8, Math.round((v / 255) * 8))]).join('');
+          return `${asset.name} · ${seconds.toFixed(1)}s · peak ${Math.round((Math.max(...peaks) / 255) * 100)}%\n${bars}`;
+        });
+      } else throw new ApiError('USAGE', 'assets import|remove|waveform');
+      return;
+    }
+
+    case 'packs': {
+      if (!sub || sub === 'list') {
+        const packs = await api.packs();
+        out(packs, () => packsTable(packs));
+      } else if (sub === 'install') {
+        if (!rest[0]) throw new ApiError('USAGE', 'packs install <dir>');
+        const p = await api.packsInstall(resolve(rest[0]));
+        out(p, () => `Installed ${p.label} v${p.version} (${p.templates.join(', ')}) — added to the project`);
+      } else if (sub === 'uninstall') {
+        if (!rest[0]) throw new ApiError('USAGE', 'packs uninstall <name>');
+        const r = await api.packsUninstall(rest[0]);
+        out(r, () => `Uninstalled ${r.removed}`);
+      } else if (sub === 'add' || sub === 'enable') {
+        if (rest.length === 0) throw new ApiError('USAGE', 'packs add <name...>');
+        const r = await api.projectPacks({ enable: rest });
+        out(r, () => `Project packs: ${r.packs.join(', ') || '(none)'}`);
+      } else if (sub === 'remove' || sub === 'disable') {
+        if (rest.length === 0) throw new ApiError('USAGE', 'packs remove <name...>');
+        const r = await api.projectPacks({ disable: rest });
+        out(r, () => `Project packs: ${r.packs.join(', ') || '(none)'}`);
+      } else if (sub === 'reload') {
+        const packs = await api.packsReload();
+        out(packs, () => packsTable(packs));
+      } else throw new ApiError('USAGE', 'packs [list]|install <dir>|uninstall <name>|add <name...>|remove <name...>|reload');
+      return;
+    }
+
+    case 'history': {
+      const describe = (s: { count: number; cursor: number }) =>
+        s.count === 0 ? 'No checkpoints yet' : `Checkpoint ${s.cursor + 1} of ${s.count} · ${s.cursor} undo step${s.cursor === 1 ? '' : 's'} · ${s.count - 1 - s.cursor} redo step${s.count - 1 - s.cursor === 1 ? '' : 's'}`;
+      if (!sub || sub === 'status') {
+        const s = await api.history();
+        out(s, () => describe(s));
+      } else if (sub === 'undo') {
+        const s = await api.historyUndo();
+        out(s, () => `Undone → ${describe(s)}`);
+      } else if (sub === 'redo') {
+        const s = await api.historyRedo();
+        out(s, () => `Redone → ${describe(s)}`);
+      } else if (sub === 'checkpoint' || sub === 'save') {
+        const s = await api.historyCheckpoint();
+        out(s, () => `Checkpoint recorded → ${describe(s)}`);
+      } else throw new ApiError('USAGE', 'history [status|undo|redo|checkpoint]');
       return;
     }
 
@@ -581,6 +659,28 @@ async function main(): Promise<void> {
     default:
       throw new ApiError('USAGE', `Unknown command "${cmd}". Run neon-cli --help`);
   }
+}
+
+function packsTable(packs: import('@neon/core').PackSummary[]): string {
+  if (packs.length === 0) return '  (no packs)';
+  return table(
+    packs.map((p) => [p.name, p.label, p.version, p.source, p.status === 'ready' ? (p.enabled ? 'in project' : p.source === 'example' ? 'installable' : 'installed') : `error: ${p.error ?? '?'}`, `${p.templates.length}`, p.templates.slice(0, 5).join(', ') + (p.templates.length > 5 ? '…' : '')]),
+    ['name', 'label', 'version', 'source', 'state', 'n', 'components'],
+  );
+}
+
+function downsample(peaks: Uint8Array, buckets: number): Uint8Array {
+  if (peaks.length === 0) return new Uint8Array(0);
+  const n = Math.min(buckets, peaks.length);
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const from = Math.floor((i / n) * peaks.length);
+    const to = Math.max(from + 1, Math.floor(((i + 1) / n) * peaks.length));
+    let max = 0;
+    for (let j = from; j < to; j++) if (peaks[j]! > max) max = peaks[j]!;
+    out[i] = max;
+  }
+  return out;
 }
 
 async function waitForAi(api: NeonClient, job: AiJob): Promise<AiJob> {

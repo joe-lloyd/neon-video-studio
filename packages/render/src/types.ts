@@ -15,6 +15,11 @@ export interface RenderJobSpec {
   entryPoint: string;
   /** Directories whose contents invalidate the bundle cache. */
   watchDirs: string[];
+  /**
+   * Installed FX packs the project uses. The worker generates an entry that imports each pack's
+   * component module and registers it before the composition mounts.
+   */
+  packs?: { name: string; entry: string }[];
   licenseKey?: string;
   concurrency?: number | string | null;
   /** Existing Chrome/Chromium binary to use instead of Remotion's downloaded headless shell. */

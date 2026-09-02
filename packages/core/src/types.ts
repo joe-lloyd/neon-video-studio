@@ -22,6 +22,8 @@ export interface ProjectMeta {
   updatedAt: string;
   /** Schema version of the document layout, for future migrations. */
   schemaVersion: number;
+  /** Installed FX packs enabled for this project (pack names). Built-in packs are always available. */
+  packs?: string[];
 }
 
 export interface Track {

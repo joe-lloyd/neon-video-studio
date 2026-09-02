@@ -1,6 +1,7 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  - 'examples/packs/*'
 
 # Supply-chain hardening: only resolve package versions published at least 7 days ago
 # (10080 minutes). Hypersolid's baseline is 3 days (4320); 7 days is stricter and was the
