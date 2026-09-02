@@ -30,6 +30,7 @@ import type { Bridge } from './bridge.ts';
 import type { HistoryStatus, PackInfo, RoomState, UpdateState } from '../../shared/rpc.ts';
 import { registerRuntimeComponents, unregisterRuntimeComponents } from '@neon/remotion-workspace/templates';
 import { importPackBundle } from './pack-host.ts';
+import { FULL_FRAME, anchoredTransform, type NaturalBox } from './transform-math.ts';
 
 export function createStore<T>(initial: T) {
   let state = initial;
@@ -160,6 +161,8 @@ export class Editor {
   private replaying = false;
   /** Installed pack bundles loaded into this renderer: pack → bundle path + component names. */
   private readonly loadedPacks = new Map<string, { path: string; names: string[] }>();
+  /** Painted-content bounds per visible clip, measured by the canvas editor (composition fractions). */
+  readonly canvasBounds = new Map<string, NaturalBox>();
 
   constructor(bridge: Bridge) {
     this.bridge = bridge;
@@ -455,6 +458,18 @@ export class Editor {
     } catch (err) {
       this.toast('error', `Voice-over import failed: ${(err as Error).message}`);
     }
+  }
+
+  /**
+   * Change scale and/or rotation while the element stays put: the composition pivots on the frame
+   * centre, so the position is re-solved to keep the element's painted centre fixed.
+   */
+  setTransformAnchored(clipId: string, patch: { scale?: number; rotation?: number }): void {
+    const clip = this.doc.getClip(clipId);
+    if (!clip) return;
+    const { width, height } = this.project.get().project.meta;
+    const current = { x: clip.transform?.x ?? 0.5, y: clip.transform?.y ?? 0.5, scale: clip.transform?.scale ?? 1, rotation: clip.transform?.rotation ?? 0 };
+    this.setTransform(clipId, anchoredTransform(this.canvasBounds.get(clipId) ?? FULL_FRAME, current, patch, width, height));
   }
 
   setTransform(clipId: string, transform: { x: number; y: number; scale: number; rotation?: number } | null): void {

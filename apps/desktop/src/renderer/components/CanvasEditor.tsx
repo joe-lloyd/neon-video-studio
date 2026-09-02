@@ -3,6 +3,7 @@ import type { Clip } from '@neon/core';
 import { useEditor } from '../lib/context.ts';
 import { kbdFor } from '../lib/kbd.ts';
 import { useSelector, useStoreValue } from '../lib/store.ts';
+import { FULL_FRAME, positionForCenter, projectCenter, type NaturalBox } from '../lib/transform-math.ts';
 
 interface Guide {
   axis: 'x' | 'y';
@@ -17,19 +18,10 @@ interface LiveTransform {
   rotation: number;
 }
 
-/** Painted content bounds of an element, in composition fractions, before its transform. */
-interface NaturalBox {
-  cx: number;
-  cy: number;
-  w: number;
-  h: number;
-}
-
 const SNAP_PX = 7;
 const ROTATION_SNAP_DEG = 3;
 /** Canvas snap targets: centre, safe margins, thirds. */
 const STATIC_TARGETS = [0.5, 0.08, 0.92, 1 / 3, 2 / 3];
-const FULL_FRAME: NaturalBox = { cx: 0.5, cy: 0.5, w: 1, h: 1 };
 const MIN_BOX_PX = 16;
 
 const tfOf = (c: Clip) => ({ x: c.transform?.x ?? 0.5, y: c.transform?.y ?? 0.5, scale: c.transform?.scale ?? 1, rotation: c.transform?.rotation ?? 0 });
@@ -151,14 +143,8 @@ const boxEq = (a: NaturalBox, b: NaturalBox) =>
 
 /** Screen-space box (preview px) of a natural box under a transform: centre, size, rotation. */
 function projectBox(nat: NaturalBox, t: { x: number; y: number; scale: number; rotation: number }, width: number, height: number) {
-  const rad = (t.rotation * Math.PI) / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  // Element transform pivots on the frame centre: p' = o + T + s·R·(p − o).
-  const dx = (nat.cx - 0.5) * width;
-  const dy = (nat.cy - 0.5) * height;
-  const cx = width / 2 + (t.x - 0.5) * width + t.scale * (cos * dx - sin * dy);
-  const cy = height / 2 + (t.y - 0.5) * height + t.scale * (sin * dx + cos * dy);
+  // The CSS transform pivots on the frame centre (see transform-math.ts) — projectCenter undoes that.
+  const { cx, cy } = projectCenter(nat, t, width, height);
   return { cx, cy, w: Math.max(MIN_BOX_PX, nat.w * width * t.scale), h: Math.max(MIN_BOX_PX, nat.h * height * t.scale), rotation: t.rotation };
 }
 
@@ -200,6 +186,8 @@ export function CanvasEditor({ width, height }: { width: number; height: number 
         changed = ids.length !== Object.keys(prev).length || ids.some((id) => !prev[id] || !boxEq(prev[id]!, next[id]!));
         return changed ? next : prev;
       });
+      // Share the measurements so the inspector's scale/rotation fields can pivot on the element too.
+      for (const [id, nat] of Object.entries(next)) editor.canvasBounds.set(id, nat);
     };
     const raf = requestAnimationFrame(measure);
     const late = setTimeout(measure, 300);
@@ -323,11 +311,13 @@ export function CanvasEditor({ width, height }: { width: number; height: number 
     const startBox = projectBox(natOf(clip), start, width, height);
     const d0 = Math.hypot(e.clientX - rect.left - startBox.cx, e.clientY - rect.top - startBox.cy) || 1;
     let latest = start;
+    const nat = natOf(clip);
     const move = (ev: PointerEvent) => {
       const d = Math.hypot(ev.clientX - rect.left - startBox.cx, ev.clientY - rect.top - startBox.cy);
       let scale = Math.min(10, Math.max(0.05, start.scale * (d / d0)));
       if (snapping && !ev.metaKey && !ev.altKey && Math.abs(scale - 1) < 0.05) scale = 1; // soft snap to 100 %
-      latest = { ...start, scale };
+      // Scale about the element's own centre: keep its painted centre where it was.
+      latest = { ...start, scale, ...positionForCenter(nat, { scale, rotation: start.rotation }, startBox.cx, startBox.cy, width, height) };
       setLive(latest);
     };
     track(move, () => {
@@ -345,6 +335,7 @@ export function CanvasEditor({ width, height }: { width: number; height: number 
     const cx = rect.left + startBox.cx;
     const cy = rect.top + startBox.cy;
     const a0 = Math.atan2(e.clientY - cy, e.clientX - cx);
+    const nat = natOf(clip);
     let latest = start;
     const move = (ev: PointerEvent) => {
       const a = Math.atan2(ev.clientY - cy, ev.clientX - cx);
@@ -353,7 +344,8 @@ export function CanvasEditor({ width, height }: { width: number; height: number 
         const near = Math.round(rotation / 45) * 45; // soft snap to 0/45/90/…
         if (Math.abs(rotation - near) < ROTATION_SNAP_DEG) rotation = near;
       }
-      latest = { ...start, rotation };
+      // Rotate about the element's own centre: keep its painted centre where it was.
+      latest = { ...start, rotation, ...positionForCenter(nat, { scale: start.scale, rotation }, startBox.cx, startBox.cy, width, height) };
       setLive(latest);
     };
     track(move, () => {
