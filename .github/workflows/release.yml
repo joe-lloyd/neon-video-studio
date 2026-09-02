@@ -48,12 +48,22 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        shell: bash
+        # Default shell on purpose (pwsh on Windows): forcing `shell: bash` here broke the Windows
+        # build in v0.8.0/v0.8.1 — electrobun's toolchain must run from the runner's native shell.
+        id: build
+        continue-on-error: true
         run: |
           pnpm exec electrobun prepare
           pnpm exec vite build
-          # hdiutil on macOS runners flakes with 'Resource busy' — one retry clears it.
-          pnpm exec electrobun build --env=stable || { echo "build failed — retrying once"; sleep 10; pnpm exec electrobun build --env=stable; }
+          pnpm exec electrobun build --env=stable
+      - name: Retry build once (hdiutil on macOS runners flakes with 'Resource busy')
+        if: steps.build.outcome == 'failure'
+        working-directory: apps/desktop
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: pnpm exec electrobun build --env=stable
       - name: Package artifact
         shell: bash
         working-directory: apps/desktop
@@ -126,13 +136,17 @@ jobs:
           # build failed, its feed files would vanish from `latest` and every app on that platform would
           # get a 404 on "Check for updates". Backfill them from the previous release instead, so those
           # apps see "up to date" until the platform is rebuilt (re-run the failed job → assets are added).
-          prev=$(gh release list --exclude-drafts --exclude-pre-releases --limit 20 --json tagName --jq '.[].tagName' | grep -v "^$GITHUB_REF_NAME$" | head -1 || true)
+          # Walk back through earlier releases until one has the platform (several in a row may have failed).
+          mapfile -t previous < <(gh release list --exclude-drafts --exclude-pre-releases --limit 30 --json tagName --jq '.[].tagName' | grep -v "^$GITHUB_REF_NAME$" || true)
           for plat in macos-arm64 win-x64 linux-x64; do
             if ! ls release/stable-${plat}-update.json >/dev/null 2>&1; then
-              echo "::warning::No ${plat} build in this release — backfilling the update feed from ${prev:-<none>}"
-              if [ -n "$prev" ]; then
-                gh release download "$prev" --pattern "stable-${plat}-*" --dir release --clobber || echo "::warning::previous release has no ${plat} feed either"
-              fi
+              echo "::warning::No ${plat} build in this release — backfilling the update feed from an earlier release"
+              for prev in "${previous[@]}"; do
+                if gh release download "$prev" --pattern "stable-${plat}-*" --dir release --clobber 2>/dev/null && ls release/stable-${plat}-update.json >/dev/null 2>&1; then
+                  echo "backfilled ${plat} feed from ${prev}"; break
+                fi
+              done
+              ls release/stable-${plat}-update.json >/dev/null 2>&1 || echo "::warning::no earlier release has a ${plat} feed"
             fi
           done
           files=(release/*)
