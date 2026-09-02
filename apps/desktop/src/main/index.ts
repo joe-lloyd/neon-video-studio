@@ -32,7 +32,7 @@ import { PackManager } from './packs.ts';
 import { repoRoot } from './paths.ts';
 import type { Bootstrap, DesktopRPC } from '../shared/rpc.ts';
 
-const VERSION = '0.8.1';
+const VERSION = '0.8.2';
 const DEV_SERVER_URL = 'http://localhost:5173';
 
 async function resolveViewUrl(port: number, token: string): Promise<{ url: string; isDev: boolean }> {
