@@ -4,7 +4,7 @@ export default {
   app: {
     name: 'Neon Video Studio',
     identifier: 'com.hypersolid.neon-video-studio',
-    version: '0.8.2',
+    version: '0.8.3',
   },
   build: {
     // Bun (not Cottontail): we rely on Bun.serve (HTTP + WebSocket), node:dgram multicast and

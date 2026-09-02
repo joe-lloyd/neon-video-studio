@@ -1,6 +1,6 @@
 {
   "name": "@neon/cli",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "private": true,
   "type": "module",
   "description": "neon-cli — headless / agent interface to Neon Video Studio (drives the running desktop app over its local control API, or renders headlessly)",
