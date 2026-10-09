@@ -1,4 +1,4 @@
-import { runOrThrow, ffmpegTime } from './exec.ts';
+import { filterPath, runOrThrow, ffmpegTime } from './exec.ts';
 import type { ToolPaths } from './tools.ts';
 
 export type DenoiseEngine = 'rnnoise' | 'afftdn' | 'deepfilter';
@@ -43,7 +43,7 @@ export async function denoise(
   }
   if (opts.engine === 'rnnoise' && opts.paths.rnnoiseModel) {
     // arnndn wants 48 kHz mono/stereo; mix controls dry/wet.
-    filter = `aresample=48000,arnndn=m='${opts.paths.rnnoiseModel.replace(/'/g, "\\'")}':mix=${strength.toFixed(2)}`;
+    filter = `aresample=48000,arnndn=m=${filterPath(opts.paths.rnnoiseModel)}:mix=${strength.toFixed(2)}`;
   } else {
     // Spectral FFT denoiser: nr = noise reduction in dB (up to ~30), nf = noise floor estimate.
     filter = `afftdn=nr=${Math.round(6 + strength * 24)}:nf=-${Math.round(28 + strength * 14)}:tn=1`;
