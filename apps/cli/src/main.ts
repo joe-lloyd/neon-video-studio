@@ -15,6 +15,7 @@ import { registerInstalledPacks } from '@neon/core/node';
 registerAllPacks();
 import { ApiError, NeonClient, discoverClient } from './client.ts';
 import { clipRow, progressBar, table } from './format.ts';
+import { serve } from './serve.ts';
 
 const HELP = `neon-cli — Neon Video Studio control
 
@@ -22,6 +23,8 @@ USAGE
   neon-cli <command> [subcommand] [options]
 
 COMMANDS
+  serve [--project <dir>] [--detach]    Run the app headless (no window) so the CLI works without the GUI
+  stop                                    Stop a headless instance
   status                                  App, project, room and render status
   list [templates|packs|tracks|clips|assets|presets]
   state dump [--out file]                 Full project JSON
@@ -115,7 +118,8 @@ const { values: flags, positionals } = parseArgs({
     volume: { type: 'string' },
     overlap: { type: 'boolean', default: false },
     free: { type: 'boolean', default: false },
-    ripple: { type: 'boolean', default: false },
+    // No defaults: `undefined` means "not passed", so --no-ripple / --no-denoise can opt out of a default-on behaviour.
+    ripple: { type: 'boolean' },
     kind: { type: 'string' },
     mute: { type: 'boolean', default: false },
     unmute: { type: 'boolean', default: false },
@@ -137,6 +141,7 @@ const { values: flags, positionals } = parseArgs({
     password: { type: 'string' },
     'host-url': { type: 'string' },
     history: { type: 'string' },
+    detach: { type: 'boolean', default: false },
     buckets: { type: 'string' },
     by: { type: 'string' },
     force: { type: 'boolean', default: false },
@@ -165,7 +170,7 @@ const { values: flags, positionals } = parseArgs({
     fillers: { type: 'boolean', default: true },
     silences: { type: 'boolean', default: true },
     breaths: { type: 'boolean', default: true },
-    denoise: { type: 'boolean', default: false },
+    denoise: { type: 'boolean' },
   },
 });
 
@@ -259,6 +264,28 @@ async function main(): Promise<void> {
     });
     if (!json) process.stderr.write('\n');
     out(result, () => `Rendered ${result.outputPath} in ${(result.durationMs / 1000).toFixed(1)}s`);
+    return;
+  }
+
+  // Commands that read only local data or manage the headless app itself.
+  if (cmd === 'templates') {
+    // `neon-cli templates <Name>` prints the props JSON schema; works without the app.
+    if (!sub) {
+      out(listTemplates().map((t) => ({ name: t.name, pack: t.pack ?? 'core', category: t.category, description: t.description })), () => table(listTemplates().map((t) => [t.name, t.pack ?? 'core', t.category ?? '', t.description]), ['name', 'pack', 'category', 'description']));
+      return;
+    }
+    if (!listTemplates().some((t) => t.name === sub)) throw new ApiError('NOT_FOUND', `No template "${sub}". Run neon-cli templates`);
+    const info = { name: sub, defaults: templateDefaults(sub), jsonSchema: templateJsonSchema(sub) };
+    out(info, () => JSON.stringify(info, null, 2));
+    return;
+  }
+  if (cmd === 'serve') {
+    const r = await serve({
+      project: flags.project,
+      detach: flags.detach,
+      onReady: (ready) => process.stderr.write(`Headless Neon Video Studio on ${ready.endpoint} (pid ${ready.pid}) — Ctrl-C to stop\n`),
+    });
+    if (flags.detach) out(r, () => `Headless Neon Video Studio on ${r.endpoint} (pid ${r.pid}) · log ${r.log} · stop with: neon-cli stop`);
     return;
   }
 
@@ -417,7 +444,7 @@ async function main(): Promise<void> {
       } else if (sub === 'cut') {
         if (!flags.from || !flags.to) throw new ApiError('USAGE', 'timeline cut --from T --to T [--track REF] [--no-ripple]');
         const trackIds = flags.track ? [(await api.resolveTrack(flags.track)).id] : undefined;
-        const r = await api.cut({ ranges: [{ start: flags.from, end: flags.to }], trackIds, ripple: flags.ripple });
+        const r = await api.cut({ ranges: [{ start: flags.from, end: flags.to }], trackIds, ripple: flags.ripple ?? true });
         out(r, () => `Removed ${r.removedFrames} frames (${r.cuts} clip segment(s) touched)`);
       } else if (sub === 'detach') {
         if (!rest[0]) throw new ApiError('USAGE', 'timeline detach <clip>');
@@ -609,10 +636,7 @@ async function main(): Promise<void> {
         const r = (await api.call2('POST', '/api/record/start')) as { device: string };
         out(r, () => `Recording from “${r.device}” — stop with: neon-cli record stop [--at T]`);
       } else if (sub === 'stop') {
-        const status = await api.status();
-        const at = flags.at ?? String(status.project.durationFrames === 0 ? 0 : 0);
         const r = (await api.call2('POST', '/api/record/stop', { at: flags.at ?? 0 })) as ImportAssetResponse;
-        void at;
         out(r, () => `Take “${r.asset.name}” placed${r.clip ? ` at frame ${r.clip.startFrame} on the VO track` : ''}`);
       } else throw new ApiError('USAGE', 'record start | record stop [--at T]');
       return;
@@ -627,7 +651,7 @@ async function main(): Promise<void> {
       const panelAlias: Record<string, string> = { media: 'assets', assets: 'assets', fx: 'templates', templates: 'templates', inspect: 'inspector', inspector: 'inspector', room: 'peers', peers: 'peers', render: 'renders', renders: 'renders', live: 'activity', activity: 'activity', ai: 'ai', script: 'script' };
       if (sub === 'panel') {
         const panel = panelAlias[(rest[0] ?? '').toLowerCase()];
-        if (!panel) throw new ApiError('USAGE', 'ui panel <media|fx|inspect|room|render|live>');
+        if (!panel) throw new ApiError('USAGE', 'ui panel <media|fx|inspect|room|ai|script|render|live>');
         const r = await api.ui({ panel });
         out(r, () => `Opened ${panel} panel`);
       } else if (sub === 'select') {
@@ -653,15 +677,9 @@ async function main(): Promise<void> {
       return;
     }
 
-    case 'templates': {
-      // Convenience alias: `neon-cli templates <Name>` prints the JSON schema.
-      const name = sub;
-      if (!name) {
-        out(listTemplates().map((t) => t.name), () => listTemplates().map((t) => t.name).join('\n'));
-        return;
-      }
-      const info = { name, defaults: templateDefaults(name), jsonSchema: templateJsonSchema(name) };
-      out(info, () => JSON.stringify(info, null, 2));
+    case 'stop': {
+      const r = await api.shutdown();
+      out(r, () => `Stopping headless instance (pid ${r.pid})`);
       return;
     }
 
@@ -813,7 +831,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
     }
     case 'enhance': {
       const target = await assetOrClipParam(rest[0], 'ai enhance <clip> [--lufs=-16] [--no-denoise]');
-      await finish(await api.aiRun('enhance', { ...target, lufs: numOr(flags.lufs), denoise: flags.denoise !== false ? true : false, strength: numOr(flags.strength) }), (j) => {
+      await finish(await api.aiRun('enhance', { ...target, lufs: numOr(flags.lufs), denoise: flags.denoise ?? true, strength: numOr(flags.strength) }), (j) => {
         const r = j.result as { lufs: number; filter: string; newAssetId: string };
         return `Voice enhanced to ${r.lufs} LUFS → clip now uses asset ${r.newAssetId.slice(0, 12)}… (original kept)\nchain: ${r.filter}`;
       });
@@ -863,7 +881,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
     }
     case 'clean': {
       const target = await assetOrClipParam(rest[0], 'ai clean <clip>');
-      await finish(await api.aiRun('clean', { ...target, fillers: flags.fillers, silences: flags.silences, breaths: flags.breaths, denoise: flags.denoise }), (j) => `Voice clean-up finished: ${(j.result as { steps: string[] }).steps.join(' → ')}`);
+      await finish(await api.aiRun('clean', { ...target, fillers: flags.fillers, silences: flags.silences, breaths: flags.breaths, denoise: flags.denoise ?? false }), (j) => `Voice clean-up finished: ${(j.result as { steps: string[] }).steps.join(' → ')}`);
       return;
     }
     case 'cut': {

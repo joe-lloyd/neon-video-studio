@@ -106,6 +106,8 @@ export interface AppStatus {
   };
   room: RoomInfo;
   renders: RenderJob[];
+  /** Running without a window (`neon-cli serve`): preview/ui commands have no effect. */
+  headless: boolean;
   capabilities: { ffprobe: boolean; node: boolean; renderRuntime: string };
 }
 
@@ -174,6 +176,8 @@ export interface InstanceInfo {
   startedAt: string;
   version: string;
   projectPath: string | null;
+  /** Started by `neon-cli serve` (no window). Absent in instance files from older versions. */
+  headless?: boolean;
 }
 
 export const API_ROUTES = {
@@ -220,6 +224,7 @@ export const API_ROUTES = {
   historyUndo: '/api/history/undo',
   historyRedo: '/api/history/redo',
   historyCheckpoint: '/api/history/checkpoint',
+  shutdown: '/api/shutdown',
   yjs: '/yjs',
   signaling: '/signaling',
   assets: '/assets',

@@ -119,6 +119,7 @@ export class NeonClient {
   history = () => this.call<HistoryStatus>('GET', API_ROUTES.history);
   historyUndo = () => this.call<HistoryStatus>('POST', API_ROUTES.historyUndo, {});
   historyRedo = () => this.call<HistoryStatus>('POST', API_ROUTES.historyRedo, {});
+  shutdown = () => this.call<{ stopping: boolean; pid: number }>('POST', API_ROUTES.shutdown, {});
   historyCheckpoint = () => this.call<HistoryStatus>('POST', API_ROUTES.historyCheckpoint, {});
 
   /** Waveform peaks (one byte per 10 ms, 0..255); empty array = no audio stream, null = unavailable. */

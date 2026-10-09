@@ -25,3 +25,25 @@ jobs:
       - name: Build renderer bundle
         working-directory: apps/desktop
         run: pnpm exec vite build
+
+  # The whole app through its public CLI on every OS we ship: headless main process (Bun), engine
+  # self-install, project edits, a real export checked with ffprobe. Same script as `node scripts/e2e.ts`.
+  e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0 # the Bun Electrobun 2.0.1 ships inside the app
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: node scripts/e2e.ts
