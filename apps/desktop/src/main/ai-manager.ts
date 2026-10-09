@@ -31,8 +31,11 @@ import {
   runSetup,
   analyseBreaths,
   analyseSilences,
-  breathKeyframes,
-  muteRangeKeyframes,
+  detectFreezes,
+  ffmpegNeedsInstall,
+  planPacing,
+  type PaceAction,
+  dipKeyframes,
   chooseDenoiseEngine,
   chromaMatte,
   denoise,
@@ -210,6 +213,21 @@ export class AiManager {
   }
 
   /** Map source-second segments onto the timeline through the clips that show this asset. */
+  /** Silence source-time segments in each clip's volume envelope; nothing on the timeline moves. Returns the clips changed. */
+  private muteSegments(clips: MediaClip[], segments: Segment[]): number {
+    const doc = this.ctx.store.doc;
+    let updated = 0;
+    for (const clip of clips) {
+      const kfs = dipKeyframes(clip.volumeKeyframes, segments, clip, doc.fps, 0);
+      // Skip clips the segments never touch (their envelope is unchanged apart from a seed point).
+      if (kfs.some((k) => k.gain === 0)) {
+        doc.updateClip(clip.id, { volumeKeyframes: kfs }, ORIGIN_API);
+        updated += 1;
+      }
+    }
+    return updated;
+  }
+
   private timelineRanges(segments: Segment[], clips: MediaClip[]): FrameRange[] {
     const fps = this.ctx.store.doc.fps;
     const out: FrameRange[] = [];
@@ -290,6 +308,8 @@ export class AiManager {
         return this.opBroll(job, params);
       case 'clean':
         return this.opClean(job, params);
+      case 'pace':
+        return this.opPace(job, params);
       case 'transcript-cut':
         return this.opTranscriptCut(job, params);
       default:
@@ -312,6 +332,10 @@ export class AiManager {
     const flagged = markFillers(words, list);
     this.ctx.store.doc.setTranscript({ ...transcript, words }, ORIGIN_API);
     const segments = fillerRanges(words, Number(params.padMs ?? 40));
+    if (params.mute) {
+      const clipsUpdated = params.apply ? this.muteSegments(target.clips, segments) : 0;
+      return { fillers: flagged.length, words: flagged.map((i) => words[i]!.w), segments, muted: clipsUpdated > 0, clipsUpdated, removedFrames: 0, applied: Boolean(params.apply) };
+    }
     const ranges = this.timelineRanges(segments, target.clips);
     let removedFrames = 0;
     if (params.apply && ranges.length) {
@@ -348,9 +372,9 @@ export class AiManager {
     const reductionDb = Number(params.reductionDb ?? 15);
     let applied = 0;
     if (params.apply !== false) {
-      for (const clip of target.clips) {
-        const kfs = breathKeyframes(analysis.breaths, clip, fps, reductionDb);
-        this.ctx.store.doc.updateClip(clip.id, { volumeKeyframes: kfs.length > 2 ? kfs : null }, ORIGIN_API);
+      const gain = Math.pow(10, -Math.abs(reductionDb) / 20);
+      for (const clip of analysis.breaths.length ? target.clips : []) {
+        this.ctx.store.doc.updateClip(clip.id, { volumeKeyframes: dipKeyframes(clip.volumeKeyframes, analysis.breaths, clip, fps, gain) }, ORIGIN_API);
         applied++;
       }
     }
@@ -436,8 +460,9 @@ export class AiManager {
   async autoProvision(): Promise<void> {
     try {
       const caps = await this.capabilities(true);
-      if (caps.ffmpeg.available && caps.ytdlp.available) return;
-      const missing = [!caps.ffmpeg.available ? 'ffmpeg' : null, !caps.ytdlp.available ? 'yt-dlp' : null].filter(Boolean).join(' + ');
+      const ffmpegStale = await ffmpegNeedsInstall();
+      if (!ffmpegStale && caps.ytdlp.available) return;
+      const missing = [ffmpegStale ? (caps.ffmpeg.available ? 'ffmpeg update' : 'ffmpeg') : null, !caps.ytdlp.available ? 'yt-dlp' : null].filter(Boolean).join(' + ');
       this.ctx.rpc?.send.toast({ kind: 'info', message: `Setting up media engines (${missing}) — imports and rips will work in a moment…` });
       this.ctx.events.activity('ai', 'setup.auto', `Installing missing media engines: ${missing}`);
       const job = this.start('setup', { whisper: false, rnnoise: false, ffmpeg: true, ytdlp: true });
@@ -637,12 +662,26 @@ export class AiManager {
   private async opClean(job: AiJob, params: Params) {
     const steps: string[] = [];
     const out: Record<string, unknown> = {};
+    // Each step cuts the clip into pieces and the named clip id then only covers the first piece,
+    // so every step targets the take's asset: all the pieces (and derivatives) it became.
+    const { asset } = await this.resolveTarget(params);
+    params = { ...params, clipId: undefined, assetId: asset.id };
+    // A voiceover (a narration file, or the mic in a screen recording) plays over a picture with its
+    // own timing, so its fillers are muted in place and nothing is cut to match the voice. A talking
+    // head is cut, picture and sound together.
+    const voiceover = asset.kind === 'audio' || Boolean(params.screen);
+    out.voiceover = voiceover;
     if (params.fillers !== false) {
       this.progress(job, 0.05, 'Step 1/4 · fillers');
-      out.fillers = await this.opFillers(job, { ...params, apply: true });
-      steps.push('fillers');
+      out.fillers = await this.opFillers(job, { ...params, apply: true, mute: voiceover });
+      steps.push(voiceover ? 'fillers muted' : 'fillers');
     }
-    if (params.silences !== false) {
+    if (params.silences !== false && params.screen && asset.kind === 'video') {
+      // Pacing only cuts where the voice is silent and the screen is still, so nothing said or shown is lost.
+      this.progress(job, 0.35, 'Step 2/4 · pauses (screen pacing)');
+      out.pace = await this.opPace(job, { ...params, apply: true });
+      steps.push('pacing');
+    } else if (params.silences !== false && !voiceover) {
       this.progress(job, 0.35, 'Step 2/4 · silences');
       out.silence = await this.opSilence(job, { ...params, apply: true });
       steps.push('silences');
@@ -658,6 +697,57 @@ export class AiManager {
       steps.push('denoise');
     }
     return { steps, ...out };
+  }
+
+  private async opPace(job: AiJob, params: Params) {
+    const target = await this.resolveTarget(params);
+    const paths = await this.paths();
+    const doc = this.ctx.store.doc;
+    const fps = doc.fps;
+    this.progress(job, 0.2, 'Finding pauses in the narration');
+    const minSilenceMs = Number(params.minSilenceMs ?? 1200);
+    const keepMs = Number(params.keepMs ?? 300);
+    const rate = Number(params.rate ?? 6);
+    const plan = await analyseSilences(paths.ffmpeg, target.file, {
+      thresholdDb: params.thresholdDb === undefined ? undefined : Number(params.thresholdDb),
+      minSilenceMs,
+      keepMs,
+    });
+    let freezes: Segment[] = [];
+    if (target.asset.kind === 'video') {
+      this.progress(job, 0.5, 'Checking where the screen is still');
+      freezes = await detectFreezes(paths.ffmpeg, target.file, (target.asset.durationFrames ?? 0) / fps);
+    }
+    const actions = planPacing(plan.silences, freezes, { keepMs, rate });
+    // One timeline range per action and clip piece; applied from the end so earlier ranges stay valid.
+    const steps = actions
+      .flatMap((a) => target.clips.map((clip) => ({ action: a, range: sourceSecondsToTimeline(clip, a.start, a.end, fps) })))
+      .filter((s): s is { action: PaceAction; range: FrameRange } => s.range !== null && s.range.end - s.range.start >= 2)
+      .sort((x, y) => y.range.start - x.range.start);
+    let removedFrames = 0;
+    if (params.apply && steps.length) {
+      this.progress(job, 0.85, `Pacing ${steps.length} pause(s)`);
+      const family = new Set(target.clips.map((c) => c.assetId));
+      for (const { action, range } of steps) {
+        if (action.kind === 'cut') {
+          removedFrames += doc.cutRanges([range], { ripple: true, crossfadeFrames: 2 }, ORIGIN_API).removedFrames;
+          continue;
+        }
+        const piece = doc.toJSON().clips.find((c): c is MediaClip => c.kind !== 'component' && family.has(c.assetId) && c.startFrame <= range.start && range.start < c.startFrame + c.durationFrames);
+        if (!piece) continue;
+        const before = doc.durationFrames();
+        doc.setClipSpeed(piece.id, action.rate, range, ORIGIN_API);
+        removedFrames += before - doc.durationFrames();
+      }
+    }
+    return {
+      pauses: plan.silences.length,
+      cut: actions.filter((a) => a.kind === 'cut').length,
+      spedUp: actions.filter((a) => a.kind === 'speed').length,
+      actions,
+      removedFrames,
+      applied: Boolean(params.apply),
+    };
   }
 
   private async opTranscriptCut(job: AiJob, params: Params) {
@@ -698,16 +788,7 @@ export class AiManager {
     if (mode === 'audio') {
       // Fix the audio in place: zero the volume across each word, nothing on the timeline moves.
       this.progress(job, 0.5, `Muting ${indexes.length} word(s) in the audio`);
-      const fps = this.ctx.store.doc.fps;
-      let clipsUpdated = 0;
-      for (const clip of target.clips) {
-        const kfs = muteRangeKeyframes(clip.volumeKeyframes, segments, clip, fps);
-        // Skip clips the segments never touch (their envelope is unchanged apart from a seed point).
-        if (kfs.some((k) => k.gain === 0)) {
-          this.ctx.store.doc.updateClip(clip.id, { volumeKeyframes: kfs }, ORIGIN_API);
-          clipsUpdated += 1;
-        }
-      }
+      const clipsUpdated = this.muteSegments(target.clips, segments);
       if (clipsUpdated === 0) throw new Error('Those words are not on the timeline (no clip covers them)');
       return { mode, words: text, segments, clipsUpdated, removedFrames: 0 };
     }
@@ -725,7 +806,7 @@ function summarize(op: AiOperation, result: unknown): string {
     case 'transcribe':
       return `Transcribed ${String(r.words)} words (${String(r.fillers)} fillers)`;
     case 'fillers':
-      return r.applied ? `Removed ${String(r.fillers)} filler word(s), ${String(r.removedFrames)} frames` : `Found ${String(r.fillers)} filler word(s) in ${(r.ranges as unknown[])?.length ?? 0} range(s)`;
+      return r.applied ? (r.muted !== undefined ? `Muted ${String(r.fillers)} filler word(s) in place` : `Removed ${String(r.fillers)} filler word(s), ${String(r.removedFrames)} frames`) : `Found ${String(r.fillers)} filler word(s) in ${(r.ranges as unknown[])?.length ?? 0} range(s)`;
     case 'silence':
       return r.applied ? `Trimmed ${(r.cuts as unknown[])?.length ?? 0} pause(s), ${String(r.removedFrames)} frames` : `Found ${(r.cuts as unknown[])?.length ?? 0} pause(s) to trim`;
     case 'breaths':
@@ -746,6 +827,8 @@ function summarize(op: AiOperation, result: unknown): string {
       return r.applied ? `Placed ${String(r.placed)} B-roll clip(s)` : `${(r.suggestions as unknown[])?.length ?? 0} B-roll suggestion(s)`;
     case 'clean':
       return `Voice clean-up done (${(r.steps as string[])?.join(', ')})`;
+    case 'pace':
+      return r.applied ? `Paced the pauses: ${String(r.cut)} still stretch(es) cut, ${String(r.spedUp)} sped up, ${String(r.removedFrames)} frames shorter` : `${String(r.cut)} pause(s) to cut, ${String(r.spedUp)} to speed up`;
     case 'transcript-cut':
       return `Cut “${String(r.words).slice(0, 40)}” (${String(r.removedFrames)} frames)`;
     default:

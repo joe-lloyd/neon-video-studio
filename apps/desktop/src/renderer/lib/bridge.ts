@@ -44,7 +44,7 @@ async function tryElectrobun(): Promise<Bridge | null> {
   const handlers: MessageHandlers = {};
   // Every message type declared in DesktopRPC['webview']['messages'] must be forwarded here;
   // a missing entry silently drops the message (a bug we hit once — keep this list in sync).
-  const MESSAGE_TYPES: (keyof Messages)[] = ['renderUpdate', 'roomUpdate', 'projectOpened', 'toast', 'menuAction', 'activity', 'previewControl', 'uiControl', 'aiUpdate', 'updateStatus', 'packsChanged', 'historyChanged'];
+  const MESSAGE_TYPES: (keyof Messages)[] = ['renderUpdate', 'roomUpdate', 'projectOpened', 'toast', 'menuAction', 'activity', 'previewControl', 'uiControl', 'aiUpdate', 'updateStatus', 'packsChanged', 'historyChanged', 'proxiesChanged'];
   const forward = Object.fromEntries(
     MESSAGE_TYPES.map((type) => [type, (payload: unknown) => (handlers[type] as ((p: unknown) => void) | undefined)?.(payload)]),
   ) as { [K in keyof Messages]: (payload: Messages[K]) => void };
@@ -135,6 +135,7 @@ async function httpBridge(): Promise<Bridge> {
         lastRenders = key;
         for (const job of s.renders) handlers.renderUpdate?.({ job });
       }
+      handlers.proxiesChanged?.({ ready: s.proxies.ready });
       const aiJobs = await call<AiJob[]>('GET', '/api/ai/jobs');
       for (const job of aiJobs) handlers.aiUpdate?.({ job });
       if (s.project.id !== bootstrap.projectId) {
@@ -198,6 +199,16 @@ async function httpBridge(): Promise<Bridge> {
           return call('POST', '/api/record/stop', { at: (params as { startFrame: number }).startFrame }) as never;
         case 'voCancel':
           return true as never;
+        case 'captureDevices':
+          return call('GET', '/api/capture/devices') as never;
+        case 'captureState':
+          return call('GET', '/api/capture/state') as never;
+        case 'captureStart':
+          return call('POST', '/api/capture/start', params) as never;
+        case 'captureStop':
+          return call('POST', '/api/capture/stop', params) as never;
+        case 'captureCancel':
+          return call('POST', '/api/capture/cancel') as never;
         case 'windowCommand':
           return false as never;
         case 'listPacks':

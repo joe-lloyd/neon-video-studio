@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_SHEET_FRAMES } from './stills.ts';
 
 export { ZodError } from 'zod';
 
@@ -61,6 +62,18 @@ export const ReframeSchema = z.object({
   keyframes: z.array(z.object({ frame: z.number().int().nonnegative(), cx: z.number().min(0).max(1), cy: z.number().min(0).max(1), zoom: z.number().min(1).max(4) })),
 });
 
+export const ZoomRegionSchema = z
+  .object({
+    start: z.number().int().nonnegative(),
+    end: z.number().int().positive(),
+    cx: z.number().min(0).max(1),
+    cy: z.number().min(0).max(1),
+    zoom: z.number().min(1).max(8),
+    ramp: z.number().int().min(0).max(600).optional(),
+  })
+  .refine((z) => z.end > z.start, { message: 'zoom end must be after start' });
+export const ClipSpeedSchema = z.number().min(0.1).max(16);
+
 export const MediaClipSchema = ClipBaseSchema.extend({
   kind: z.enum(['video', 'audio', 'image']),
   assetId: z.string(),
@@ -71,6 +84,9 @@ export const MediaClipSchema = ClipBaseSchema.extend({
   fadeOut: z.number().int().nonnegative(),
   volumeKeyframes: z.array(VolumeKeyframeSchema).optional(),
   reframe: ReframeSchema.optional(),
+  speed: ClipSpeedSchema.optional(),
+  zooms: z.array(ZoomRegionSchema).optional(),
+  declick: z.object({ in: z.number().int().nonnegative(), out: z.number().int().nonnegative() }).optional(),
 });
 
 export const ComponentClipSchema = ClipBaseSchema.extend({
@@ -165,6 +181,8 @@ export const UpdateClipRequestSchema = z.object({
     props: z.record(z.string(), z.unknown()).optional(),
     volumeKeyframes: z.array(VolumeKeyframeSchema).nullable().optional(),
     reframe: ReframeSchema.nullable().optional(),
+    /** Replace the clip's zoom regions (source frames); null clears them. Prefer POST /api/timeline/zoom. */
+    zooms: z.array(ZoomRegionSchema).nullable().optional(),
     transform: ClipTransformSchema.nullable().optional(),
     animateIn: ClipAnimationSchema.nullable().optional(),
     animateOut: ClipAnimationSchema.nullable().optional(),
@@ -231,6 +249,19 @@ export const AiCleanRequestSchema = AiTargetSchema.extend({
   silences: z.boolean().default(true),
   breaths: z.boolean().default(true),
   denoise: z.boolean().default(false),
+  /** Screen recording: the voice is a voiceover, so fillers are muted in place; pauses are paced (see AiPaceRequestSchema). */
+  screen: z.boolean().default(false),
+});
+/** Screen-recording pacing: cut pauses over a frozen screen, speed up pauses while the screen changes. */
+export const AiPaceRequestSchema = AiTargetSchema.extend({
+  apply: z.boolean().default(false),
+  /** Pauses shorter than this are left alone. */
+  minSilenceMs: z.number().min(300).max(60000).default(1200),
+  /** Part of each pause kept at normal speed, split over both edges. */
+  keepMs: z.number().min(0).max(2000).default(300),
+  /** Playback rate for pauses over a changing screen. */
+  rate: z.number().min(1.5).max(16).default(6),
+  thresholdDb: z.number().min(-90).max(0).optional(),
 });
 export const TranscriptCutRequestSchema = z
   .object({
@@ -246,6 +277,28 @@ export const TranscriptCutRequestSchema = z
   .refine((v) => (v.words && v.words.length > 0) || (v.fromWord !== undefined && v.toWord !== undefined), {
     message: 'Provide words[] or fromWord+toWord',
   });
+
+/** Re-time a clip (or a range of it) — the clip's length changes and later clips ripple on every track. */
+export const ClipSpeedRequestSchema = z.object({
+  id: z.string().min(1),
+  speed: ClipSpeedSchema,
+  /** Only re-time this timeline range of the clip (it is split at the edges). */
+  from: TimeExpr.optional(),
+  to: TimeExpr.optional(),
+});
+
+/** Add a zoom on a clip, in TIMELINE time (converted to source frames so it follows the content). */
+export const ClipZoomRequestSchema = z.object({
+  id: z.string().min(1),
+  from: TimeExpr,
+  to: TimeExpr,
+  /** Centre of the zoom, normalised 0..1 across the clip's picture. */
+  cx: z.number().min(0).max(1).default(0.5),
+  cy: z.number().min(0).max(1).default(0.5),
+  zoom: z.number().min(1).max(8).default(2),
+  /** Ease length (TimeExpr); default ~0.5 s. */
+  ramp: TimeExpr.optional(),
+});
 
 export const MoveClipRequestSchema = z.object({
   id: z.string().min(1),
@@ -304,6 +357,30 @@ export const RenderRequestSchema = z.object({
   to: TimeExpr.optional(),
 });
 export type RenderRequest = z.infer<typeof RenderRequestSchema>;
+
+/** One frame as a PNG, so an agent can look at its edit. */
+export const StillRequestSchema = z.object({
+  at: TimeExpr,
+  output: z.string().min(1).optional().describe('Output .png path (default: <NEON_HOME>/stills/<project>-<tc>.png)'),
+  width: z.number().int().min(64).max(7680).default(1280),
+});
+export type StillRequest = z.infer<typeof StillRequestSchema>;
+export type StillRequestInput = z.input<typeof StillRequestSchema>;
+
+/** A grid of frames in one PNG. Default: 12 frames spread over the whole timeline. */
+export const SheetRequestSchema = z
+  .object({
+    from: TimeExpr.optional(),
+    to: TimeExpr.optional(),
+    count: z.number().int().min(1).max(MAX_SHEET_FRAMES).optional(),
+    every: TimeExpr.optional(),
+    cols: z.number().int().min(1).max(16).default(4),
+    width: z.number().int().min(256).max(7680).default(1920),
+    output: z.string().min(1).optional(),
+  })
+  .refine((r) => r.count === undefined || r.every === undefined, { message: 'Pass count or every, not both' });
+export type SheetRequest = z.infer<typeof SheetRequestSchema>;
+export type SheetRequestInput = z.input<typeof SheetRequestSchema>;
 
 export const UpdateMetaRequestSchema = z.object({
   name: z.string().min(1).optional(),
@@ -366,4 +443,89 @@ export const AiRipRequestSchema = z.object({
   quality: z.enum(['360', '480', '720', '1080', '1440', '2160', 'best', 'audio']).default('1080'),
   /** Also place the ripped media on the timeline at this time. */
   at: TimeExpr.optional(),
+});
+
+// ---- Agent surface: generic bodies and batches (neon-cli api / schema / apply) -------------
+
+/** Body of routes that address one thing by id (tracks/remove, assets/remove). */
+export const IdRequestSchema = z.object({ id: z.string().min(1) });
+
+export const RecordStopRequestSchema = z.object({
+  /** Where the take lands on the VO track. */
+  at: TimeExpr.optional(),
+});
+
+export const BatchOpSchema = z.object({
+  route: z.string().regex(/^\/api\//, 'route must start with /api/').describe('A POST control route, e.g. /api/timeline/insert'),
+  body: z
+    .unknown()
+    .optional()
+    .describe('The route body. A string "$N", "$N.id" or "$N.0.id" becomes op N’s result (or a path in it); "$$…" sends a literal "$…"'),
+});
+export type BatchOp = z.infer<typeof BatchOpSchema>;
+
+export const BatchRequestSchema = z.object({ ops: z.array(BatchOpSchema).min(1).max(500) });
+export type BatchRequest = z.infer<typeof BatchRequestSchema>;
+
+// ---- screen capture ---------------------------------------------------------------------
+
+/** A rectangle in screen pixels, relative to the captured display's top-left corner. */
+export const CaptureRectSchema = z.object({
+  x: z.number().int().nonnegative(),
+  y: z.number().int().nonnegative(),
+  width: z.number().int().min(16),
+  height: z.number().int().min(16),
+});
+export type CaptureRect = z.infer<typeof CaptureRectSchema>;
+
+/** "x,y,w,h" (the CLI form) or {x, y, width, height}. */
+const CaptureRegionInput = z.preprocess(
+  (v) => {
+    const m = typeof v === 'string' ? /^\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*$/.exec(v) : null;
+    return m ? { x: Number(m[1]), y: Number(m[2]), width: Number(m[3]), height: Number(m[4]) } : v;
+  },
+  z.object(CaptureRectSchema.shape, { error: 'region must be "x,y,width,height" in screen pixels' }),
+);
+
+/** What to record. Displays are numbered from 0 (the primary display). */
+export const CaptureSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('display'), display: z.number().int().nonnegative() }),
+  z.object({ kind: z.literal('region'), display: z.number().int().nonnegative(), rect: CaptureRectSchema }),
+  z.object({ kind: z.literal('window'), title: z.string().min(1) }),
+]);
+export type CaptureSource = z.infer<typeof CaptureSourceSchema>;
+
+/** Which microphone to record alongside the screen. */
+export type CaptureMic = { kind: 'auto' } | { kind: 'none' } | { kind: 'named'; name: string };
+
+/**
+ * POST /api/capture/start. Flat like the CLI flags; parsed into a source + mic choice.
+ * mic: omitted = the default microphone · false = no audio · a name (or part of one) = that device.
+ */
+export const CaptureStartRequestSchema = z
+  .object({
+    display: z.number().int().nonnegative().optional(),
+    region: CaptureRegionInput.optional(),
+    window: z.string().min(1).optional(),
+    fps: z.number().int().min(1).max(120).default(30),
+    mic: z.union([z.string().min(1), z.literal(false)]).optional(),
+    cursor: z.boolean().default(true),
+  })
+  .refine((v) => v.window === undefined || (v.region === undefined && v.display === undefined), { message: 'window cannot be combined with display or region' })
+  .transform((v) => {
+    const display = v.display ?? 0;
+    const source: CaptureSource =
+      v.window !== undefined ? { kind: 'window', title: v.window } : v.region !== undefined ? { kind: 'region', display, rect: v.region } : { kind: 'display', display };
+    const mic: CaptureMic = v.mic === false ? { kind: 'none' } : v.mic === undefined ? { kind: 'auto' } : { kind: 'named', name: v.mic };
+    return { source, mic, fps: v.fps, cursor: v.cursor };
+  });
+export type CaptureStartRequest = z.output<typeof CaptureStartRequestSchema>;
+/** The JSON body a client sends to POST /api/capture/start. */
+export type CaptureStartBody = z.input<typeof CaptureStartRequestSchema>;
+
+/** POST /api/capture/stop. Default placement: appended to the end of the first video track. */
+export const CaptureStopRequestSchema = z.object({
+  at: TimeExpr.optional(),
+  /** Track id, name or id prefix. */
+  track: z.string().min(1).optional(),
 });

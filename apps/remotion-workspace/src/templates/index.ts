@@ -6,6 +6,7 @@ import { Countdown } from './Countdown.tsx';
 import { ProgressBar } from './ProgressBar.tsx';
 import { Watermark } from './Watermark.tsx';
 import { SolidColor } from './SolidColor.tsx';
+import { Captions } from './Captions.tsx';
 
 export type TemplateComponent = React.ComponentType<Record<string, unknown>>;
 
@@ -24,6 +25,7 @@ export const TEMPLATES: Record<string, TemplateComponent> = {
   ProgressBar: ProgressBar as unknown as TemplateComponent,
   Watermark: Watermark as unknown as TemplateComponent,
   SolidColor: SolidColor as unknown as TemplateComponent,
+  Captions: Captions as unknown as TemplateComponent,
   ...PACK_COMPONENTS,
 };
 
@@ -56,4 +58,4 @@ export function getTemplateComponent(name: string): TemplateComponent | undefine
   return TEMPLATES[name] ?? RUNTIME_TEMPLATES.get(name);
 }
 
-export { TextOverlay, LowerThird, TitleCard, Countdown, ProgressBar, Watermark, SolidColor };
+export { TextOverlay, LowerThird, TitleCard, Countdown, ProgressBar, Watermark, SolidColor, Captions };

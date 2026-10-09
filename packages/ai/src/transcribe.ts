@@ -4,13 +4,17 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import type { Transcript, TranscriptWord } from '@neon/core';
-import { runOrThrow } from './exec.ts';
+import { run, runOrThrow } from './exec.ts';
+import { alignWordsToSpeech, type AnchoredWord } from './align.ts';
+import { decodePcm, energyVad, frameEnergies } from './pcm.ts';
 import { transcriptsDir } from './tools.ts';
 
 interface WhisperToken {
   text: string;
   offsets: { from: number; to: number };
   p?: number;
+  /** DTW token time in centiseconds (-1 or absent when DTW did not run). */
+  t_dtw?: number;
 }
 interface WhisperJson {
   transcription?: { text: string; offsets: { from: number; to: number }; tokens?: WhisperToken[] }[];
@@ -22,7 +26,7 @@ interface WhisperJson {
  * 30 s window. Detect runs of non-increasing starts and spread them evenly up to the next
  * anchor (or the real audio duration).
  */
-export function repairTimestamps(words: TranscriptWord[], audioDurationSeconds?: number): TranscriptWord[] {
+export function repairTimestamps<W extends TranscriptWord>(words: W[], audioDurationSeconds?: number): W[] {
   // Anchors are words with a real duration and a strictly increasing start; everything between
   // two anchors is spread evenly across the gap.
   const anchors: number[] = [];
@@ -69,8 +73,8 @@ export function repairTimestamps(words: TranscriptWord[], audioDurationSeconds?:
 }
 
 /** Merge whisper sub-word tokens into words with start/end seconds. */
-export function wordsFromWhisperJson(json: WhisperJson, audioDurationSeconds?: number): TranscriptWord[] {
-  const words: TranscriptWord[] = [];
+export function wordsFromWhisperJson(json: WhisperJson, audioDurationSeconds?: number): AnchoredWord[] {
+  const words: AnchoredWord[] = [];
   for (const seg of json.transcription ?? []) {
     const usable = (seg.tokens ?? []).filter((t) => !t.text.startsWith('[_') && !/^<\|.*\|>$/.test(t.text.trim()) && t.text.trim() !== '');
     const degenerate = usable.length > 1 && usable.every((t) => t.offsets.from === usable[0]!.offsets.from);
@@ -81,7 +85,8 @@ export function wordsFromWhisperJson(json: WhisperJson, audioDurationSeconds?: n
       parts.forEach((w, i) => words.push({ w, s: seg.offsets.from / 1000 + i * span, e: seg.offsets.from / 1000 + (i + 1) * span }));
       continue;
     }
-    let current: TranscriptWord | null = null;
+    let current: AnchoredWord | null = null;
+    const dtw = (tok: WhisperToken) => (tok.t_dtw !== undefined && tok.t_dtw >= 0 ? tok.t_dtw / 100 : undefined);
     const segStartIndex = words.length;
     for (const tok of seg.tokens) {
       if (tok.text.startsWith('[_') || /^<\|.*\|>$/.test(tok.text.trim()) || tok.text.trim() === '') continue;
@@ -89,13 +94,13 @@ export function wordsFromWhisperJson(json: WhisperJson, audioDurationSeconds?: n
       const text = tok.text.trim();
       if (startsWord && /^[\p{L}\p{N}']/u.test(text)) {
         if (current) words.push(current);
-        current = { w: text, s: tok.offsets.from / 1000, e: tok.offsets.to / 1000, p: tok.p };
+        current = { w: text, s: tok.offsets.from / 1000, e: tok.offsets.to / 1000, p: tok.p, t: dtw(tok) };
       } else if (current) {
         current.w += text;
         current.e = Math.max(current.e, tok.offsets.to / 1000);
         if (tok.p !== undefined) current.p = Math.min(current.p ?? 1, tok.p);
       } else {
-        current = { w: text, s: tok.offsets.from / 1000, e: tok.offsets.to / 1000, p: tok.p };
+        current = { w: text, s: tok.offsets.from / 1000, e: tok.offsets.to / 1000, p: tok.p, t: dtw(tok) };
       }
     }
     if (current) words.push(current);
@@ -140,7 +145,8 @@ export interface TranscribeOptions {
 export async function transcribe(file: string, opts: TranscribeOptions): Promise<Transcript> {
   await mkdir(transcriptsDir(), { recursive: true });
   const engine = `whisper.cpp:${basename(opts.model)}`;
-  const cacheKey = createHash('sha1').update(`${opts.assetId}:${engine}:${opts.language ?? 'auto'}`).digest('hex').slice(0, 16);
+  // "aligned-1": word times rebuilt from DTW anchors + real pauses; older cached transcripts are redone.
+  const cacheKey = createHash('sha1').update(`${opts.assetId}:${engine}:${opts.language ?? 'auto'}:aligned-1`).digest('hex').slice(0, 16);
   const cachePath = join(transcriptsDir(), `${opts.assetId.slice(0, 16)}-${cacheKey}.json`);
   if (!opts.force) {
     try {
@@ -159,23 +165,34 @@ export async function transcribe(file: string, opts: TranscribeOptions): Promise
     if (opts.language) args.push('-l', opts.language);
     // The prebuilt Linux whisper-cli ships its .so files next to the binary without an rpath.
     const env = process.platform === 'linux' ? { LD_LIBRARY_PATH: dirname(opts.whisper) } : undefined;
-    await runOrThrow(opts.whisper, args, { onStderr: opts.onLog, onStdout: opts.onLog, env });
+    // DTW word anchors (needs flash attention off). Builds that predate either flag fail fast; retry plain.
+    const preset = dtwPreset(opts.model);
+    const dtwArgs = preset ? ['--dtw', preset, '-nfa'] : [];
+    const first = dtwArgs.length ? await run(opts.whisper, [...args, ...dtwArgs], { onStderr: opts.onLog, onStdout: opts.onLog, env }) : null;
+    if (!first || first.code !== 0) await runOrThrow(opts.whisper, args, { onStderr: opts.onLog, onStdout: opts.onLog, env });
     const json = JSON.parse(await readFile(`${outBase}.json`, 'utf8')) as WhisperJson;
     const { stat } = await import('node:fs/promises');
     const wavBytes = (await stat(wav)).size;
     const audioDurationSeconds = Math.max(0, (wavBytes - 44) / 32000); // 16-bit mono 16 kHz
+    const pauses = energyVad(frameEnergies(await decodePcm(opts.ffmpeg, wav), 10), { minSilenceMs: 40 }).silences;
     const transcript: Transcript = {
       assetId: opts.assetId,
       engine,
       language: json.result?.language ?? opts.language ?? 'en',
       createdAt: new Date().toISOString(),
-      words: wordsFromWhisperJson(json, audioDurationSeconds),
+      words: alignWordsToSpeech(wordsFromWhisperJson(json, audioDurationSeconds), pauses, audioDurationSeconds),
     };
     await writeFile(cachePath, JSON.stringify(transcript));
     return transcript;
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+/** whisper.cpp DTW preset for a ggml model file (ggml-base.en.bin → base.en), or null if unknown. */
+export function dtwPreset(modelPath: string): string | null {
+  const m = /ggml-(tiny|base|small|medium|large-v1|large-v2|large-v3|large-v3-turbo)(\.en)?\.bin$/.exec(basename(modelPath));
+  return m ? `${m[1]}${m[2] ?? ''}` : null;
 }
 
 export function transcriptText(words: TranscriptWord[]): string {

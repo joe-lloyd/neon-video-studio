@@ -15,11 +15,14 @@ import {
   type AiCapabilities,
   type AiJob,
   type AiOperation,
+  type CaptureState,
   type Clip,
   type Project,
   type RenderJob,
   type RoomInfo,
   registerPack,
+  sourceFrameAt,
+  timelineFrameAt,
   unregisterPack,
 } from '@neon/core';
 import { PeerSession, type SessionSnapshot } from '@neon/p2p/browser';
@@ -56,6 +59,14 @@ export interface Toast {
   message: string;
 }
 
+/** Screen recording as the transport shows it (the main process owns the actual capture). */
+export type ScreenCaptureUi =
+  | { phase: 'idle' }
+  | { phase: 'countdown'; remaining: number }
+  | { phase: 'starting' }
+  | { phase: 'recording'; startedAt: number }
+  | { phase: 'finishing' };
+
 export interface UiState {
   selection: string[];
   /** Pixels per frame on the timeline. */
@@ -89,6 +100,7 @@ export interface UiState {
   recentProjects: { path: string; name: string; updatedAt: string; current: boolean }[];
   /** Voice-over recording state. */
   recording: { startFrame: number; startedAt: number } | null;
+  screenCapture: ScreenCaptureUi;
   /** Auto-update state pushed by the main process. */
   update: UpdateState;
   /** Undo/redo availability — in-memory stack or persisted history (see main/history.ts). */
@@ -143,6 +155,7 @@ export class Editor {
     showStart: true,
     recentProjects: [],
     recording: null,
+    screenCapture: { phase: 'idle' },
     update: { phase: 'idle', currentVersion: '' },
     canUndo: false,
     canRedo: false,
@@ -150,6 +163,8 @@ export class Editor {
     packsBusy: false,
   });
   readonly playhead = createStore<PlayheadState>({ frame: 0, playing: false });
+  /** Assets whose preview proxy is ready; the preview plays those instead of the originals. */
+  readonly proxies = createStore<{ ready: string[] }>({ ready: [] });
   /** Set by the Preview component so the editor can drive the Remotion Player. */
   player: { seekTo(frame: number): void; play(): void; pause(): void; toggle(): void; getCurrentFrame(): number } | null = null;
   private teardown: (() => void)[] = [];
@@ -169,6 +184,7 @@ export class Editor {
     this.projectId = bridge.bootstrap.projectId;
     this.ui.set({ room: bridge.bootstrap.room, projectName: bridge.bootstrap.projectName, projectPath: bridge.bootstrap.projectPath });
     this.attachDocument();
+    void bridge.request('getStatus', {}).then((s) => this.proxies.set({ ready: s.proxies.ready }), () => undefined);
     bridge.onMessage({
       renderUpdate: ({ job }) => this.upsertRender(job),
       roomUpdate: ({ room, info }) => {
@@ -177,7 +193,8 @@ export class Editor {
         this.refreshUndoState();
       },
       projectOpened: ({ projectId, name, path }) => {
-        this.ui.set({ projectName: name, projectPath: path, selection: [] });
+        // A project opened from the CLI or an agent: close the start page so the edit is visible.
+        this.ui.set({ projectName: name, projectPath: path, selection: [], showStart: false });
         if (projectId !== this.projectId) {
           this.projectId = projectId;
           this.attachDocument();
@@ -187,8 +204,16 @@ export class Editor {
       updateStatus: ({ state }) => this.ui.set({ update: state }),
       packsChanged: ({ packs }) => void this.applyPacks(packs),
       historyChanged: ({ status }) => this.setHistory(status),
+      proxiesChanged: ({ ready }) => {
+        // The HTTP bridge reports on every poll; a new array would remount every video.
+        if (ready.join() !== this.proxies.get().ready.join()) this.proxies.set({ ready });
+      },
       menuAction: ({ action }) => this.handleMenuAction(action),
-      activity: ({ entry }) => this.pushActivity(entry),
+      activity: ({ entry }) => {
+        this.pushActivity(entry);
+        // A capture started or stopped from the CLI: mirror it on the transport.
+        if (entry.action.startsWith('capture.') && entry.source !== 'ui') void this.syncScreenCapture();
+      },
       aiUpdate: ({ job }) => this.upsertAiJob(job),
       previewControl: ({ action, frame }) => {
         switch (action) {
@@ -460,6 +485,82 @@ export class Editor {
     }
   }
 
+  // ---- screen recording -------------------------------------------------------------------
+
+  /** 3-2-1 on screen, then the main process starts ffmpeg. Calling cancelScreenCapture() during the countdown aborts it. */
+  async startScreenCapture(opts: { display: number; mic: string | false }): Promise<void> {
+    if (this.ui.get().screenCapture.phase !== 'idle') return;
+    if (this.ui.get().recording) {
+      this.toast('error', 'Stop the voice-over before recording the screen');
+      return;
+    }
+    for (let remaining = 3; remaining > 0; remaining--) {
+      this.ui.set({ screenCapture: { phase: 'countdown', remaining } });
+      await new Promise((r) => setTimeout(r, 1000));
+      if (this.ui.get().screenCapture.phase !== 'countdown') return;
+    }
+    this.ui.set({ screenCapture: { phase: 'starting' } });
+    try {
+      const state = await this.bridge.request('captureStart', { display: opts.display, mic: opts.mic });
+      this.applyCaptureState(state);
+    } catch (err) {
+      this.ui.set({ screenCapture: { phase: 'idle' } });
+      this.toast('error', (err as Error).message);
+    }
+  }
+
+  async stopScreenCapture(): Promise<void> {
+    if (this.ui.get().screenCapture.phase !== 'recording') return;
+    this.ui.set({ screenCapture: { phase: 'finishing' } });
+    try {
+      const result = await this.bridge.request('captureStop', {});
+      if (result.clip) {
+        this.select([result.clip.id]);
+        this.flashClips([result.clip.id]);
+        this.seek(result.clip.startFrame);
+      }
+      this.toast('success', `Screen recording added (${(result.durationMs / 1000).toFixed(1)} s)`);
+    } catch (err) {
+      this.toast('error', (err as Error).message);
+    }
+    await this.syncScreenCapture();
+  }
+
+  async cancelScreenCapture(): Promise<void> {
+    const phase = this.ui.get().screenCapture.phase;
+    if (phase === 'countdown') {
+      this.ui.set({ screenCapture: { phase: 'idle' } });
+      return;
+    }
+    if (phase !== 'recording') return;
+    await this.bridge.request('captureCancel', {}).catch((err: Error) => this.toast('error', err.message));
+    await this.syncScreenCapture();
+  }
+
+  async syncScreenCapture(): Promise<void> {
+    const state = await this.bridge.request('captureState', {}).catch(() => null);
+    if (state) this.applyCaptureState(state);
+  }
+
+  private applyCaptureState(state: CaptureState): void {
+    switch (state.status) {
+      case 'idle':
+        // Keep a local countdown/start in flight; anything else means the capture ended.
+        if (this.ui.get().screenCapture.phase !== 'countdown' && this.ui.get().screenCapture.phase !== 'starting') this.ui.set({ screenCapture: { phase: 'idle' } });
+        return;
+      case 'recording':
+        this.ui.set({ screenCapture: { phase: 'recording', startedAt: Date.parse(state.startedAt) } });
+        return;
+      case 'finishing':
+        this.ui.set({ screenCapture: { phase: 'finishing' } });
+        return;
+      default: {
+        const exhaustive: never = state;
+        return exhaustive;
+      }
+    }
+  }
+
   /**
    * Change scale and/or rotation while the element stays put: the composition pivots on the frame
    * centre, so the position is re-solved to keep the element's painted centre fixed.
@@ -481,6 +582,32 @@ export class Editor {
       ? { x: Math.round(transform.x * 1000) / 1000, y: Math.round(transform.y * 1000) / 1000, scale: Math.round(transform.scale * 1000) / 1000, ...(rot !== 0 ? { rotation: rot } : {}) }
       : null;
     this.updateClip(clipId, { transform: t && t.x === 0.5 && t.y === 0.5 && t.scale === 1 && rot === 0 ? null : t });
+  }
+
+  /** Re-time a media clip (later clips ripple). Undoable like any local edit. */
+  setClipSpeed(clipId: string, speed: number): void {
+    try {
+      this.doc.setClipSpeed(clipId, speed, undefined, ORIGIN_LOCAL);
+      this.noteUiAction('timeline.speed', `Clip plays at ${speed}×`, [clipId]);
+    } catch (err) {
+      this.toast('error', (err as Error).message);
+    }
+  }
+
+  /** Add a 2× zoom on a clip starting at the playhead (3 s, centred); tweak it in the inspector. */
+  addZoomAtPlayhead(clipId: string): void {
+    const clip = this.doc.getClip(clipId);
+    if (!clip || clip.kind === 'component' || clip.kind === 'audio') return;
+    const end = clip.startFrame + clip.durationFrames;
+    const from = Math.min(Math.max(this.playhead.get().frame, clip.startFrame), end - 1);
+    const to = Math.min(end, from + 3 * this.fps);
+    const region = { start: Math.round(sourceFrameAt(clip, from)), end: Math.round(sourceFrameAt(clip, to)), cx: 0.5, cy: 0.5, zoom: 2 };
+    if ((clip.zooms ?? []).some((z) => z.start < region.end && region.start < z.end)) {
+      this.toast('info', 'There is already a zoom at the playhead on this clip');
+      return;
+    }
+    this.updateClip(clipId, { zooms: [...(clip.zooms ?? []), region].sort((a, b) => a.start - b.start) });
+    this.noteUiAction('timeline.zoom', 'Added a zoom at the playhead', [clipId]);
   }
 
   detachAudio(clipId: string): void {
@@ -573,8 +700,8 @@ export class Editor {
     for (const a of assets) if (a.id === assetId && a.derivedFrom) family.add(a.derivedFrom);
     const clips = this.project.get().project.clips.filter((c): c is Clip & { kind: 'video' | 'audio' | 'image' } => c.kind !== 'component' && family.has(c.assetId));
     for (const c of clips) {
-      const local = Math.round(seconds * fps) - c.trimBefore;
-      if (local >= 0 && local < c.durationFrames) return c.startFrame + local;
+      const frame = timelineFrameAt(c, seconds * fps);
+      if (frame !== null) return frame;
     }
     return null;
   }

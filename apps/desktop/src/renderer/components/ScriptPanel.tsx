@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { MediaClip } from '@neon/core';
+import { sourceFrameAt, type MediaClip } from '@neon/core';
 import { Captions, NeonIcon, Scissors, VolumeX } from '@neon/icon-kit';
 import { useEditor } from '../lib/context.ts';
 import { kbdFor } from '../lib/kbd.ts';
@@ -33,7 +33,7 @@ export function ScriptPanel() {
     for (const c of clips) {
       const local = playhead - c.startFrame;
       if (local < 0 || local >= c.durationFrames) continue;
-      const seconds = (local + c.trimBefore) / fps;
+      const seconds = sourceFrameAt(c, playhead) / fps;
       return transcript.words.findIndex((w) => seconds >= w.s && seconds < w.e + 0.05);
     }
     return -1;

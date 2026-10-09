@@ -6,12 +6,13 @@ const MAX_CANVAS_PX = 8192;
 
 /**
  * Draws the slice of an asset's peaks that a clip shows: source frames
- * [trimBefore, trimBefore + durationFrames) across the clip's pixel width. Audio clips get a
+ * [trimBefore, trimBefore + durationFrames × speed) across the clip's pixel width. Audio clips get a
  * symmetric waveform, video clips a low bar strip so the name stays readable.
  */
-export function Waveform({ peaks, trimBefore, durationFrames, fps, widthPx, color, mode }: {
+export function Waveform({ peaks, trimBefore, speed = 1, durationFrames, fps, widthPx, color, mode }: {
   peaks: Uint8Array;
   trimBefore: number;
+  speed?: number;
   durationFrames: number;
   fps: number;
   widthPx: number;
@@ -33,7 +34,7 @@ export function Waveform({ peaks, trimBefore, durationFrames, fps, widthPx, colo
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = color;
     ctx.globalAlpha = mode === 'audio' ? 0.55 : 0.45;
-    const secondsPerPx = durationFrames / fps / width;
+    const secondsPerPx = (durationFrames * speed) / fps / width;
     const startSeconds = trimBefore / fps;
     const mid = height / 2;
     for (let x = 0; x < width; x++) {
@@ -48,6 +49,6 @@ export function Waveform({ peaks, trimBefore, durationFrames, fps, widthPx, colo
         ctx.fillRect(x, height - h, 1, h);
       }
     }
-  }, [peaks, trimBefore, durationFrames, fps, width, height, color, mode]);
+  }, [peaks, trimBefore, speed, durationFrames, fps, width, height, color, mode]);
   return <canvas ref={ref} className={`wave-canvas ${mode}`} style={{ width: '100%', height }} />;
 }

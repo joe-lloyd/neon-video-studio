@@ -167,8 +167,9 @@ test('cutRanges removes a range across tracks, splits spanning clips, ripples an
   // source continuity: second piece starts at source frame 130, third at 260
   if (videos[1]!.kind !== 'component') assert.equal(videos[1]!.trimBefore, 130);
   if (videos[2]!.kind !== 'component') assert.equal(videos[2]!.trimBefore, 260);
-  if (videos[0]!.kind !== 'component') assert.equal(videos[0]!.fadeOut, 2);
-  if (videos[1]!.kind !== 'component') assert.equal(videos[1]!.fadeIn, 2);
+  // The join gets 2-frame audio ramps (no click) but no picture fade (no flash to black).
+  if (videos[0]!.kind !== 'component') assert.deepEqual([videos[0]!.fadeOut, videos[0]!.declick], [0, { in: 0, out: 2 }]);
+  if (videos[1]!.kind !== 'component') assert.deepEqual([videos[1]!.fadeIn, videos[1]!.declick], [0, { in: 2, out: 2 }]);
   const overlays = clips.filter((c) => c.kind === 'component');
   // overlay [200,300) → shifted by 30 → [170,270) then cut [250,260) → [170,250) + [250,260)…
   assert.equal(overlays.reduce((n, c) => n + c.durationFrames, 0), 90);

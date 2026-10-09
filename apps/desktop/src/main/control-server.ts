@@ -9,6 +9,13 @@ import { basename } from 'node:path';
 import {
   ZodError,
   API_ROUTES,
+  BatchRequestSchema,
+  IdRequestSchema,
+  checkBatchRoute,
+  resolveRefs,
+  type BatchFailure,
+  type BatchRequest,
+  type BatchResult,
   AddTrackRequestSchema,
   ImportAssetRequestSchema,
   InsertClipRequestSchema,
@@ -29,6 +36,11 @@ import {
   AiSetupRequestSchema,
   AiRipRequestSchema,
   DetachAudioRequestSchema,
+  ClipSpeedRequestSchema,
+  ClipZoomRequestSchema,
+  sourceFrameAt,
+  speedOf,
+  clipEnd,
   NudgeClipsRequestSchema,
   PacksInstallRequestSchema,
   ProjectPacksRequestSchema,
@@ -37,6 +49,7 @@ import {
   AiReframeRequestSchema,
   AiBrollRequestSchema,
   AiCleanRequestSchema,
+  AiPaceRequestSchema,
   TranscriptCutRequestSchema,
   type AiOperation,
   RENDER_PRESETS,
@@ -57,16 +70,18 @@ import {
   type ApiResult,
   type AppStatus,
   type InsertClipInput,
+  type MediaClip,
   type ListResponse,
 } from '@neon/core';
 import { mediaTypeForFile } from '@neon/core/node';
-import { parseRange } from '@neon/render';
+import { parseCapture, parseRange } from '@neon/render';
 import { WAVEFORM_RATE } from './waveforms.ts';
 import type { SignalSocket, SyncSocket } from '@neon/p2p/server';
 import { ffprobeAvailable } from './assets.ts';
 import type { MainContext } from './context.ts';
 import { sseFrame } from './events.ts';
 import { ProjectStore } from './project-store.ts';
+import { cancelCapture, startCapture, stopCapture } from './screen-recorder.ts';
 
 type Scope = 'local' | 'lan';
 interface WsData {
@@ -84,10 +99,12 @@ const CORS: Record<string, string> = {
 class HttpError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string, message: string) {
+  readonly details: unknown;
+  constructor(status: number, code: string, message: string, details?: unknown) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -99,15 +116,20 @@ function ok<T>(data: T): Response {
   return json({ ok: true, data });
 }
 
-function fail(err: unknown): Response {
-  if (err instanceof HttpError) return json({ ok: false, error: { code: err.code, message: err.message } }, err.status);
+function toHttpError(err: unknown): HttpError {
+  if (err instanceof HttpError) return err;
   if (err instanceof ZodError) {
     const message = err.issues.map((i: { path: PropertyKey[]; message: string }) => `${i.path.map(String).join('.') || '(body)'}: ${i.message}`).join('; ');
-    return json({ ok: false, error: { code: 'VALIDATION', message, details: err.issues } }, 400);
+    return new HttpError(400, 'VALIDATION', message, err.issues);
   }
   const message = err instanceof Error ? err.message : String(err);
   const status = /not found/i.test(message) ? 404 : 400;
-  return json({ ok: false, error: { code: status === 404 ? 'NOT_FOUND' : 'BAD_REQUEST', message } }, status);
+  return new HttpError(status, status === 404 ? 'NOT_FOUND' : 'BAD_REQUEST', message);
+}
+
+function fail(err: unknown): Response {
+  const e = toHttpError(err);
+  return json({ ok: false, error: { code: e.code, message: e.message, ...(e.details === undefined ? {} : { details: e.details }) } }, e.status);
 }
 
 export interface RunningServer {
@@ -206,15 +228,17 @@ async function start(ctx: MainContext, scope: Scope, hostname: string, port: num
             const name = (url.searchParams.get('name') ?? 'upload.bin').replace(/[^\w.\- ]/g, '_');
             const at = url.searchParams.get('at');
             const trackId = url.searchParams.get('track') ?? undefined;
-            const { mkdtemp: mkTmp, rm: rmTmp, writeFile: writeTmp } = await import('node:fs/promises');
+            srv.timeout(req, 0);
+            const { mkdtemp: mkTmp, rm: rmTmp } = await import('node:fs/promises');
             const { tmpdir: osTmp } = await import('node:os');
             const { join: joinPath } = await import('node:path');
             const dir = await mkTmp(joinPath(osTmp(), 'neon-upload-'));
             try {
               const file = joinPath(dir, name);
-              await writeTmp(file, new Uint8Array(await req.arrayBuffer()));
+              // Stream the body to disk: remote CLIs upload whole screen recordings this way.
+              await Bun.write(file, new Response(req.body));
               const result = await ctx.assets.import(file, {
-                insertAt: at !== null ? Math.max(0, Math.round(Number(at))) : undefined,
+                insertAt: at === null ? undefined : /^\d+$/.test(at) ? Number(at) : parseTimecode(at, ctx.store.doc.fps),
                 trackId,
                 origin: ORIGIN_API,
               });
@@ -224,7 +248,17 @@ async function start(ctx: MainContext, scope: Scope, hostname: string, port: num
               await rmTmp(dir, { recursive: true, force: true }).catch(() => undefined);
             }
           }
+          // Files this app produced (renders, stills), for CLIs on another machine (neon-cli --on).
+          if (path === API_ROUTES.files && req.method === 'GET') {
+            const wanted = url.searchParams.get('path') ?? '';
+            if (!wanted || !ctx.renders.isProduced(wanted)) throw new HttpError(404, 'NOT_FOUND', 'Only files this app rendered in this session can be fetched');
+            const file = Bun.file(wanted);
+            if (!(await file.exists())) throw new HttpError(404, 'NOT_FOUND', `${wanted} no longer exists`);
+            return new Response(file, { headers: { ...CORS, 'Content-Type': mediaTypeForFile(wanted)?.mime ?? 'application/octet-stream' } });
+          }
           const body = req.method === 'POST' ? ((await req.json().catch(() => ({}))) as unknown) : {};
+          // Stills answer when the PNG exists; a first-run bundle can outlast the idle timeout.
+          if (path === API_ROUTES.renderStill || path === API_ROUTES.renderSheet) srv.timeout(req, 0);
           const result = await handleApi(ctx, req.method, path, body);
           if (req.method === 'POST') recordActivity(ctx, path, body, result);
           return ok(result);
@@ -286,7 +320,9 @@ async function start(ctx: MainContext, scope: Scope, hostname: string, port: num
 }
 
 async function serveAsset(ctx: MainContext, hash: string, req: Request): Promise<Response> {
-  const file = await ctx.assets.resolveFile(hash);
+  // ?proxy=1 is the editor preview asking for the quick-seek copy; renders never send it.
+  const proxy = new URL(req.url).searchParams.has('proxy') ? ctx.proxies.file(hash) : null;
+  const file = proxy ?? (await ctx.assets.resolveFile(hash));
   if (!file) return new Response('asset not found', { status: 404, headers: CORS });
   const bunFile = Bun.file(file);
   const size = bunFile.size;
@@ -335,6 +371,8 @@ export async function buildStatus(ctx: MainContext): Promise<AppStatus> {
     },
     room: ctx.room.info(),
     renders: ctx.renders.list(),
+    headless: ctx.headless,
+    proxies: ctx.proxies.status(),
     capabilities: { ffprobe: await ffprobeAvailable(), node: true, renderRuntime: process.env.NEON_RENDER_RUNTIME === 'node' ? 'node' : `bun ${Bun.version} (bundled)` },
   };
 }
@@ -344,6 +382,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
   const fps = doc.fps;
   const T = (v: string | number | undefined): number | undefined => (v === undefined ? undefined : parseTimecode(v, fps));
   const key = `${method} ${path}`;
+  if (key === `POST ${API_ROUTES.batch}`) return runBatch(ctx, BatchRequestSchema.parse(body));
 
   // FX packs: uninstall carries the pack name in the path.
   const packUninstall = /^POST \/api\/packs\/([a-z][a-z0-9-]*)\/uninstall$/.exec(key);
@@ -373,7 +412,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     return t;
   }
   if (key === `POST ${API_ROUTES.aiTranscript}/cut`) return ctx.ai.start('transcript-cut', TranscriptCutRequestSchema.parse(body));
-  const aiOp = /^POST \/api\/ai\/(transcribe|fillers|silence|breaths|denoise|enhance|matte|reframe|broll|clean|setup|rip)$/.exec(key);
+  const aiOp = /^POST \/api\/ai\/(transcribe|fillers|silence|breaths|denoise|enhance|matte|reframe|broll|clean|pace|setup|rip)$/.exec(key);
   if (aiOp) {
     const op = aiOp[1] as AiOperation;
     const schemas: Record<string, { parse(v: unknown): unknown }> = {
@@ -389,6 +428,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
       reframe: AiReframeRequestSchema,
       broll: AiBrollRequestSchema,
       clean: AiCleanRequestSchema,
+      pace: AiPaceRequestSchema,
     };
     const parsed = schemas[op]!.parse(body) as Record<string, unknown>;
     if (op === 'rip' && parsed.at !== undefined) parsed.at = parseTimecode(parsed.at as string | number, fps);
@@ -413,20 +453,75 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     const { file } = await ctx.recorder.stop();
     let track = doc.toJSON().tracks.find((t) => t.kind === 'audio' && t.name === 'VO');
     track ??= doc.addTrack('audio', 'VO', ORIGIN_API);
-    const result = await ctx.assets.import(file, { insertAt: startFrame, trackId: track.id, origin: ORIGIN_API });
-    await ctx.recorder.discard();
+    const result = await ctx.assets.import(file, { insertAt: startFrame, trackId: track.id, origin: ORIGIN_API }).finally(() => ctx.recorder.discard());
     ctx.events.activity('cli', 'vo.done', `Voice-over take placed on ${track.name} at frame ${startFrame}`, { clipIds: result.clip ? [result.clip.id] : [] });
     return result;
   }
   if (key === 'GET /api/record/state') return ctx.recorder.state();
+  if (key === `GET ${API_ROUTES.captureDevices}`) return ctx.capture.devices();
+  if (key === `GET ${API_ROUTES.captureState}`) return ctx.capture.state();
+  if (key === `POST ${API_ROUTES.captureStart}`) return startCapture(ctx, body, 'cli');
+  if (key === `POST ${API_ROUTES.captureStop}`) return stopCapture(ctx, body, 'cli');
+  if (key === `POST ${API_ROUTES.captureCancel}`) return cancelCapture(ctx, 'cli');
+  if (key === `POST ${API_ROUTES.shutdown}`) {
+    const exit = ctx.requestExit;
+    if (!exit) throw new HttpError(409, 'NOT_HEADLESS', 'Only a headless instance (neon-cli serve) stops from the CLI; quit the desktop app instead');
+    // Answer first, then flush and exit.
+    setTimeout(exit, 50);
+    return { stopping: true, pid: process.pid };
+  }
   if (key === `POST ${API_ROUTES.timelineDetach}`) {
     const { id } = DetachAudioRequestSchema.parse(body);
     return doc.detachAudio(id, ORIGIN_API);
+  }
+  if (key === `POST ${API_ROUTES.timelineSpeed}`) {
+    const req = ClipSpeedRequestSchema.parse(body);
+    const from = T(req.from);
+    const to = T(req.to);
+    const clip = doc.getClip(req.id);
+    if (!clip) throw new HttpError(404, 'NOT_FOUND', `Clip ${req.id} not found`);
+    const range = from !== undefined || to !== undefined ? { start: from ?? clip.startFrame, end: to ?? clipEnd(clip) } : undefined;
+    return doc.setClipSpeed(req.id, req.speed, range, ORIGIN_API);
+  }
+  if (key === `POST ${API_ROUTES.timelineZoom}`) {
+    const req = ClipZoomRequestSchema.parse(body);
+    const clip = doc.getClip(req.id);
+    if (!clip) throw new HttpError(404, 'NOT_FOUND', `Clip ${req.id} not found`);
+    if (clip.kind === 'component' || clip.kind === 'audio') throw new HttpError(400, 'BAD_REQUEST', 'Zoom works on video and image clips');
+    // After cuts a take is several pieces of the same asset on one track. A zoom over a cut is one
+    // continuous move, so every piece the range touches gets the same source-time region.
+    const pieces = doc
+      .toJSON()
+      .clips.filter((c): c is MediaClip => c.kind === clip.kind && c.assetId === clip.assetId && c.trackId === clip.trackId && c.startFrame < T(req.to)! && clipEnd(c) > T(req.from)!)
+      .sort((a, b) => a.startFrame - b.startFrame);
+    if (!pieces.some((c) => c.id === clip.id)) throw new HttpError(400, 'BAD_REQUEST', `Zoom range must overlap the clip (${framesToTimecode(clip.startFrame, fps)}–${framesToTimecode(clipEnd(clip), fps)})`);
+    const first = pieces[0]!;
+    const last = pieces[pieces.length - 1]!;
+    // Store in source frames so the zoom follows its moment through later cuts and re-timing.
+    const region = {
+      start: Math.round(sourceFrameAt(first, Math.max(first.startFrame, T(req.from)!))),
+      end: Math.round(sourceFrameAt(last, Math.min(clipEnd(last), T(req.to)!))),
+      cx: req.cx,
+      cy: req.cy,
+      zoom: req.zoom,
+      ...(req.ramp !== undefined ? { ramp: Math.round(T(req.ramp)! * speedOf(clip)) } : {}),
+    };
+    if (pieces.some((c) => (c.zooms ?? []).some((z) => z.start < region.end && region.start < z.end))) {
+      throw new HttpError(409, 'ZOOM_OVERLAP', 'That range overlaps an existing zoom on this clip; clear it first (neon-cli zoom clear)');
+    }
+    for (const c of pieces) doc.updateClip(c.id, { zooms: [...(c.zooms ?? []), region].sort((a, b) => a.start - b.start) }, ORIGIN_API);
+    return doc.getClip(clip.id)!;
   }
   if (key === `POST ${API_ROUTES.timelineCut}`) {
     const req = CutRangesRequestSchema.parse(body);
     const ranges = req.ranges.map((r) => ({ start: T(r.start)!, end: T(r.end)! }));
     return doc.cutRanges(ranges, { trackIds: req.trackIds, ripple: req.ripple, crossfadeFrames: req.crossfadeFrames }, ORIGIN_API);
+  }
+
+  // Stills and contact sheets: wait for the PNG so an agent can look at its edit.
+  if (key === `POST ${API_ROUTES.renderStill}` || key === `POST ${API_ROUTES.renderSheet}`) {
+    const { target, output } = parseCapture(path === API_ROUTES.renderStill ? 'still' : 'sheet', body, fps, doc.durationFrames());
+    return ctx.renders.capture(target, output);
   }
 
   // Dynamic render routes.
@@ -593,6 +688,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
           animateOut: patch.animateOut,
           volumeKeyframes: patch.volumeKeyframes,
           reframe: patch.reframe,
+          zooms: patch.zooms,
         },
         ORIGIN_API,
       );
@@ -636,8 +732,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     }
 
     case `POST ${API_ROUTES.trackRemove}`: {
-      const { id } = (body ?? {}) as { id?: string };
-      if (!id) throw new HttpError(400, 'VALIDATION', 'id is required');
+      const { id } = IdRequestSchema.parse(body);
       doc.removeTrack(id, ORIGIN_API);
       return { removed: id };
     }
@@ -648,8 +743,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     }
 
     case `POST ${API_ROUTES.assetsRemove}`: {
-      const { id } = (body ?? {}) as { id?: string };
-      if (!id) throw new HttpError(400, 'VALIDATION', 'id is required');
+      const { id } = IdRequestSchema.parse(body);
       doc.removeAsset(id, ORIGIN_API);
       return { removed: id };
     }
@@ -691,6 +785,44 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
   }
 }
 
+// ---- batches (neon-cli apply) ---------------------------------------------------------------
+
+/**
+ * Run ops through handleApi as one unit. Every route is checked before anything runs; if an op
+ * fails, the document goes back to its state before the batch. On success one history checkpoint
+ * covers the whole batch, so a single `history undo` reverts it.
+ *
+ * Rollback re-applies an in-memory snapshot rather than history.restore(): restore() is a no-op
+ * when the target is the cursor, and otherwise folds the live (half-applied) state into the
+ * cursor checkpoint first.
+ */
+async function runBatch(ctx: MainContext, { ops }: BatchRequest): Promise<BatchResult> {
+  for (const [i, op] of ops.entries()) {
+    const check = checkBatchRoute(op.route);
+    if (!check.ok) throw new HttpError(400, 'NOT_BATCHABLE', `op ${i}: ${check.reason}`, { failedAt: i, results: [], rolledBack: false } satisfies BatchFailure);
+  }
+  const before = ctx.store.toJSON();
+  await ctx.history.push();
+  const results: unknown[] = [];
+  for (const [i, op] of ops.entries()) {
+    try {
+      const body = resolveRefs(op.body ?? {}, results);
+      const result = await handleApi(ctx, 'POST', op.route, body);
+      recordActivity(ctx, op.route, body, result);
+      results.push(result);
+    } catch (err) {
+      ctx.store.doc.applySnapshot(before);
+      const e = toHttpError(err);
+      ctx.events.activity('cli', 'batch.rollback', `Batch stopped at op ${i} (${op.route}): ${e.message}. Rolled back ${results.length} edit${results.length === 1 ? '' : 's'}`);
+      const details: BatchFailure = { failedAt: i, results, rolledBack: true, ...(e.details === undefined ? {} : { cause: e.details }) };
+      throw new HttpError(e.status, e.code, `op ${i} (${op.route}): ${e.message}`, details);
+    }
+  }
+  const history = await ctx.history.push();
+  ctx.rpc?.send.historyChanged({ status: history });
+  ctx.events.activity('cli', 'batch.apply', `Applied ${ops.length} edit${ops.length === 1 ? '' : 's'} as one undo step`);
+  return { results, history };
+}
 
 async function packSummaries(ctx: MainContext): Promise<PackSummary[]> {
   const enabled = new Set(ctx.store.doc.getMeta().packs ?? []);
@@ -820,8 +952,14 @@ function recordActivity(ctx: MainContext, path: string, body: unknown, result: u
     case API_ROUTES.timelineDetach:
       ctx.events.activity('cli', 'timeline.detach', `Detached audio of “${String((r as { name?: string }).name ?? '')}” to ${trackName(String((r as { trackId?: string }).trackId))}`, { clipIds: [String((r as { id?: string }).id)] });
       break;
+    case API_ROUTES.timelineSpeed:
+      ctx.events.activity('cli', 'timeline.speed', `“${clip.name}” now plays at ${String((r as { speed?: number }).speed ?? 1)}× (${clip.durationFrames}f)`, { clipIds: clip.id ? [clip.id] : [] });
+      break;
+    case API_ROUTES.timelineZoom:
+      ctx.events.activity('cli', 'timeline.zoom', `Added a zoom on “${clip.name}”`, { clipIds: clip.id ? [clip.id] : [] });
+      break;
     case API_ROUTES.timelineCut:
-      ctx.events.activity('cli', 'timeline.cut', `Cut ${String((r as { cuts?: number }).cuts ?? 0)} clip segment(s), ${String(r.removedFrames)} frames removed (ripple)`);
+      ctx.events.activity('cli', 'timeline.cut', `Cut ${String((r as { cuts?: number }).cuts ?? 0)} clip segment(s), ${String(r.removedFrames)} frames removed${(b.ripple as boolean | undefined) === false ? '' : ' (ripple)'}`);
       break;
     case API_ROUTES.ui: {
       const parts: string[] = [];
@@ -843,7 +981,7 @@ function recordActivity(ctx: MainContext, path: string, body: unknown, result: u
     default:
       if (/^\/api\/ai\//.test(path) && typeof r.op === 'string') {
         ctx.events.activity('cli', `ai.${String(r.op)}.requested`, `AI ${String(r.op)} requested${r.clipId ? ` for clip ${String(r.clipId).slice(-6)}` : ''}`, { jobId: String(r.id), clipIds: r.clipId ? [String(r.clipId)] : [] });
-      } else if (/\/cancel$/.test(path)) ctx.events.activity('cli', 'render.cancel', `Render ${String(r.id)} cancelled`, { jobId: String(r.id) });
+      } else if (/^\/api\/render\/[^/]+\/cancel$/.test(path)) ctx.events.activity('cli', 'render.cancel', `Render ${String(r.id)} cancelled`, { jobId: String(r.id) });
       break;
   }
 }
