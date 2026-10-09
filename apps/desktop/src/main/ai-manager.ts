@@ -637,6 +637,10 @@ export class AiManager {
   private async opClean(job: AiJob, params: Params) {
     const steps: string[] = [];
     const out: Record<string, unknown> = {};
+    // Each step cuts the clip into pieces and the named clip id then only covers the first piece,
+    // so every step targets the take's asset: all the pieces (and derivatives) it became.
+    const { asset } = await this.resolveTarget(params);
+    params = { ...params, clipId: undefined, assetId: asset.id };
     if (params.fillers !== false) {
       this.progress(job, 0.05, 'Step 1/4 · fillers');
       out.fillers = await this.opFillers(job, { ...params, apply: true });
