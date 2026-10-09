@@ -31,8 +31,11 @@ const FFMPEG_DOWNLOADS: Record<string, { url: string; archive: string }[]> = {
   'darwin-arm64': martinRiedl('arm64'),
   'darwin-x64': martinRiedl('amd64'),
   'linux-x64': [{ url: 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz', archive: 'ffmpeg.tar.xz' }],
+  'linux-arm64': [{ url: 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linuxarm64-gpl.tar.xz', archive: 'ffmpeg.tar.xz' }],
   'win32-x64': [{ url: 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip', archive: 'ffmpeg.zip' }],
 };
+// Windows on ARM runs the x64 build under emulation (as it always has).
+FFMPEG_DOWNLOADS['win32-arm64'] = FFMPEG_DOWNLOADS['win32-x64']!;
 
 /** Find files named like the wanted binaries anywhere in an extracted tree. */
 async function findBinaries(dir: string, names: Set<string>, found: Map<string, string>): Promise<void> {
