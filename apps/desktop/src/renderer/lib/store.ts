@@ -20,6 +20,7 @@ import {
   type RenderJob,
   type RoomInfo,
   registerPack,
+  sourceFrameAt,
   timelineFrameAt,
   unregisterPack,
 } from '@neon/core';
@@ -482,6 +483,32 @@ export class Editor {
       ? { x: Math.round(transform.x * 1000) / 1000, y: Math.round(transform.y * 1000) / 1000, scale: Math.round(transform.scale * 1000) / 1000, ...(rot !== 0 ? { rotation: rot } : {}) }
       : null;
     this.updateClip(clipId, { transform: t && t.x === 0.5 && t.y === 0.5 && t.scale === 1 && rot === 0 ? null : t });
+  }
+
+  /** Re-time a media clip (later clips ripple). Undoable like any local edit. */
+  setClipSpeed(clipId: string, speed: number): void {
+    try {
+      this.doc.setClipSpeed(clipId, speed, undefined, ORIGIN_LOCAL);
+      this.noteUiAction('timeline.speed', `Clip plays at ${speed}×`, [clipId]);
+    } catch (err) {
+      this.toast('error', (err as Error).message);
+    }
+  }
+
+  /** Add a 2× zoom on a clip starting at the playhead (3 s, centred); tweak it in the inspector. */
+  addZoomAtPlayhead(clipId: string): void {
+    const clip = this.doc.getClip(clipId);
+    if (!clip || clip.kind === 'component' || clip.kind === 'audio') return;
+    const end = clip.startFrame + clip.durationFrames;
+    const from = Math.min(Math.max(this.playhead.get().frame, clip.startFrame), end - 1);
+    const to = Math.min(end, from + 3 * this.fps);
+    const region = { start: Math.round(sourceFrameAt(clip, from)), end: Math.round(sourceFrameAt(clip, to)), cx: 0.5, cy: 0.5, zoom: 2 };
+    if ((clip.zooms ?? []).some((z) => z.start < region.end && region.start < z.end)) {
+      this.toast('info', 'There is already a zoom at the playhead on this clip');
+      return;
+    }
+    this.updateClip(clipId, { zooms: [...(clip.zooms ?? []), region].sort((a, b) => a.start - b.start) });
+    this.noteUiAction('timeline.zoom', 'Added a zoom at the playhead', [clipId]);
   }
 
   detachAudio(clipId: string): void {

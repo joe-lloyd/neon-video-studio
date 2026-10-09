@@ -94,7 +94,7 @@ const MediaClipView: React.FC<{ clip: MediaClip; asset: Asset | undefined; track
     );
   return (
     <AbsoluteFill style={{ opacity: envelope, overflow: 'hidden' }}>
-      <AbsoluteFill style={cameraStyle}>{media}</AbsoluteFill>
+      <AbsoluteFill style={cameraStyle} data-camera>{media}</AbsoluteFill>
     </AbsoluteFill>
   );
 };
