@@ -444,7 +444,7 @@ function ClipView({ clip, drag, pxPerFrame, fps, selected, flashing, onMove, onT
   const hasAudio = clip.kind === 'audio' || clip.kind === 'video';
   const peaks = useWaveform(`http://127.0.0.1:${editor.bridge.bootstrap.port}`, hasAudio ? clip.assetId : null);
   // Trimming the start edge slides the source window along with it (mirrors ProjectDoc.trimClip).
-  const trimBefore = clip.kind !== 'component' ? clip.trimBefore + (drag?.id === clip.id && drag.kind === 'trim' && drag.edge === 'start' ? start - clip.startFrame : 0) : 0;
+  const trimBefore = clip.kind !== 'component' ? clip.trimBefore + (drag?.id === clip.id && drag.kind === 'trim' && drag.edge === 'start' ? (start - clip.startFrame) * (clip.speed ?? 1) : 0) : 0;
   const widthPx = Math.max(4, (end - start) * pxPerFrame);
   return (
     <div
@@ -459,7 +459,7 @@ function ClipView({ clip, drag, pxPerFrame, fps, selected, flashing, onMove, onT
       title={`${clip.name} · ${framesToTimecode(start, fps)} → ${framesToTimecode(end, fps)}`}
     >
       {hasAudio && peaks && peaks.length > 0 ? (
-        <Waveform peaks={peaks} trimBefore={trimBefore} durationFrames={end - start} fps={fps} widthPx={widthPx} color={color} mode={clip.kind === 'audio' ? 'audio' : 'video'} />
+        <Waveform peaks={peaks} trimBefore={trimBefore} speed={clip.kind !== 'component' ? clip.speed : undefined} durationFrames={end - start} fps={fps} widthPx={widthPx} color={color} mode={clip.kind === 'audio' ? 'audio' : 'video'} />
       ) : hasAudio && peaks === null ? (
         <div className="wave" />
       ) : null}
@@ -470,6 +470,8 @@ function ClipView({ clip, drag, pxPerFrame, fps, selected, flashing, onMove, onT
       <span className="clip-name">{clip.name}</span>
       {clip.kind !== 'component' && clip.reframe ? <span className="clip-badge" title="auto-reframed">◱</span> : null}
       {clip.kind !== 'component' && clip.volumeKeyframes?.length ? <span className="clip-badge" title="volume automation">∿</span> : null}
+      {clip.kind !== 'component' && clip.speed && clip.speed !== 1 ? <span className="clip-badge" title={`plays at ${clip.speed}× speed`}>{clip.speed}×</span> : null}
+      {clip.kind !== 'component' && clip.zooms?.length ? <span className="clip-badge" title={`${clip.zooms.length} zoom${clip.zooms.length === 1 ? '' : 's'}`}>⌕{clip.zooms.length}</span> : null}
       <span className="clip-len">{framesToTimecode(end - start, fps)}</span>
       <div className="handle l" onPointerDown={(e) => onTrim(e, clip, 'start')} />
       <div className="handle r" onPointerDown={(e) => onTrim(e, clip, 'end')} />

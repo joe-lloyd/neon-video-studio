@@ -61,6 +61,18 @@ export const ReframeSchema = z.object({
   keyframes: z.array(z.object({ frame: z.number().int().nonnegative(), cx: z.number().min(0).max(1), cy: z.number().min(0).max(1), zoom: z.number().min(1).max(4) })),
 });
 
+export const ZoomRegionSchema = z
+  .object({
+    start: z.number().int().nonnegative(),
+    end: z.number().int().positive(),
+    cx: z.number().min(0).max(1),
+    cy: z.number().min(0).max(1),
+    zoom: z.number().min(1).max(8),
+    ramp: z.number().int().min(0).max(600).optional(),
+  })
+  .refine((z) => z.end > z.start, { message: 'zoom end must be after start' });
+export const ClipSpeedSchema = z.number().min(0.1).max(16);
+
 export const MediaClipSchema = ClipBaseSchema.extend({
   kind: z.enum(['video', 'audio', 'image']),
   assetId: z.string(),
@@ -71,6 +83,8 @@ export const MediaClipSchema = ClipBaseSchema.extend({
   fadeOut: z.number().int().nonnegative(),
   volumeKeyframes: z.array(VolumeKeyframeSchema).optional(),
   reframe: ReframeSchema.optional(),
+  speed: ClipSpeedSchema.optional(),
+  zooms: z.array(ZoomRegionSchema).optional(),
 });
 
 export const ComponentClipSchema = ClipBaseSchema.extend({
@@ -165,6 +179,8 @@ export const UpdateClipRequestSchema = z.object({
     props: z.record(z.string(), z.unknown()).optional(),
     volumeKeyframes: z.array(VolumeKeyframeSchema).nullable().optional(),
     reframe: ReframeSchema.nullable().optional(),
+    /** Replace the clip's zoom regions (source frames); null clears them. Prefer POST /api/timeline/zoom. */
+    zooms: z.array(ZoomRegionSchema).nullable().optional(),
     transform: ClipTransformSchema.nullable().optional(),
     animateIn: ClipAnimationSchema.nullable().optional(),
     animateOut: ClipAnimationSchema.nullable().optional(),
@@ -246,6 +262,28 @@ export const TranscriptCutRequestSchema = z
   .refine((v) => (v.words && v.words.length > 0) || (v.fromWord !== undefined && v.toWord !== undefined), {
     message: 'Provide words[] or fromWord+toWord',
   });
+
+/** Re-time a clip (or a range of it) — the clip's length changes and later clips ripple on every track. */
+export const ClipSpeedRequestSchema = z.object({
+  id: z.string().min(1),
+  speed: ClipSpeedSchema,
+  /** Only re-time this timeline range of the clip (it is split at the edges). */
+  from: TimeExpr.optional(),
+  to: TimeExpr.optional(),
+});
+
+/** Add a zoom on a clip, in TIMELINE time (converted to source frames so it follows the content). */
+export const ClipZoomRequestSchema = z.object({
+  id: z.string().min(1),
+  from: TimeExpr,
+  to: TimeExpr,
+  /** Centre of the zoom, normalised 0..1 across the clip's picture. */
+  cx: z.number().min(0).max(1).default(0.5),
+  cy: z.number().min(0).max(1).default(0.5),
+  zoom: z.number().min(1).max(8).default(2),
+  /** Ease length (TimeExpr); default ~0.5 s. */
+  ramp: TimeExpr.optional(),
+});
 
 export const MoveClipRequestSchema = z.object({
   id: z.string().min(1),

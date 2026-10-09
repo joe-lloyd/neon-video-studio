@@ -86,6 +86,21 @@ export interface Reframe {
   keyframes: { frame: number; cx: number; cy: number; zoom: number }[];
 }
 
+/**
+ * A camera move on a visual clip: ease in to `zoom`× centred on (cx, cy), hold, ease back out.
+ * `start`/`end` are SOURCE frames (asset time at project fps), so regions stay on the moment they
+ * frame when the clip is split, trimmed or re-timed. (cx, cy) is in normalised clip coordinates.
+ */
+export interface ZoomRegion {
+  start: number;
+  end: number;
+  cx: number;
+  cy: number;
+  zoom: number;
+  /** Ease-in/out length in source frames (default ZOOM_DEFAULT_RAMP). */
+  ramp?: number;
+}
+
 export interface MediaClip extends ClipBase {
   kind: 'video' | 'audio' | 'image';
   /** SHA-256 of the source file; key into Project.assets. */
@@ -103,6 +118,13 @@ export interface MediaClip extends ClipBase {
   volumeKeyframes?: VolumeKeyframe[];
   /** Optional subject tracking used to pan/crop when the output aspect differs from the source. */
   reframe?: Reframe;
+  /**
+   * Playback rate (absent = 1). The clip plays source frames [trimBefore, trimBefore + durationFrames × speed).
+   * Audio is silent above 2× (sped-up screen time should not chirp).
+   */
+  speed?: number;
+  /** Zoom/pan camera moves (visual clips). */
+  zooms?: ZoomRegion[];
 }
 
 export interface ComponentClip extends ClipBase {

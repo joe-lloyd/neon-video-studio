@@ -1,4 +1,5 @@
 import type { Clip, FrameRange, Track } from './types.ts';
+import { sourceSecondsToLocal, type ClipTiming } from './timing.ts';
 
 export function clipEnd(clip: Pick<Clip, 'startFrame' | 'durationFrames'>): number {
   return clip.startFrame + clip.durationFrames;
@@ -111,18 +112,9 @@ export function rangesTotal(ranges: FrameRange[]): number {
 }
 
 /** Convert a source-time range (seconds) of an asset to the timeline range it occupies within `clip`, or null. */
-export function sourceSecondsToTimeline(
-  clip: { startFrame: number; durationFrames: number; trimBefore: number },
-  startSeconds: number,
-  endSeconds: number,
-  fps: number,
-): FrameRange | null {
-  const localStart = Math.round(startSeconds * fps) - clip.trimBefore;
-  const localEnd = Math.round(endSeconds * fps) - clip.trimBefore;
-  const start = Math.max(0, localStart);
-  const end = Math.min(clip.durationFrames, localEnd);
-  if (end <= start) return null;
-  return { start: clip.startFrame + start, end: clip.startFrame + end };
+export function sourceSecondsToTimeline(clip: ClipTiming, startSeconds: number, endSeconds: number, fps: number): FrameRange | null {
+  const local = sourceSecondsToLocal(clip, startSeconds, endSeconds, fps);
+  return local ? { start: clip.startFrame + local.start, end: clip.startFrame + local.end } : null;
 }
 
 /** Linear interpolation of volume keyframes at a clip-local frame (1 when no keyframes). */

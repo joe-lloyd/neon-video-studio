@@ -92,13 +92,13 @@ export async function trackFaces(
 /** Convert a track (source seconds) into clip-local reframe keyframes. */
 export function reframeFromTrack(
   track: TrackPoint[],
-  clip: { trimBefore: number; durationFrames: number },
+  clip: { trimBefore: number; durationFrames: number; speed?: number },
   fps: number,
   targetAspect: number,
   mode: Reframe['mode'],
 ): Reframe {
   const keyframes = track
-    .map((t) => ({ frame: Math.round(t.seconds * fps) - clip.trimBefore, cx: Math.min(1, Math.max(0, t.cx)), cy: Math.min(1, Math.max(0, t.cy)), zoom: 1 }))
+    .map((t) => ({ frame: Math.round((t.seconds * fps - clip.trimBefore) / (clip.speed ?? 1)), cx: Math.min(1, Math.max(0, t.cx)), cy: Math.min(1, Math.max(0, t.cy)), zoom: 1 }))
     .filter((k) => k.frame >= -fps && k.frame <= clip.durationFrames + fps)
     .map((k) => ({ ...k, frame: Math.max(0, Math.min(clip.durationFrames, k.frame)) }));
   const dedup = new Map<number, (typeof keyframes)[number]>();

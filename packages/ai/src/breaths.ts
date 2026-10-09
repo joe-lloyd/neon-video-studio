@@ -1,4 +1,4 @@
-import { volumeAt, type VolumeKeyframe } from '@neon/core';
+import { sourceSecondsToLocal, volumeAt, type VolumeKeyframe } from '@neon/core';
 import { decodePcm, energyVad, frameEnergies, segmentsWhere, type Segment } from './pcm.ts';
 
 export interface BreathAnalysis {
@@ -34,7 +34,7 @@ export async function analyseBreaths(ffmpeg: string, file: string): Promise<Brea
  */
 export function breathKeyframes(
   breaths: Segment[],
-  clip: { trimBefore: number; durationFrames: number },
+  clip: { trimBefore: number; durationFrames: number; speed?: number },
   fps: number,
   reductionDb: number,
 ): VolumeKeyframe[] {
@@ -42,11 +42,10 @@ export function breathKeyframes(
   const ramp = Math.max(1, Math.round(fps * 0.04));
   const kfs: VolumeKeyframe[] = [];
   for (const b of breaths) {
-    const s = Math.round(b.start * fps) - clip.trimBefore;
-    const e = Math.round(b.end * fps) - clip.trimBefore;
-    if (e <= 0 || s >= clip.durationFrames) continue;
-    const a = Math.max(0, s);
-    const z = Math.min(clip.durationFrames, e);
+    const local = sourceSecondsToLocal(clip, b.start, b.end, fps);
+    if (!local) continue;
+    const a = local.start;
+    const z = local.end;
     kfs.push({ frame: Math.max(0, a - ramp), gain: 1 }, { frame: a, gain }, { frame: z, gain }, { frame: Math.min(clip.durationFrames, z + ramp), gain: 1 });
   }
   // Sort and de-duplicate frames (later wins), keep unity at both ends.
@@ -65,18 +64,17 @@ export function breathKeyframes(
 export function muteRangeKeyframes(
   existing: VolumeKeyframe[] | undefined,
   segments: Segment[],
-  clip: { trimBefore: number; durationFrames: number },
+  clip: { trimBefore: number; durationFrames: number; speed?: number },
   fps: number,
 ): VolumeKeyframe[] {
   const ramp = Math.max(1, Math.round(fps * 0.04));
   const pts = new Map<number, number>();
   for (const k of existing ?? []) pts.set(k.frame, k.gain);
   for (const seg of segments) {
-    const s = Math.round(seg.start * fps) - clip.trimBefore;
-    const e = Math.round(seg.end * fps) - clip.trimBefore;
-    if (e <= 0 || s >= clip.durationFrames) continue;
-    const a = Math.max(0, s);
-    const z = Math.min(clip.durationFrames, e);
+    const local = sourceSecondsToLocal(clip, seg.start, seg.end, fps);
+    if (!local) continue;
+    const a = local.start;
+    const z = local.end;
     const rampIn = Math.max(0, a - ramp);
     const rampOut = Math.min(clip.durationFrames, z + ramp);
     const gainIn = volumeAt(existing, rampIn);
