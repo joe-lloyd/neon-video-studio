@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * End-to-end test through the public CLI, on any OS: boots a headless app in a throwaway NEON_HOME,
- * waits for it to self-install ffmpeg, builds a project, edits it, renders it and checks the output.
+ * waits for it to self-install ffmpeg, builds a project, edits it, renders it and checks the output,
+ * then renders a still and a contact sheet and checks their PNG headers.
  *
  *   node scripts/e2e.ts [--keep] [--no-render]
  *
@@ -9,7 +10,7 @@
  * --no-render  skip the export step (for machines where Remotion's compositor cannot run)
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,6 +62,14 @@ function tool(name: string): string {
 }
 
 interface Clip { id: string; trackId: string; startFrame: number; durationFrames: number; kind: string }
+interface Still { path: string; frames: number[]; width: number; height: number }
+
+/** Width and height from a PNG's IHDR chunk, plus the file size. */
+function png(file: string): { width: number; height: number; bytes: number } {
+  const data = readFileSync(file);
+  assert(data.toString('latin1', 1, 4) === 'PNG', `${file} is a PNG`);
+  return { width: data.readUInt32BE(16), height: data.readUInt32BE(20), bytes: data.length };
+}
 
 async function main(): Promise<void> {
   log(`NEON_HOME=${home}`);
@@ -115,6 +124,21 @@ async function main(): Promise<void> {
       const seconds = Number(probe.stdout.trim());
       assert(Math.abs(seconds - 2.5) < 0.2, `rendered 2.5 s, got ${probe.stdout.trim()}`);
       log(`rendered ${out} (${seconds.toFixed(2)} s)`);
+
+      // Stills: the PNG header must match the size asked for; a few KB at most means a blank frame.
+      const still = cli<Still>('still', '--at', '1s', '--width', '640', '--out', join(home, 'still.png'));
+      const stillPng = png(still.path);
+      assert(still.frames[0] === 30 && stillPng.width === 640 && stillPng.height === 360, `still 640×360 at frame 30, got ${JSON.stringify(still)} / ${stillPng.width}×${stillPng.height}`);
+      assert(stillPng.bytes > 20_000, `still has picture content (${stillPng.bytes} bytes)`);
+      log(`still ${still.path} (${stillPng.width}×${stillPng.height})`);
+
+      // 6 frames over the 75-frame timeline in a 3-column grid: 312×176 cells + 20 px labels, 6 px gaps.
+      const sheet = cli<Still>('sheet', '--count', '6', '--cols', '3', '--width', '960', '--out', join(home, 'sheet.png'));
+      const sheetPng = png(sheet.path);
+      assert(JSON.stringify(sheet.frames) === '[6,18,31,43,56,68]', `sheet frames, got ${JSON.stringify(sheet.frames)}`);
+      assert(sheetPng.width === 960 && sheetPng.height === 410 && sheet.height === 410, `sheet 960×410, got ${sheetPng.width}×${sheetPng.height}`);
+      assert(sheetPng.bytes > 50_000, `sheet has picture content (${sheetPng.bytes} bytes)`);
+      log(`sheet ${sheet.path} (${sheetPng.width}×${sheetPng.height}, ${sheet.frames.length} frames)`);
     }
   } finally {
     try {
