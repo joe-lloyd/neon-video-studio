@@ -9,6 +9,7 @@ import type { AiManager } from './ai-manager.ts';
 import type { VoiceRecorder } from './recorder.ts';
 import type { ScreenRecorder } from './screen-recorder.ts';
 import type { HistoryStore } from './history.ts';
+import type { ProxyCache } from './proxies.ts';
 import type { WaveformCache } from './waveforms.ts';
 import type { PackManager } from './packs.ts';
 import type { DesktopRPC } from '../shared/rpc.ts';
@@ -35,6 +36,7 @@ export interface MainContext {
   capture: ScreenRecorder;
   history: HistoryStore;
   waveforms: WaveformCache;
+  proxies: ProxyCache;
   packs: PackManager;
   localPort: number;
   startedAt: number;

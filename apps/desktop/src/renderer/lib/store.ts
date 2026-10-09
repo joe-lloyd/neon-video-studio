@@ -163,6 +163,8 @@ export class Editor {
     packsBusy: false,
   });
   readonly playhead = createStore<PlayheadState>({ frame: 0, playing: false });
+  /** Assets whose preview proxy is ready; the preview plays those instead of the originals. */
+  readonly proxies = createStore<{ ready: string[] }>({ ready: [] });
   /** Set by the Preview component so the editor can drive the Remotion Player. */
   player: { seekTo(frame: number): void; play(): void; pause(): void; toggle(): void; getCurrentFrame(): number } | null = null;
   private teardown: (() => void)[] = [];
@@ -182,6 +184,7 @@ export class Editor {
     this.projectId = bridge.bootstrap.projectId;
     this.ui.set({ room: bridge.bootstrap.room, projectName: bridge.bootstrap.projectName, projectPath: bridge.bootstrap.projectPath });
     this.attachDocument();
+    void bridge.request('getStatus', {}).then((s) => this.proxies.set({ ready: s.proxies.ready }), () => undefined);
     bridge.onMessage({
       renderUpdate: ({ job }) => this.upsertRender(job),
       roomUpdate: ({ room, info }) => {
@@ -201,6 +204,10 @@ export class Editor {
       updateStatus: ({ state }) => this.ui.set({ update: state }),
       packsChanged: ({ packs }) => void this.applyPacks(packs),
       historyChanged: ({ status }) => this.setHistory(status),
+      proxiesChanged: ({ ready }) => {
+        // The HTTP bridge reports on every poll; a new array would remount every video.
+        if (ready.join() !== this.proxies.get().ready.join()) this.proxies.set({ ready });
+      },
       menuAction: ({ action }) => this.handleMenuAction(action),
       activity: ({ entry }) => {
         this.pushActivity(entry);

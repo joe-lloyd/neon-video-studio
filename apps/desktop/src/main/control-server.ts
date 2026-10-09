@@ -320,7 +320,9 @@ async function start(ctx: MainContext, scope: Scope, hostname: string, port: num
 }
 
 async function serveAsset(ctx: MainContext, hash: string, req: Request): Promise<Response> {
-  const file = await ctx.assets.resolveFile(hash);
+  // ?proxy=1 is the editor preview asking for the quick-seek copy; renders never send it.
+  const proxy = new URL(req.url).searchParams.has('proxy') ? ctx.proxies.file(hash) : null;
+  const file = proxy ?? (await ctx.assets.resolveFile(hash));
   if (!file) return new Response('asset not found', { status: 404, headers: CORS });
   const bunFile = Bun.file(file);
   const size = bunFile.size;
@@ -370,6 +372,7 @@ export async function buildStatus(ctx: MainContext): Promise<AppStatus> {
     room: ctx.room.info(),
     renders: ctx.renders.list(),
     headless: ctx.headless,
+    proxies: ctx.proxies.status(),
     capabilities: { ffprobe: await ffprobeAvailable(), node: true, renderRuntime: process.env.NEON_RENDER_RUNTIME === 'node' ? 'node' : `bun ${Bun.version} (bundled)` },
   };
 }

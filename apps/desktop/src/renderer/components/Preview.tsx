@@ -13,6 +13,7 @@ export function Preview() {
   const { project, durationFrames, ready } = useStoreValue(editor.project);
   const previewMuted = useStoreValue(editor.ui).previewMuted;
   const { frame, playing } = useStoreValue(editor.playhead);
+  const proxies = useStoreValue(editor.proxies);
   const [safe, setSafe] = useState(false);
   const playerRef = useRef<PlayerRef>(null);
   // The Player mounts only after the stage has been measured, so track mounting explicitly and
@@ -25,8 +26,8 @@ export function Preview() {
   const [stageRef, stage] = useElementSize<HTMLDivElement>();
 
   const inputProps = useMemo<TimelineProps>(
-    () => ({ project, assetBaseUrl: `http://127.0.0.1:${editor.bridge.bootstrap.port}/assets`, assetQuery: '', render: null }),
-    [project, editor],
+    () => ({ project, assetBaseUrl: `http://127.0.0.1:${editor.bridge.bootstrap.port}/assets`, assetQuery: '', proxies: proxies.ready, render: null }),
+    [project, editor, proxies],
   );
 
   // Fit the composition into the stage while preserving aspect ratio.

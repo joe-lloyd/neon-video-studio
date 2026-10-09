@@ -25,6 +25,7 @@ import { VoiceRecorder } from './recorder.ts';
 import { ScreenRecorder } from './screen-recorder.ts';
 import { ensureRenderRuntime } from './render-runtime.ts';
 import { HistoryStore } from './history.ts';
+import { ProxyCache } from './proxies.ts';
 import { WaveformCache } from './waveforms.ts';
 import { PackManager } from './packs.ts';
 
@@ -72,10 +73,11 @@ export async function bootCore(opts: { headless: boolean }): Promise<Core> {
     isDev: false,
     headless: opts.headless,
     requestExit: null,
-  } as Omit<MainContext, 'assets' | 'capture' | 'renders' | 'sync' | 'room' | 'ai' | 'history' | 'waveforms' | 'packs'> as MainContext;
+  } as Omit<MainContext, 'assets' | 'capture' | 'renders' | 'sync' | 'room' | 'ai' | 'history' | 'waveforms' | 'proxies' | 'packs'> as MainContext;
   ctx.assets = new AssetManager(store, settings.peerId);
   ctx.capture = new ScreenRecorder(ctx);
   ctx.waveforms = new WaveformCache(ctx.assets);
+  ctx.proxies = new ProxyCache(ctx.assets, (ready) => ctx.rpc?.send.proxiesChanged({ ready }));
   ctx.history = new HistoryStore(store);
   await ctx.history.load();
   let examplesDir: string | null = null;
@@ -139,10 +141,12 @@ export async function bootCore(opts: { headless: boolean }): Promise<Core> {
     if (changeTimer) return;
     changeTimer = setTimeout(() => {
       changeTimer = null;
+      ctx.proxies.sync(store.toJSON().assets);
       ctx.events.emit({ type: 'project-changed', durationFrames: store.doc.durationFrames(), clips: store.toJSON().clips.length, updatedAt: new Date().toISOString() });
     }, 250);
   });
   store.on('doc-replaced', async () => {
+    ctx.proxies.sync(store.toJSON().assets);
     await ctx.history.load();
     settings.lastProjectPath = store.dir;
     settings.recent = [store.dir, ...settings.recent.filter((p) => p !== store.dir)].slice(0, 10);
@@ -169,7 +173,8 @@ export async function bootCore(opts: { headless: boolean }): Promise<Core> {
     void clearInstanceInfo(process.pid);
   };
 
-  // Fresh machine? Install the core media engines (ffmpeg/ffprobe, yt-dlp) so everything just works.
-  setTimeout(() => void ctx.ai.autoProvision(), 3000);
+  // Fresh machine? Install the core media engines (ffmpeg/ffprobe, yt-dlp) so everything just works,
+  // then make preview proxies for the project that opened at launch (they need ffmpeg).
+  setTimeout(() => void ctx.ai.autoProvision().then(() => ctx.proxies.sync(store.toJSON().assets)), 3000);
   return { ctx, local, writeInstance, shutdown };
 }

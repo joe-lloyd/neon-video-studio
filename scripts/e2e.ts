@@ -119,10 +119,21 @@ async function main(): Promise<void> {
     log('generated 4 s test clip');
 
     cli('project', 'new', '--name', 'E2E', '--fps', '30', '--width', '1280', '--height', '720');
-    const [imported] = cli<{ asset: { durationFrames: number }; clip: Clip }[]>('assets', 'import', media, '--at', '0');
+    const [imported] = cli<{ asset: { id: string; durationFrames: number }; clip: Clip }[]>('assets', 'import', media, '--at', '0');
     assert(imported, 'import returned one result');
     assert(imported.asset.durationFrames === 120, `probed duration 120 frames, got ${imported.asset.durationFrames}`);
     log('project created, clip imported (120 frames)');
+
+    // The preview plays a quick-seek proxy instead; it must hold the same frames at the same times.
+    const assetId = imported.asset.id;
+    await until('the preview proxy', () => cli<{ proxies: { ready: string[] } }>('status').proxies.ready.includes(assetId), 120_000);
+    const proxy = join(home, 'proxies', `${assetId}.mp4`);
+    const probeLines = (file: string, args: string[]) => spawnSync(tool('ffprobe'), ['-v', 'error', '-select_streams', 'v:0', ...args, '-of', 'csv=p=0', file], { encoding: 'utf8' }).stdout.trim().split(/\s+/).filter(Boolean);
+    const packets = (file: string) => probeLines(file, ['-count_packets', '-show_entries', 'stream=nb_read_packets'])[0];
+    const keyframes = probeLines(proxy, ['-skip_frame', 'nokey', '-show_entries', 'frame=pts_time']).length;
+    assert(packets(proxy) === packets(media), `proxy has ${packets(proxy)} frames, source ${packets(media)}`);
+    assert(keyframes >= 12, `proxy keyframe every 10 frames (12+ in 4 s), got ${keyframes}`);
+    log(`preview proxy matches the source frame for frame (${packets(proxy)} frames, ${keyframes} keyframes)`);
 
     const text = cli<Clip>('timeline', 'insert', '--component', 'TextOverlay', '--props', '{"text":"E2E"}', '--at', '1s', '--duration', '2s');
     assert(text.startFrame === 30 && text.durationFrames === 60, `TextOverlay at 30 for 60, got ${text.startFrame}+${text.durationFrames}`);

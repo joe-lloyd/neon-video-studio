@@ -120,6 +120,8 @@ export interface AppStatus {
   /** Running without a window (`neon-cli serve`): preview/ui commands have no effect. */
   headless: boolean;
   capabilities: { ffprobe: boolean; node: boolean; renderRuntime: string };
+  /** Preview proxies: asset ids with a ready proxy, and how many are still being made. */
+  proxies: { ready: string[]; pending: number };
 }
 
 export interface TemplateInfo {
