@@ -466,3 +466,64 @@ export type BatchOp = z.infer<typeof BatchOpSchema>;
 
 export const BatchRequestSchema = z.object({ ops: z.array(BatchOpSchema).min(1).max(500) });
 export type BatchRequest = z.infer<typeof BatchRequestSchema>;
+
+// ---- screen capture ---------------------------------------------------------------------
+
+/** A rectangle in screen pixels, relative to the captured display's top-left corner. */
+export const CaptureRectSchema = z.object({
+  x: z.number().int().nonnegative(),
+  y: z.number().int().nonnegative(),
+  width: z.number().int().min(16),
+  height: z.number().int().min(16),
+});
+export type CaptureRect = z.infer<typeof CaptureRectSchema>;
+
+/** "x,y,w,h" (the CLI form) or {x, y, width, height}. */
+const CaptureRegionInput = z.preprocess(
+  (v) => {
+    const m = typeof v === 'string' ? /^\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*$/.exec(v) : null;
+    return m ? { x: Number(m[1]), y: Number(m[2]), width: Number(m[3]), height: Number(m[4]) } : v;
+  },
+  z.object(CaptureRectSchema.shape, { error: 'region must be "x,y,width,height" in screen pixels' }),
+);
+
+/** What to record. Displays are numbered from 0 (the primary display). */
+export const CaptureSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('display'), display: z.number().int().nonnegative() }),
+  z.object({ kind: z.literal('region'), display: z.number().int().nonnegative(), rect: CaptureRectSchema }),
+  z.object({ kind: z.literal('window'), title: z.string().min(1) }),
+]);
+export type CaptureSource = z.infer<typeof CaptureSourceSchema>;
+
+/** Which microphone to record alongside the screen. */
+export type CaptureMic = { kind: 'auto' } | { kind: 'none' } | { kind: 'named'; name: string };
+
+/**
+ * POST /api/capture/start. Flat like the CLI flags; parsed into a source + mic choice.
+ * mic: omitted = the default microphone · false = no audio · a name (or part of one) = that device.
+ */
+export const CaptureStartRequestSchema = z
+  .object({
+    display: z.number().int().nonnegative().optional(),
+    region: CaptureRegionInput.optional(),
+    window: z.string().min(1).optional(),
+    fps: z.number().int().min(1).max(120).default(30),
+    mic: z.union([z.string().min(1), z.literal(false)]).optional(),
+    cursor: z.boolean().default(true),
+  })
+  .refine((v) => v.window === undefined || (v.region === undefined && v.display === undefined), { message: 'window cannot be combined with display or region' })
+  .transform((v) => {
+    const display = v.display ?? 0;
+    const source: CaptureSource =
+      v.window !== undefined ? { kind: 'window', title: v.window } : v.region !== undefined ? { kind: 'region', display, rect: v.region } : { kind: 'display', display };
+    const mic: CaptureMic = v.mic === false ? { kind: 'none' } : v.mic === undefined ? { kind: 'auto' } : { kind: 'named', name: v.mic };
+    return { source, mic, fps: v.fps, cursor: v.cursor };
+  });
+export type CaptureStartRequest = z.output<typeof CaptureStartRequestSchema>;
+
+/** POST /api/capture/stop. Default placement: appended to the end of the first video track. */
+export const CaptureStopRequestSchema = z.object({
+  at: TimeExpr.optional(),
+  /** Track id, name or id prefix. */
+  track: z.string().min(1).optional(),
+});
