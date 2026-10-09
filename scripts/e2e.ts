@@ -10,7 +10,7 @@
  * --no-render  skip the export step (for machines where Remotion's compositor cannot run)
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,18 +28,36 @@ function log(message: string): void {
   process.stdout.write(`[e2e ${String(++step).padStart(2, '0')}] ${message}\n`);
 }
 
-/** Run a CLI command with --json and return `data`; throws with the CLI's error on failure. */
-function cli<T = unknown>(...args: string[]): T {
+interface Envelope<T> { ok: boolean; data?: T; error?: { code: string; message: string }; failedAt?: number; results?: unknown[] }
+
+/** Run a CLI command with --json and return its parsed output and exit code. */
+function run<T>(args: string[]): { status: number | null; parsed: Envelope<T> } {
   const r = spawnSync(process.execPath, [CLI, ...args, '--json'], { env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   const line = r.stdout.trim().split('\n').filter(Boolean).join('\n');
-  let parsed: { ok: boolean; data?: T; error?: { code: string; message: string } };
   try {
-    parsed = JSON.parse(line) as typeof parsed;
+    return { status: r.status, parsed: JSON.parse(line) as Envelope<T> };
   } catch {
     throw new Error(`neon-cli ${args.join(' ')} → exit ${r.status}, not JSON:\n${r.stdout}\n${r.stderr}`);
   }
+}
+
+/** Run a CLI command with --json and return `data`; throws with the CLI's error on failure. */
+function cli<T = unknown>(...args: string[]): T {
+  const { parsed } = run<T>(args);
   if (!parsed.ok) throw new Error(`neon-cli ${args.join(' ')} → ${parsed.error?.code}: ${parsed.error?.message}`);
   return parsed.data as T;
+}
+
+/** Run a CLI command that must fail: returns the failure envelope (exit 1 + ok:false). */
+function cliFails(...args: string[]): Envelope<never> {
+  const { status, parsed } = run<never>(args);
+  if (parsed.ok || status !== 1) throw new Error(`neon-cli ${args.join(' ')} should fail with exit 1, got exit ${status}: ${JSON.stringify(parsed)}`);
+  return parsed;
+}
+
+/** JSON with sorted object keys, to compare project documents. */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v));
 }
 
 function assert(cond: unknown, message: string): asserts cond {
@@ -73,6 +91,19 @@ function png(file: string): { width: number; height: number; bytes: number } {
 
 async function main(): Promise<void> {
   log(`NEON_HOME=${home}`);
+
+  // The agent surface that needs no app: the route catalogue and plan checks.
+  const routes = cli<{ route: string; method: string; body?: unknown }[]>('schema');
+  assert(routes.some((r) => r.route === '/api/batch' && r.body) && routes.length > 40, `schema lists the routes offline, got ${routes.length}`);
+  const ops = [
+    { route: '/api/timeline/insert', body: { kind: 'component', componentName: 'TextOverlay', props: { text: 'Batch' }, at: 0, duration: '1s' } },
+    { route: '/api/timeline/update', body: { id: '$0.id', patch: { name: 'Batched title' } } },
+  ];
+  const plan = join(home, 'plan.json');
+  writeFileSync(plan, JSON.stringify(ops));
+  cli('apply', plan, '--dry-run');
+  log(`schema lists ${routes.length} routes and apply --dry-run checks a plan, both without the app`);
+
   const served = cli<{ endpoint: string; pid: number }>('serve', '--detach');
   log(`headless app up on ${served.endpoint} (pid ${served.pid})`);
   try {
@@ -115,6 +146,27 @@ async function main(): Promise<void> {
     const zoomed = cli<Clip & { zooms?: { start: number; end: number; zoom: number }[] }>('zoom', 'add', fast.id, '--from', '0', '--to', '15f', '--center', '0.25,0.25', '--zoom', '2');
     assert(zoomed.zooms?.length === 1 && zoomed.zooms[0]!.start === 0 && zoomed.zooms[0]!.end === 30, `zoom stored in source frames 0–30, got ${JSON.stringify(zoomed.zooms)}`);
     log('zoom added (stored as source frames 0–30)');
+
+    // apply: a plan is one unit. A failing op rolls back the ops before it.
+    const before = canonical(cli<{ project: unknown }>('state', 'dump').project);
+    writeFileSync(plan, JSON.stringify({ ops: [...ops, { route: '/api/timeline/update', body: { id: 'clip_missing', patch: { name: 'never' } } }] }));
+    const failed = cliFails('apply', plan);
+    assert(failed.failedAt === 2 && failed.results?.length === 2 && failed.error?.code === 'NOT_FOUND', `third op fails after two ran: ${JSON.stringify(failed)}`);
+    assert(canonical(cli<{ project: unknown }>('state', 'dump').project) === before, 'the failed batch left the project unchanged');
+    log('apply: the failing third op rolled back the first two');
+
+    writeFileSync(plan, JSON.stringify(ops));
+    const applied = cli<{ results: (Clip & { name: string })[] }>('apply', plan);
+    const [inserted, renamed] = applied.results;
+    assert(inserted && renamed && renamed.id === inserted.id && renamed.name === 'Batched title', `"$0.id" reached op 1: ${JSON.stringify(applied.results)}`);
+    const view = cli<{ tracks: { name: string; items: { type: string; id?: string; name?: string; component?: string; start: number; end: number }[] }[] }>('timeline', 'show');
+    const shown = view.tracks.flatMap((t) => t.items).find((i) => i.id === renamed.id);
+    assert(shown?.name === 'Batched title' && shown.component === 'TextOverlay' && shown.start === 0 && shown.end === 30, `timeline show lists the batched clip: ${JSON.stringify(shown)}`);
+    log('apply: a valid plan landed and timeline show reflects it');
+
+    cli('history', 'undo');
+    assert(canonical(cli<{ project: unknown }>('state', 'dump').project) === before, 'one history undo reverts the whole batch');
+    log('history undo reverted the batch in one step');
 
     if (!opts['no-render']) {
       const out = join(home, 'e2e.mp4');
