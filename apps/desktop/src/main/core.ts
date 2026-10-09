@@ -29,7 +29,7 @@ import { ProxyCache } from './proxies.ts';
 import { WaveformCache } from './waveforms.ts';
 import { PackManager } from './packs.ts';
 
-export const VERSION = '0.8.3';
+export const VERSION = '0.9.0';
 
 export interface Core {
   ctx: MainContext;
