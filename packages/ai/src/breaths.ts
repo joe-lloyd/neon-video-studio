@@ -29,47 +29,22 @@ export async function analyseBreaths(ffmpeg: string, file: string): Promise<Brea
 }
 
 /**
- * Build clip-local volume keyframes that dip by `reductionDb` over each breath, with 40 ms ramps.
- * Existing keyframes are replaced (this is the whole envelope for the clip).
+ * Dip source-time segments of a clip's volume envelope to `gain` times the level already there (0
+ * mutes), with 40 ms ramps. Keyframes inside a span are replaced and the envelope outside the spans
+ * is kept, so dips compose: breaths softened after fillers were muted leave the mutes in place.
  */
-export function breathKeyframes(
-  breaths: Segment[],
-  clip: { trimBefore: number; durationFrames: number; speed?: number },
-  fps: number,
-  reductionDb: number,
-): VolumeKeyframe[] {
-  const gain = Math.pow(10, -Math.abs(reductionDb) / 20);
-  const ramp = Math.max(1, Math.round(fps * 0.04));
-  const kfs: VolumeKeyframe[] = [];
-  for (const b of breaths) {
-    const local = sourceSecondsToLocal(clip, b.start, b.end, fps);
-    if (!local) continue;
-    const a = local.start;
-    const z = local.end;
-    kfs.push({ frame: Math.max(0, a - ramp), gain: 1 }, { frame: a, gain }, { frame: z, gain }, { frame: Math.min(clip.durationFrames, z + ramp), gain: 1 });
-  }
-  // Sort and de-duplicate frames (later wins), keep unity at both ends.
-  const map = new Map<number, number>();
-  map.set(0, 1);
-  for (const k of kfs) map.set(k.frame, k.gain);
-  map.set(clip.durationFrames, 1);
-  return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([frame, g]) => ({ frame, gain: g }));
-}
-
-/**
- * Merge full-mute spans into a clip's existing volume envelope: each source-time segment drops the
- * gain to 0 with 40 ms ramps, keyframes previously inside the span are removed, and the envelope
- * outside the spans is preserved (sampled at the ramp edges). Used by audio-only word cuts.
- */
-export function muteRangeKeyframes(
+export function dipKeyframes(
   existing: VolumeKeyframe[] | undefined,
   segments: Segment[],
   clip: { trimBefore: number; durationFrames: number; speed?: number },
   fps: number,
+  gain: number,
 ): VolumeKeyframe[] {
   const ramp = Math.max(1, Math.round(fps * 0.04));
   const pts = new Map<number, number>();
   for (const k of existing ?? []) pts.set(k.frame, k.gain);
+  const envelope = (): VolumeKeyframe[] => [...pts.entries()].sort((x, y) => x[0] - y[0]).map(([frame, g]) => ({ frame, gain: g }));
+  const level = (frame: number) => volumeAt(envelope(), frame);
   for (const seg of segments) {
     const local = sourceSecondsToLocal(clip, seg.start, seg.end, fps);
     if (!local) continue;
@@ -77,14 +52,15 @@ export function muteRangeKeyframes(
     const z = local.end;
     const rampIn = Math.max(0, a - ramp);
     const rampOut = Math.min(clip.durationFrames, z + ramp);
-    const gainIn = volumeAt(existing, rampIn);
-    const gainOut = volumeAt(existing, rampOut);
+    const gainIn = level(rampIn);
+    const gainOut = level(rampOut);
+    const inside = Math.min(level(a), level((a + z) / 2), level(z)) * gain;
     for (const f of [...pts.keys()]) if (f >= rampIn && f <= rampOut) pts.delete(f);
     pts.set(rampIn, gainIn);
-    pts.set(a, 0);
-    pts.set(z, 0);
+    pts.set(a, inside);
+    pts.set(z, inside);
     pts.set(rampOut, gainOut);
   }
-  if (!pts.has(0)) pts.set(0, volumeAt(existing, 0));
-  return [...pts.entries()].sort((x, y) => x[0] - y[0]).map(([frame, gain]) => ({ frame, gain }));
+  if (!pts.has(0)) pts.set(0, level(0));
+  return envelope();
 }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { repairTimestamps, wordsFromWhisperJson } from '../src/transcribe.ts';
 import { DEFAULT_FILLERS, fillerRanges, markFillers } from '../src/fillers.ts';
 import { planSilenceCuts } from '../src/silence.ts';
-import { breathKeyframes } from '../src/breaths.ts';
+import { dipKeyframes } from '../src/breaths.ts';
 import { energyVad, frameEnergies, type Pcm } from '../src/pcm.ts';
 import { extractConcepts, matchAssetsHeuristic } from '../src/broll.ts';
 import { parseAspect, reframeFromTrack, smoothTrack } from '../src/reframe.ts';
@@ -69,11 +69,20 @@ test('energy VAD separates tone from silence', () => {
 });
 
 test('breath keyframes dip and recover', () => {
-  const kfs = breathKeyframes([{ start: 1.0, end: 1.3 }], { trimBefore: 0, durationFrames: 90 }, 30, 15);
+  const kfs = dipKeyframes(undefined, [{ start: 1.0, end: 1.3 }], { trimBefore: 0, durationFrames: 90 }, 30, Math.pow(10, -15 / 20));
   assert.equal(kfs[0]!.gain, 1);
   const dip = kfs.find((k) => k.frame === 30)!;
   assert.ok(Math.abs(dip.gain - Math.pow(10, -15 / 20)) < 1e-6);
-  assert.equal(kfs[kfs.length - 1]!.frame, 90);
+  assert.equal(kfs.find((k) => k.frame === 40)!.gain, 1);
+});
+
+test('a breath dip keeps the fillers muted earlier', () => {
+  const clip = { trimBefore: 0, durationFrames: 300 };
+  const muted = dipKeyframes(undefined, [{ start: 1.0, end: 1.5 }], clip, 30, 0);
+  const both = dipKeyframes(muted, [{ start: 5.0, end: 5.3 }], clip, 30, 0.2);
+  assert.equal(both.find((k) => k.frame === 30)!.gain, 0);
+  assert.equal(both.find((k) => k.frame === 45)!.gain, 0);
+  assert.ok(Math.abs(both.find((k) => k.frame === 150)!.gain - 0.2) < 1e-6);
 });
 
 test('b-roll concepts and heuristic matching', () => {

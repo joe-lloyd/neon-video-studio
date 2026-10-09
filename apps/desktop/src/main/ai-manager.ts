@@ -35,8 +35,7 @@ import {
   ffmpegNeedsInstall,
   planPacing,
   type PaceAction,
-  breathKeyframes,
-  muteRangeKeyframes,
+  dipKeyframes,
   chooseDenoiseEngine,
   chromaMatte,
   denoise,
@@ -219,7 +218,7 @@ export class AiManager {
     const doc = this.ctx.store.doc;
     let updated = 0;
     for (const clip of clips) {
-      const kfs = muteRangeKeyframes(clip.volumeKeyframes, segments, clip, doc.fps);
+      const kfs = dipKeyframes(clip.volumeKeyframes, segments, clip, doc.fps, 0);
       // Skip clips the segments never touch (their envelope is unchanged apart from a seed point).
       if (kfs.some((k) => k.gain === 0)) {
         doc.updateClip(clip.id, { volumeKeyframes: kfs }, ORIGIN_API);
@@ -373,9 +372,9 @@ export class AiManager {
     const reductionDb = Number(params.reductionDb ?? 15);
     let applied = 0;
     if (params.apply !== false) {
-      for (const clip of target.clips) {
-        const kfs = breathKeyframes(analysis.breaths, clip, fps, reductionDb);
-        this.ctx.store.doc.updateClip(clip.id, { volumeKeyframes: kfs.length > 2 ? kfs : null }, ORIGIN_API);
+      const gain = Math.pow(10, -Math.abs(reductionDb) / 20);
+      for (const clip of analysis.breaths.length ? target.clips : []) {
+        this.ctx.store.doc.updateClip(clip.id, { volumeKeyframes: dipKeyframes(clip.volumeKeyframes, analysis.breaths, clip, fps, gain) }, ORIGIN_API);
         applied++;
       }
     }
