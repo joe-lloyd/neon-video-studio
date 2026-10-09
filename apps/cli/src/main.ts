@@ -20,6 +20,7 @@ import { describeStill, stillCommand } from './stills.ts';
 import { closest, helpCommands, usageLines } from './usage.ts';
 import { batchFailure, formatApplied, formatPlanCheck, loadPlan, readJsonArg } from './apply.ts';
 import { formatTimeline, timelineView } from './timeline-view.ts';
+import { captionsCommand } from './captions.ts';
 
 const HELP = `neon-cli — Neon Video Studio control
 
@@ -68,6 +69,8 @@ COMMANDS
   timeline speed <clip> <rate> [--from T --to T]   Re-time a clip or part of it (4 = 4× faster; audio silent above 2×); later clips ripple
   zoom add <clip> --from T --to T [--center cx,cy] [--zoom 2] [--ramp 0.5s]   Ease in to a zoomed area, hold, ease out (cx,cy = 0..1 of the picture)
   zoom list <clip> | zoom clear <clip> [n]
+  captions add [--track REF] [--style karaoke|block] [--source A1,V1]   Burn in captions from the transcripts (CC track, whole timeline; rerun after edits)
+  captions srt|vtt [--out file] [--source A1,V1]   Subtitle file of what is said on the timeline now (stdout without --out)
   timeline update <clip> --pos 0.5,0.3 --scale 0.6 --rotation -15 --in pop:12 --out fade:10   Canvas placement + enter/exit animation
   record start | record stop [--at T]     Record a mic voice-over in the app (take lands on the VO track)
   rip <url> [--quality 1080|720|best|audio] [--at T]   Download a YouTube/web video into the media library (yt-dlp)
@@ -198,6 +201,8 @@ const { values: flags, positionals } = parseCli(() => parseArgs({
     breaths: { type: 'boolean', default: true },
     denoise: { type: 'boolean' },
     'dry-run': { type: 'boolean', default: false },
+    style: { type: 'string' },
+    source: { type: 'string' },
   },
 }));
 
@@ -861,6 +866,12 @@ async function main(): Promise<void> {
         const c = await api.update(target.id, { zooms: keep.length ? keep : null });
         out(c, () => `${rest[1] === undefined ? 'Cleared all zooms' : `Removed zoom ${rest[1]}`} on “${c.name}”`);
       }
+      return;
+    }
+
+    case 'captions': {
+      const r = await captionsCommand(api, sub, flags);
+      out(r.data, () => r.text);
       return;
     }
 
