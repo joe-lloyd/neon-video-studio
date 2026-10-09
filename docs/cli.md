@@ -190,6 +190,37 @@ neon-cli ai jobs · ai job <id> · ai cancel <id>
 AI jobs run in the app; the CLI shows a live progress bar (skip with `--no-wait`). Denoise,
 enhance and matte create **new assets** (`derivedFrom` links the original, which stays in Media).
 
+## Captions
+
+Captions come from the word-level transcripts (`ai transcribe`). Transcripts stay in source time,
+so captions are worked out from the current timeline every time they are shown or exported. They
+follow cuts, filler and silence removal, splits and speed changes without being re-made.
+
+```bash
+neon-cli captions add [--track REF] [--style karaoke|block] [--source A1,V1]
+    # burn-in: one Captions clip from 0 to the end of the timeline, on the "CC" overlay track
+    # (created if missing) unless --track names another overlay track.
+    # Running it again replaces the Captions clips on that track and keeps their style.
+neon-cli captions srt [--out talk.srt] [--source A1,V1]   # SubRip file of what is said on the timeline now
+neon-cli captions vtt [--out talk.vtt] [--source A1,V1]   # WebVTT; both print to stdout without --out
+```
+
+- `--source` picks the tracks to caption by name (default: every audio and video track).
+  Exports without `--source` use the burned-in clip's choice, so the file matches the video.
+- Only words you can hear are captioned. Fillers (`um`, `uh`) are dropped. So are words on hidden
+  or muted tracks, in clips at volume 0 (a video whose audio was detached), in clips above 2×
+  (their audio is silent), and words muted with `ai cut --audio-only`.
+- A clip of a denoised or enhanced asset uses the original's transcript (`derivedFrom`).
+- Cues hold up to `maxWords` words (default 6). A cue ends at a sentence end, at a pause over
+  0.6 s, or at a comma once it is half full.
+- Style the burned-in captions with `timeline update <clip> --props '{…}'` or in the Inspector:
+  `style` (`karaoke` lights the word being spoken, `block` shows plain text), `position`
+  (`bottom`, `top`, `middle`), `fontSize` (pixels at 1080p), `maxWords`, `color`,
+  `highlightColor`, `background` (box on or off), `backgroundColor`, `tracks`.
+- Run `captions add` last, or again after `timeline speed`. Cuts shorten the Captions clip along
+  with everything else. A slow-down makes the timeline longer than the clip, and a speed-up leaves
+  the clip running past the end of the video.
+
 ## Rendering
 
 ```bash
@@ -290,6 +321,10 @@ neon-cli render --output final.mp4 --preset 1080p30
 # Text-driven edit:
 neon-cli ai transcript talk.mp4         # note the word indexes
 neon-cli ai cut talk.mp4 33 35          # delete words 33–35 from the video
+
+# Captions after the edit (burned in + a sidecar file):
+neon-cli captions add --style karaoke
+neon-cli captions srt --out final.srt
 
 # Exit codes: 0 success · 1 any error (with --json the error object is on stdout).
 ```
