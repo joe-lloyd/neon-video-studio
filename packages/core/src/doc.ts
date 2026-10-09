@@ -587,6 +587,13 @@ export class ProjectDoc {
         // Process in the direction of travel so shifted clips never pass each other.
         const later = this.toJSON().clips.filter((c) => c.id !== targetId && c.startFrame >= oldEnd).sort((a, b) => (delta > 0 ? b.startFrame - a.startFrame : a.startFrame - b.startFrame));
         for (const c of later) this.clips.get(c.id)!.set('startFrame', c.startFrame + delta);
+        // Overlays that span the old end (captions, a watermark) keep ending with the edit. Media is
+        // left alone: lengthening it would show more of its source, not stretch it.
+        for (const c of this.toJSON().clips) {
+          if (c.kind === 'component' && c.trackId !== target.trackId && c.startFrame < oldEnd && clipEnd(c) > oldEnd) {
+            this.clips.get(c.id)!.set('durationFrames', Math.max(1, c.durationFrames + delta));
+          }
+        }
       }
       this.touch();
       return mapToClip(m) as MediaClip;

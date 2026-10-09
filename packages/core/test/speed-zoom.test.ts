@@ -99,3 +99,14 @@ test('zoom regions are anchored to the source, so a split keeps them', () => {
   const [, right] = doc.splitClip(a.id, 50);
   assert.equal(right.kind !== 'component' && right.zooms?.length, 1);
 });
+
+test('an overlay spanning the re-timed clip (captions, watermark) keeps ending with the edit', () => {
+  const { doc, assetId } = project();
+  const a = doc.insertClip({ kind: 'video', assetId, startFrame: 0, durationFrames: 120 });
+  const tail = doc.insertClip({ kind: 'video', assetId, startFrame: 120, durationFrames: 30, placement: 'overlap' });
+  const mark = doc.insertClip({ kind: 'component', componentName: 'Watermark', startFrame: 0, durationFrames: 150 });
+  doc.setClipSpeed(a.id, 2);
+  assert.deepEqual([doc.getClip(tail.id)?.startFrame, doc.getClip(mark.id)?.durationFrames], [60, 90]);
+  doc.setClipSpeed(a.id, 0.5);
+  assert.deepEqual([doc.getClip(tail.id)?.startFrame, doc.getClip(mark.id)?.durationFrames], [240, 270]);
+});
