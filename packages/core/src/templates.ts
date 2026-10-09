@@ -115,7 +115,7 @@ export type TemplateField =
   | { key: string; type: 'number'; label?: string; default: number; min?: number; max?: number; step?: number; description?: string }
   | { key: string; type: 'color'; label?: string; default: string; description?: string }
   | { key: string; type: 'boolean'; label?: string; default: boolean; description?: string }
-  | { key: string; type: 'select'; label?: string; default: string; options: string[]; description?: string };
+  | { key: string; type: 'select'; label?: string; default: string; options: readonly string[]; description?: string };
 
 export interface TemplatePackMeta {
   /** Unique template name (also the React component key), e.g. "NeonBadge". */
@@ -123,39 +123,63 @@ export interface TemplatePackMeta {
   label: string;
   description: string;
   defaultDurationSeconds: number;
-  fields: TemplateField[];
+  fields: readonly TemplateField[];
   category?: string;
   tags?: string[];
   icon?: string;
   previewProps?: Record<string, unknown>;
 }
 
-export function schemaFromFields(fields: TemplateField[]): z.ZodObject {
+export function schemaFromFields(fields: readonly TemplateField[]): z.ZodObject {
   const shape: Record<string, z.ZodType> = {};
   for (const f of fields) {
-    switch (f.type) {
-      case 'text':
-        shape[f.key] = z.string().default(f.default);
-        break;
-      case 'number': {
-        let n = z.number();
-        if (f.min !== undefined) n = n.min(f.min);
-        if (f.max !== undefined) n = n.max(f.max);
-        shape[f.key] = n.default(f.default);
-        break;
-      }
-      case 'color':
-        shape[f.key] = z.string().min(1).default(f.default);
-        break;
-      case 'boolean':
-        shape[f.key] = z.boolean().default(f.default);
-        break;
-      case 'select':
-        shape[f.key] = z.enum(f.options as [string, ...string[]]).default(f.default);
-        break;
-    }
+    const schema = fieldSchema(f);
+    shape[f.key] = f.description ? schema.describe(f.description) : schema;
   }
   return z.object(shape);
+}
+
+function fieldSchema(f: TemplateField): z.ZodType {
+  switch (f.type) {
+    case 'text':
+      return z.string().default(f.default);
+    case 'number': {
+      let n = z.number();
+      if (f.min !== undefined) n = n.min(f.min);
+      if (f.max !== undefined) n = n.max(f.max);
+      return n.default(f.default);
+    }
+    case 'color':
+      return z.string().min(1).default(f.default);
+    case 'boolean':
+      return z.boolean().default(f.default);
+    case 'select':
+      return z.enum(f.options as [string, ...string[]]).default(f.default);
+  }
+}
+
+/** The value a field's prop holds once validated: select fields narrow to their options. */
+type FieldValue<F extends TemplateField> = F extends { type: 'number' }
+  ? number
+  : F extends { type: 'boolean' }
+    ? boolean
+    : F extends { type: 'select'; options: readonly (infer O extends string)[] }
+      ? O
+      : string;
+
+/** Validated props of a template declared with defineTemplate(), derived from its fields. */
+export type TemplateProps<T extends { fields: readonly TemplateField[] }> = {
+  [F in T['fields'][number] as F['key']]: FieldValue<F>;
+};
+
+/**
+ * Declare a pack template with literal field types so a component can type its props as
+ * `TemplateProps<typeof MY_TEMPLATE>` instead of restating them by hand.
+ */
+export function defineTemplate<const F extends readonly TemplateField[]>(
+  template: Omit<TemplatePackMeta, 'fields'> & { fields: F },
+): TemplatePackMeta & { fields: F } {
+  return template;
 }
 
 const EXTRA_TEMPLATES = new Map<string, ComponentTemplate>();
