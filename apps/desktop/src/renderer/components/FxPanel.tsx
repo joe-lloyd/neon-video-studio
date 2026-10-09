@@ -26,6 +26,11 @@ import {
   Layers,
   Loader2,
   MessageSquareText,
+  Focus,
+  SquareDashed,
+  Keyboard,
+  ListOrdered,
+  MousePointerClick,
   Music,
   NeonIcon,
   PaintBucket,
@@ -47,6 +52,7 @@ import { useSelector, useStoreValue } from '../lib/store.ts';
 
 const ICONS: Record<string, LucideIcon> = {
   Type, Clapperboard, Layers, Timer, BarChart3, Stamp, PaintBucket, Tag, Flower2, Loader2, Sparkles, Hash, CircleDot, Wind, Film, Music, Image: ImageIcon, Captions, Crop, Brain, MessageSquareText, Radio,
+  Focus, SquareDashed, Keyboard, ListOrdered, MousePointerClick,
 };
 
 const PREVIEW_FPS = 30;

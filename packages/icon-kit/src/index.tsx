@@ -69,6 +69,11 @@ export {
   Flower2,
   Brain,
   MessageSquareText,
+  Focus,
+  SquareDashed,
+  Keyboard,
+  ListOrdered,
+  MousePointerClick,
 } from 'lucide-react';
 
 export type NeonTone = 'magenta' | 'cyan' | 'green' | 'amber' | 'red' | 'muted' | 'white';
