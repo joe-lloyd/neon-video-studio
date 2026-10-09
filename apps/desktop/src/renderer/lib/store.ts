@@ -190,7 +190,8 @@ export class Editor {
         this.refreshUndoState();
       },
       projectOpened: ({ projectId, name, path }) => {
-        this.ui.set({ projectName: name, projectPath: path, selection: [] });
+        // A project opened from the CLI or an agent: close the start page so the edit is visible.
+        this.ui.set({ projectName: name, projectPath: path, selection: [], showStart: false });
         if (projectId !== this.projectId) {
           this.projectId = projectId;
           this.attachDocument();
