@@ -8,9 +8,12 @@ import {
   listTemplates,
   parseTimecode,
   templateJsonSchema,
+  timelineFrameAt,
   type Asset,
   type Clip,
+  type MediaClip,
   type RenderJob,
+  type ZoomRegion,
 } from '@neon/core';
 import {
   Check,
@@ -358,6 +361,17 @@ function InspectorPanel() {
               <TimecodeField label="Fade in" frames={clip.fadeIn} fps={fps} onChange={(f) => editor.updateClip(clip.id, { fadeIn: f })} />
               <TimecodeField label="Fade out" frames={clip.fadeOut} fps={fps} onChange={(f) => editor.updateClip(clip.id, { fadeOut: f })} />
             </div>
+            {clip.kind !== 'image' ? (
+              <div className="field">
+                <label>Speed{(clip.speed ?? 1) > 2 ? ' · audio silent above 2×' : ''}</label>
+                <select className="select" value={String(clip.speed ?? 1)} onChange={(e) => editor.setClipSpeed(clip.id, Number(e.target.value))}>
+                  {[...new Set([0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8, 12, 16, clip.speed ?? 1])].sort((a, b) => a - b).map((s) => (
+                    <option key={s} value={String(s)}>{s}×</option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            {clip.kind !== 'audio' ? <ZoomList clip={clip} fps={fps} /> : null}
             {asset ? (
               <p className="hint mono" style={{ wordBreak: 'break-all' }}>
                 {asset.name} · {asset.width ? `${asset.width}×${asset.height} · ` : ''}{asset.durationFrames ? formatDuration(asset.durationFrames, fps) : ''}
@@ -407,6 +421,34 @@ function InspectorPanel() {
         </div>
       </div>
     </>
+  );
+}
+
+function ZoomList({ clip, fps }: { clip: MediaClip; fps: number }) {
+  const editor = useEditor();
+  const zooms = clip.zooms ?? [];
+  const patch = (i: number, change: Partial<ZoomRegion>) => editor.updateClip(clip.id, { zooms: zooms.map((z, k) => (k === i ? { ...z, ...change } : z)) });
+  const tc = (sourceFrame: number) => {
+    const f = timelineFrameAt(clip, sourceFrame);
+    return f === null ? 'cut' : framesToTimecode(f, fps);
+  };
+  return (
+    <div className="field">
+      <label>
+        Zoom {zooms.length ? `· ${zooms.length}` : ''}
+        <button className="btn sm ghost" title="Add a 2× zoom at the playhead" onClick={() => editor.addZoomAtPlayhead(clip.id)}>+ at playhead</button>
+      </label>
+      {zooms.map((z, i) => (
+        <div key={`${z.start}-${i}`} className="zoom-row">
+          <button className="btn sm ghost mono" title="Jump to this zoom" onClick={() => { const f = timelineFrameAt(clip, z.start); if (f !== null) editor.seek(f); }}>{tc(z.start)}</button>
+          <input className="input mono" type="number" min={1} max={8} step={0.25} value={z.zoom} title="Zoom factor" onChange={(e) => patch(i, { zoom: Math.min(8, Math.max(1, Number(e.target.value))) })} />
+          <input className="input mono" type="number" min={0} max={100} step={1} value={Math.round(z.cx * 100)} title="Centre X %" onChange={(e) => patch(i, { cx: Math.min(1, Math.max(0, Number(e.target.value) / 100)) })} />
+          <input className="input mono" type="number" min={0} max={100} step={1} value={Math.round(z.cy * 100)} title="Centre Y %" onChange={(e) => patch(i, { cy: Math.min(1, Math.max(0, Number(e.target.value) / 100)) })} />
+          <button className="btn sm ghost" title="Remove zoom" onClick={() => editor.updateClip(clip.id, { zooms: zooms.length > 1 ? zooms.filter((_, k) => k !== i) : null })}>✕</button>
+        </div>
+      ))}
+      {zooms.length ? <p className="hint">Factor · centre X% · centre Y%. Zooms ease in and out and follow their moment through cuts.</p> : null}
+    </div>
   );
 }
 

@@ -150,6 +150,9 @@ input, select, textarea { user-select: text; }
 .row { display: flex; align-items: center; gap: 8px; }
 .row.between { justify-content: space-between; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.zoom-row { display: grid; grid-template-columns: auto 1fr 1fr 1fr auto; gap: 4px; align-items: center; margin-top: 4px; }
+.zoom-row .input { min-width: 0; padding-left: 6px; padding-right: 4px; }
+.field label .btn { margin-left: 6px; text-transform: none; letter-spacing: 0; }
 
 /* ---- panels ------------------------------------------------------------------------- */
 .panel {

@@ -45,6 +45,26 @@ function collectPaintedRects(wrapper: HTMLElement): DOMRect[] {
     const cs = getComputedStyle(el);
     if (cs.display === 'none' || cs.visibility === 'hidden') return;
     const tag = el.tagName;
+    if (el instanceof HTMLElement && el.dataset.camera !== undefined) {
+      // A zoom is framing inside the clip, not its placement: measure the picture as if unzoomed by
+      // undoing the camera's scale(z)·translate(t) around the clip's centre.
+      const m = cs.transform && cs.transform !== 'none' ? new DOMMatrixReadOnly(cs.transform) : null;
+      const box = el.parentElement?.getBoundingClientRect();
+      const inner = collectPaintedRects(el);
+      if (!m || !box || el.offsetWidth === 0 || m.a === 0) {
+        inner.forEach(push);
+        return;
+      }
+      const k = box.width / el.offsetWidth;
+      const cx = box.x + box.width / 2;
+      const cy = box.y + box.height / 2;
+      for (const r of inner) {
+        const x0 = cx + (r.x - cx - m.e * k) / m.a;
+        const y0 = cy + (r.y - cy - m.f * k) / m.d;
+        push(new DOMRect(x0, y0, r.width / m.a, r.height / m.d));
+      }
+      return;
+    }
     if (tag === 'IMG' || tag === 'VIDEO') {
       const r = el.getBoundingClientRect();
       const nat = tag === 'IMG'
