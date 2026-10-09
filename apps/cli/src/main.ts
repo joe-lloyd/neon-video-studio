@@ -22,6 +22,10 @@ import { batchFailure, formatApplied, formatPlanCheck, loadPlan, readJsonArg } f
 import { formatTimeline, timelineView } from './timeline-view.ts';
 import { captionsCommand } from './captions.ts';
 import { captureCommand } from './capture.ts';
+import { connectRemote, disconnectRemote, downloadOutput, launchRemote, remoteHost, uploadAsset } from './remote.ts';
+import { existsSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { neonHome } from '@neon/core/node';
 
 const HELP = `neon-cli — Neon Video Studio control
 
@@ -35,6 +39,8 @@ AGENT (start here: docs/cli.md "Agent quickstart")
   apply <plan.json|-> [--dry-run]         Run [{route, body}] ops as one undo step; "$0.id" = op 0's result; a failure rolls back
 
 COMMANDS
+  launch --on HOST                        Start the desktop app on HOST (in its signed-in desktop session) and connect
+  disconnect HOST                         Close the SSH tunnel to HOST
   serve [--project <dir>] [--detach]    Run the app headless (no window) so the CLI works without the GUI
   stop                                    Stop a headless instance
   status                                  App, project, room and render status
@@ -57,7 +63,7 @@ COMMANDS
   tracks remove <track>
   assets import <file...> [--at T] [--track REF]
   assets remove <ref>
-  render --output out.mp4 [--preset ID] [--from T] [--to T] [--no-wait]
+  render --output out.mp4 [--preset ID] [--from T] [--to T] [--no-wait] [--fetch [--out local.mp4]]   (--fetch: copy a remote render here)
   render --headless --project <dir> --output out.mp4 [--preset ID]
   render status <jobId> | render cancel <jobId>
   still --at T [--out f.png] [--width 1280]   One frame as a PNG (default <NEON_HOME>/stills/), to check an edit by eye
@@ -120,6 +126,7 @@ GLOBAL OPTIONS
   --json                Machine-readable output ({ok, data|error})
   --endpoint URL        Override control API endpoint (default: from ~/.neon-video/instance.json)
   --token TOKEN         Override API token
+  --on HOST             Drive the app on another machine through an SSH tunnel (or NEON_HOST=HOST)
   -h, --help
 `;
 
@@ -171,6 +178,8 @@ const { values: flags, positionals } = parseCli(() => parseArgs({
     'host-url': { type: 'string' },
     history: { type: 'string' },
     detach: { type: 'boolean', default: false },
+    on: { type: 'string' },
+    fetch: { type: 'boolean', default: false },
     zoom: { type: 'string' },
     center: { type: 'string' },
     rate: { type: 'string' },
@@ -290,8 +299,17 @@ function num(raw: string | undefined): number | undefined {
   return n;
 }
 
+/** The app on another machine (--on host / NEON_HOST), reached through an SSH tunnel. */
+const remote = remoteHost(flags.on);
+
+/** Paths the app reads or writes: resolved here when the app is local, passed through as-is to a remote app. */
+function appPath(path: string): string {
+  return remote ? path : resolve(path);
+}
+
 async function client(): Promise<NeonClient> {
   try {
+    if (remote && !flags.endpoint) return new NeonClient(await connectRemote(remote));
     return new NeonClient(await discoverClient({ endpoint: flags.endpoint, token: flags.token }));
   } catch (err) {
     // A mistyped command deserves a suggestion, not "start the app". (With the app up, the switch's default answers.)
@@ -358,6 +376,17 @@ async function main(): Promise<void> {
 
   // PNG stills and contact sheets (through the app, or --headless from a project directory).
   if (cmd === 'still' || cmd === 'sheet') {
+    if (remote && !flags.headless) {
+      // The PNG is rendered on the remote machine, then copied here so it can be looked at.
+      const local = resolve(flags.out ?? flags.output ?? '.');
+      const r = await stillCommand(cmd, { ...flags, out: undefined, output: undefined }, client);
+      const target = (flags.out ?? flags.output) !== undefined ? local : join(neonHome(), 'stills', basename(r.path.replace(/\\/g, '/')));
+      const api = await client();
+      await downloadOutput({ endpoint: api.endpoint, token: api.token }, r.path, target);
+      const fetched = { ...r, path: target, remotePath: r.path };
+      out(fetched, () => `${describeStill(fetched)} (rendered on ${remote})`);
+      return;
+    }
     const r = await stillCommand(cmd, flags, client);
     out(r, () => describeStill(r));
     return;
@@ -376,6 +405,19 @@ async function main(): Promise<void> {
     }
     const info = { name: sub, defaults: templateDefaults(sub), jsonSchema: templateJsonSchema(sub) };
     out(info, () => JSON.stringify(info, null, 2));
+    return;
+  }
+  if (cmd === 'launch') {
+    if (!remote) throw new ApiError('USAGE', 'launch starts the app on another machine: neon-cli --on <ssh-host> launch');
+    const r = await launchRemote(remote);
+    out({ host: remote, endpoint: r.endpoint }, () => `Neon Video Studio is running on ${remote} (tunnel ${r.endpoint})`);
+    return;
+  }
+  if (cmd === 'disconnect') {
+    const host = remote ?? sub;
+    if (!host) throw new ApiError('USAGE', 'neon-cli disconnect <ssh-host>   (or --on <ssh-host>)');
+    const closed = await disconnectRemote(host);
+    out({ host, closed }, () => (closed ? `Closed the tunnel to ${host}` : `No tunnel to ${host}`));
     return;
   }
   if (cmd === 'serve') {
@@ -534,10 +576,10 @@ async function main(): Promise<void> {
         out(r, () => `Created project "${r.project.meta.name}" (${r.path ?? 'unsaved'})`);
       } else if (sub === 'open') {
         if (!rest[0]) throw usage('project', 'open');
-        const r = await api.projectOpen(resolve(rest[0]));
+        const r = await api.projectOpen(appPath(rest[0]));
         out(r, () => `Opened ${r.path} — ${r.project.clips.length} clips`);
       } else if (sub === 'save') {
-        const r = await api.projectSave(rest[0] ? resolve(rest[0]) : undefined);
+        const r = await api.projectSave(rest[0] ? appPath(rest[0]) : undefined);
         out(r, () => `Saved ${r.path}`);
       } else throw unknownSub('project', sub, ['new', 'open', 'save']);
       return;
@@ -672,7 +714,10 @@ async function main(): Promise<void> {
         const trackId = flags.track ? (await api.resolveTrack(flags.track)).id : undefined;
         const results: ImportAssetResponse[] = [];
         for (const file of rest) {
-          const r = await api.importAsset(resolve(file), flags.at !== undefined || trackId ? { at: flags.at, trackId } : undefined);
+          // On a remote app, files that exist here are uploaded; other paths are paths on that machine.
+          const r = remote && existsSync(file)
+            ? ((await uploadAsset({ endpoint: api.endpoint, token: api.token }, resolve(file), { at: flags.at, trackId })) as ImportAssetResponse)
+            : await api.importAsset(appPath(file), flags.at !== undefined || trackId ? { at: flags.at, trackId } : undefined);
           results.push(r);
         }
         out(results, () =>
@@ -710,7 +755,7 @@ async function main(): Promise<void> {
         out(packs, () => packsTable(packs));
       } else if (sub === 'install') {
         if (!rest[0]) throw usage('packs', 'install');
-        const p = await api.packsInstall(resolve(rest[0]));
+        const p = await api.packsInstall(appPath(rest[0]));
         out(p, () => `Installed ${p.label} v${p.version} (${p.templates.join(', ')}) — added to the project`);
       } else if (sub === 'uninstall') {
         if (!rest[0]) throw usage('packs', 'uninstall');
@@ -764,9 +809,15 @@ async function main(): Promise<void> {
         return;
       }
       if (!flags.output) throw usage('render', '--output', 'render needs --output <file.mp4>');
-      let job = await api.render({ output: resolve(flags.output), preset: flags.preset ?? 'project', from: flags.from, to: flags.to });
-      if (flags.wait) job = await waitForRender(api, job);
+      let job = await api.render({ output: appPath(flags.output), preset: flags.preset ?? 'project', from: flags.from, to: flags.to });
+      if (flags.wait || flags.fetch) job = await waitForRender(api, job);
       if (job.status === 'failed') throw new ApiError('RENDER_FAILED', job.error ?? 'Render failed', job.log);
+      if (flags.fetch && remote && job.status === 'done') {
+        const local = resolve(flags.out ?? basename(job.outputPath.replace(/\\/g, '/')));
+        await downloadOutput({ endpoint: api.endpoint, token: api.token }, job.outputPath, local);
+        out({ ...job, fetched: local }, () => `Rendered ${job.outputPath} on ${remote} → copied to ${local}`);
+        return;
+      }
       out(job, () => (job.status === 'done' ? `Rendered ${job.outputPath}` : `Render ${job.id} ${job.status} (use \`render status ${job.id}\`)`));
       return;
     }

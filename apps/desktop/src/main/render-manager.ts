@@ -39,6 +39,7 @@ export class RenderManager {
   private readonly running = new Map<string, RunningRender>();
   private queue: Queued[] = [];
   private active = false;
+  private readonly produced = new Set<string>();
 
   private readonly deps: RenderManagerDeps;
 
@@ -123,8 +124,14 @@ export class RenderManager {
     this.queue = [];
   }
 
+  /** True for files this app rendered (videos, stills, sheets) — the only files GET /api/files serves. */
+  isProduced(path: string): boolean {
+    return this.produced.has(resolve(path));
+  }
+
   private update(job: RenderJob, patch: Partial<RenderJob>): void {
     Object.assign(job, patch);
+    if (patch.status === 'done') this.produced.add(resolve(job.outputPath));
     this.deps.onUpdate({ ...job, log: [...job.log] });
   }
 
