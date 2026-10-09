@@ -444,3 +444,25 @@ export const AiRipRequestSchema = z.object({
   /** Also place the ripped media on the timeline at this time. */
   at: TimeExpr.optional(),
 });
+
+// ---- Agent surface: generic bodies and batches (neon-cli api / schema / apply) -------------
+
+/** Body of routes that address one thing by id (tracks/remove, assets/remove). */
+export const IdRequestSchema = z.object({ id: z.string().min(1) });
+
+export const RecordStopRequestSchema = z.object({
+  /** Where the take lands on the VO track. */
+  at: TimeExpr.optional(),
+});
+
+export const BatchOpSchema = z.object({
+  route: z.string().regex(/^\/api\//, 'route must start with /api/').describe('A POST control route, e.g. /api/timeline/insert'),
+  body: z
+    .unknown()
+    .optional()
+    .describe('The route body. A string "$N", "$N.id" or "$N.0.id" becomes op N’s result (or a path in it); "$$…" sends a literal "$…"'),
+});
+export type BatchOp = z.infer<typeof BatchOpSchema>;
+
+export const BatchRequestSchema = z.object({ ops: z.array(BatchOpSchema).min(1).max(500) });
+export type BatchRequest = z.infer<typeof BatchRequestSchema>;

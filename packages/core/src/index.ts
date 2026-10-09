@@ -10,4 +10,6 @@ export * from './presets.ts';
 export * from './stills.ts';
 export * from './schemas.ts';
 export * from './api.ts';
+export * from './api-catalog.ts';
+export * from './batch.ts';
 export * from './theme.ts';
