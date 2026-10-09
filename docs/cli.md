@@ -1,13 +1,67 @@
 # `neon-cli` reference
 
 The CLI is the agent/automation interface to Neon Video Studio. Every command talks to the running
-desktop app over its local control API and **everything shows up live in the app** (Live panel,
-clip flashes, status pulse). The app streams the same events back over SSE (`neon-cli events`).
+app over its local control API, and every edit shows up live in the app when a window is open.
+
+## Agent quickstart
+
+Put `neon-cli` on your PATH once with `scripts/link-cli.sh` (macOS/Linux, writes `~/.local/bin/neon-cli`)
+or `scripts\link-cli.ps1` (Windows, writes `%USERPROFILE%\bin\neon-cli.cmd`). From the repo,
+`node apps/cli/src/main.ts …` and `pnpm cli …` do the same. Node 22.18 or later runs the TypeScript directly.
 
 ```bash
-pnpm cli <command>            # from the repo
-node apps/cli/src/main.ts …   # equivalent (Node ≥ 22.18 runs the TS directly)
+neon-cli serve --detach                 # 1. start the app without a window (skip if the desktop app is open)
+neon-cli status --json                  #    project, size, fps, length
+
+neon-cli timeline                       # 2. see the edit: one block per track with clips, gaps, speed, zooms, fades, ids
+neon-cli timeline show --json           #    the same as structured JSON
+
+neon-cli schema                         # 3. every control route; "batch" marks routes a plan may use
+neon-cli schema timeline/insert         #    JSON Schema of one route's body
+neon-cli templates TextOverlay          #    props schema and defaults of a component
+
+neon-cli apply plan.json --dry-run      # 4. check a plan without the app: routes, refs and bodies
+neon-cli apply plan.json                #    all ops land as one undo step, or none do
+neon-cli history undo                   #    reverts the whole batch
+
+neon-cli still …  /  neon-cli sheet …   # 5. look at single frames or a contact sheet before exporting
+
+neon-cli render --output final.mp4 --preset 1080p30   # 6. export
+neon-cli stop                           #    stop the headless app
 ```
+
+A plan is a list of control-API calls (`{ "ops": [...] }` or a bare array; `-` reads it from stdin):
+
+```json
+{ "ops": [
+  { "route": "/api/timeline/insert", "body": { "kind": "component", "componentName": "TextOverlay", "props": { "text": "Hello" }, "at": "1s", "duration": "2s" } },
+  { "route": "/api/timeline/update", "body": { "id": "$0.id", "patch": { "animateIn": { "type": "pop", "durationFrames": 12 } } } }
+] }
+```
+
+- `"$N"`, `"$N.id"` and `"$N.0.id"` are replaced with op N's result, or a path in it, before the op
+  runs. Refs can only name earlier ops. A string that starts with `$$` is sent with one `$` removed,
+  so `"$$5.99"` becomes `"$5.99"`.
+- Bodies take ids, not names. Get track and clip ids from `neon-cli timeline --json`.
+- If any op fails, the project goes back to its state before the plan. The CLI exits 1 and prints
+  `{ok: false, failedAt, error: {code, message}, results, rolledBack}` with `--json`.
+- Plans cannot contain routes whose effect a rollback cannot undo: renders, AI jobs, rooms, project
+  new/open/save, history, pack install/uninstall/reload, recording, shutdown and nested batches.
+  `neon-cli schema` marks the routes a plan may use.
+- Run one agent at a time. A plan is not isolated from edits that other clients make while it runs.
+
+Any route is also reachable directly. `api` always prints the `{ok, data}` or `{ok: false, error}`
+envelope and exits 1 on failure:
+
+```bash
+neon-cli api GET status
+neon-cli api POST timeline/split '{"id":"clip_…","at":"4s"}'
+neon-cli api POST /api/tracks/add @body.json
+echo '{"kind":"audio"}' | neon-cli api POST tracks/add -
+```
+
+Usage errors quote the exact usage line, and a mistyped command, subcommand, flag, route or
+template name gets the closest match: `Unknown subcommand "timeline inser". Did you mean "timeline insert"?`
 
 ## Connection & global flags
 
@@ -205,7 +259,7 @@ empty, and agents can drive them directly:
 
 ```bash
 neon-cli history                     # "Checkpoint 12 of 14 · 11 undo steps · 2 redo steps"
-neon-cli history checkpoint          # record the current state (do this before a risky batch of edits)
+neon-cli history checkpoint          # record the current state before risky edits (`apply` records its own)
 neon-cli history undo | history redo # step the whole project to the previous / next checkpoint
 ```
 
