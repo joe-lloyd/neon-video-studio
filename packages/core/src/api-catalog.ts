@@ -18,6 +18,7 @@ import {
   AiEnhanceRequestSchema,
   AiFillersRequestSchema,
   AiMatteRequestSchema,
+  AiPaceRequestSchema,
   AiReframeRequestSchema,
   AiRipRequestSchema,
   AiSetupRequestSchema,
@@ -42,6 +43,8 @@ import {
   RecordStopRequestSchema,
   RemoveClipRequestSchema,
   RenderRequestSchema,
+  SheetRequestSchema,
+  StillRequestSchema,
   RoomHostRequestSchema,
   RoomJoinRequestSchema,
   SplitClipRequestSchema,
@@ -69,6 +72,7 @@ const JOB = 'starts a background job that keeps editing after the batch ends';
 const PROJECT = 'switches or writes the project';
 const HISTORY = 'steps the edit history the batch relies on';
 const ROOM = 'changes the collaboration room';
+const STILL = 'renders a picture rather than editing; run it after the batch';
 
 export const API_CATALOG: { readonly [K in ApiRouteKey]: RouteSpec } = {
   status: { method: 'GET', summary: 'App, project, room and render status' },
@@ -91,6 +95,8 @@ export const API_CATALOG: { readonly [K in ApiRouteKey]: RouteSpec } = {
   render: { method: 'POST', summary: 'Start an export; poll GET /api/render/:id', body: RenderRequestSchema, notInBatch: JOB },
   renderJob: { method: 'GET', summary: 'One render job' },
   renderCancel: { method: 'POST', summary: 'Cancel a render job', body: null, notInBatch: JOB },
+  renderStill: { method: 'POST', summary: 'Render one frame as a PNG and wait for it', body: StillRequestSchema, notInBatch: STILL },
+  renderSheet: { method: 'POST', summary: 'Render a contact sheet of frames as one PNG and wait for it', body: SheetRequestSchema, notInBatch: STILL },
   roomHost: { method: 'POST', summary: 'Host a P2P room', body: RoomHostRequestSchema, notInBatch: ROOM },
   roomJoin: { method: 'POST', summary: 'Join a P2P room', body: RoomJoinRequestSchema, notInBatch: ROOM },
   roomLeave: { method: 'POST', summary: 'Leave the room', body: null, notInBatch: ROOM },
@@ -134,6 +140,7 @@ export const API_CATALOG: { readonly [K in ApiRouteKey]: RouteSpec } = {
   aiMatte: { method: 'POST', summary: 'Remove the background into an alpha asset', body: AiMatteRequestSchema, notInBatch: JOB },
   aiReframe: { method: 'POST', summary: 'Face-tracked reframe for another aspect ratio', body: AiReframeRequestSchema, notInBatch: JOB },
   aiBroll: { method: 'POST', summary: 'Suggest (or with apply, place) B-roll from the transcript', body: AiBrollRequestSchema, notInBatch: JOB },
+  aiPace: { method: 'POST', summary: 'Screen recordings: cut pauses over a still screen, speed up the rest', body: AiPaceRequestSchema, notInBatch: JOB },
   aiClean: { method: 'POST', summary: 'Fillers, silences, breaths and optional denoise in one job', body: AiCleanRequestSchema, notInBatch: JOB },
   aiSetup: { method: 'POST', summary: 'Install the AI engines and models', body: AiSetupRequestSchema, notInBatch: JOB },
   aiRip: { method: 'POST', summary: 'Download a web video into the media library (yt-dlp)', body: AiRipRequestSchema, notInBatch: JOB },

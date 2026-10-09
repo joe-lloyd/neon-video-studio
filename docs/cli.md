@@ -24,7 +24,8 @@ neon-cli apply plan.json --dry-run      # 4. check a plan without the app: route
 neon-cli apply plan.json                #    all ops land as one undo step, or none do
 neon-cli history undo                   #    reverts the whole batch
 
-neon-cli still …  /  neon-cli sheet …   # 5. look at single frames or a contact sheet before exporting
+neon-cli sheet --count 12               # 5. look at the edit: a grid of frames in one PNG
+neon-cli still --at 4s                  #    one frame as a PNG
 
 neon-cli render --output final.mp4 --preset 1080p30   # 6. export
 neon-cli stop                           #    stop the headless app
@@ -46,7 +47,7 @@ A plan is a list of control-API calls (`{ "ops": [...] }` or a bare array; `-` r
 - If any op fails, the project goes back to its state before the plan. The CLI exits 1 and prints
   `{ok: false, failedAt, error: {code, message}, results, rolledBack}` with `--json`.
 - Plans cannot contain routes whose effect a rollback cannot undo: renders, AI jobs, rooms, project
-  new/open/save, history, pack install/uninstall/reload, recording, shutdown and nested batches.
+  new/open/save, history, pack install/uninstall/reload, recording, stills, shutdown and nested batches.
   `neon-cli schema` marks the routes a plan may use.
 - Run one agent at a time. A plan is not isolated from edits that other clients make while it runs.
 

@@ -258,6 +258,7 @@ export const API_ROUTES = {
   aiReframe: '/api/ai/reframe',
   aiBroll: '/api/ai/broll',
   aiClean: '/api/ai/clean',
+  aiPace: '/api/ai/pace',
   aiSetup: '/api/ai/setup',
   aiRip: '/api/ai/rip',
   recordStart: '/api/record/start',
