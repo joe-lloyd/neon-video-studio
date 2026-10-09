@@ -149,6 +149,28 @@ runtime** (~150 MB: Remotion worker + compositions + toolchain, published with e
 `renderRuntimeDir` in `~/.neon-video/settings.json` or the `NEON_RENDER_RUNTIME_DIR` env var;
 running from a source checkout keeps using the repo directly.
 
+## Stills and contact sheets (see your edit)
+
+An agent edits blind unless it looks. These commands render PNGs of the timeline, so after an
+edit you can open the image and check that the cut, the zoom or the overlay landed where you meant.
+
+```bash
+neon-cli still --at 12s [--out f.png] [--width 1280]       # one frame
+neon-cli sheet [--count 12 | --every 5s] [--cols 4] [--from T --to T] [--out f.png] [--width 1920]
+neon-cli still --at 12s --headless --project ./MyProject.neon   # no app required (needs the repo)
+```
+
+- `still` renders the frame at project layout and scales it to `--width`, so text keeps its size
+  relative to the picture.
+- `sheet` puts several frames in one grid with a timecode under each cell. The default is 12
+  frames spread evenly over the whole timeline. `--every` steps from `--from`, and a sheet holds at
+  most 100 frames.
+- Both wait for the file and print `{ path, frames, width, height }` with `--json`. `frames` are
+  project frames. Files go to `~/.neon-video/stills/<project>-<timecode>.png` unless you pass
+  `--out`.
+- API: `POST /api/render/still {at, output?, width?}` and
+  `POST /api/render/sheet {from?, to?, count?, every?, cols?, width?, output?}`.
+
 ## Watching & driving the UI (for agents)
 
 ```bash

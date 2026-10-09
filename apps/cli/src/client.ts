@@ -1,5 +1,5 @@
 /** Typed HTTP client for the desktop app's control API. */
-import { API_ROUTES, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary } from '@neon/core';
+import { API_ROUTES, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary, type SheetRequestInput, type StillRequestInput, type StillResult } from '@neon/core';
 import { isProcessAlive, readInstanceInfo } from '@neon/core/node';
 import type { Asset, Clip, Project, Track } from '@neon/core';
 
@@ -90,6 +90,9 @@ export class NeonClient {
   render = (body: Record<string, unknown>) => this.call<RenderJob>('POST', API_ROUTES.render, body);
   renderJob = (id: string) => this.call<RenderJob>('GET', API_ROUTES.renderJob.replace(':id', encodeURIComponent(id)));
   renderCancel = (id: string) => this.call<RenderJob>('POST', API_ROUTES.renderCancel.replace(':id', encodeURIComponent(id)));
+  /** Render one frame / a contact sheet to PNG; resolves when the file exists. */
+  still = (body: StillRequestInput) => this.call<StillResult>('POST', API_ROUTES.renderStill, body);
+  sheet = (body: SheetRequestInput) => this.call<StillResult>('POST', API_ROUTES.renderSheet, body);
 
   roomHost = (password?: string) => this.call<RoomInfo>('POST', API_ROUTES.roomHost, { password });
   roomJoin = (body: Record<string, unknown>) => this.call<RoomInfo>('POST', API_ROUTES.roomJoin, body);

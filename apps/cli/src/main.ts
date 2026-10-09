@@ -16,6 +16,7 @@ registerAllPacks();
 import { ApiError, NeonClient, discoverClient } from './client.ts';
 import { clipRow, progressBar, table } from './format.ts';
 import { serve } from './serve.ts';
+import { describeStill, stillCommand } from './stills.ts';
 
 const HELP = `neon-cli — Neon Video Studio control
 
@@ -47,6 +48,9 @@ COMMANDS
   render --output out.mp4 [--preset ID] [--from T] [--to T] [--no-wait]
   render --headless --project <dir> --output out.mp4 [--preset ID]
   render status <jobId> | render cancel <jobId>
+  still --at T [--out f.png] [--width 1280]   One frame as a PNG (default <NEON_HOME>/stills/), to check an edit by eye
+  sheet [--count 12 | --every 5s] [--cols 4] [--from T --to T] [--out f.png] [--width 1920]   Contact sheet: a grid of frames in one PNG
+  still|sheet ... --headless --project <dir>  The same straight from a project directory, without the app
   room host [--password P] | room join <code> [--password P] [--host-url ws://ip:port] | room leave | room info
   events [--history N]                    Live-tail everything the app does (CLI actions, renders, peers) — Ctrl-C to stop
   timeline cut --from T --to T [--track REF] [--no-ripple]   Remove a timeline range (all tracks, ripple)
@@ -135,6 +139,9 @@ const { values: flags, positionals } = parseArgs({
     preset: { type: 'string' },
     from: { type: 'string' },
     to: { type: 'string' },
+    count: { type: 'string' },
+    every: { type: 'string' },
+    cols: { type: 'string' },
     wait: { type: 'boolean', default: true },
     headless: { type: 'boolean', default: false },
     project: { type: 'string' },
@@ -274,6 +281,13 @@ async function main(): Promise<void> {
     });
     if (!json) process.stderr.write('\n');
     out(result, () => `Rendered ${result.outputPath} in ${(result.durationMs / 1000).toFixed(1)}s`);
+    return;
+  }
+
+  // PNG stills and contact sheets (through the app, or --headless from a project directory).
+  if (cmd === 'still' || cmd === 'sheet') {
+    const r = await stillCommand(cmd, flags, client);
+    out(r, () => describeStill(r));
     return;
   }
 
