@@ -198,6 +198,19 @@ inside `apps/remotion-workspace` where the workspace's dependencies are availabl
 | `SANS`, `MONO` | Font stacks matching the app (`Inter…`, `JetBrains Mono…`). |
 | `glow(color, strength = 1)` | Triple-layer neon glow string for `boxShadow` / `textShadow`. |
 | `clamp(value, min, max)` | Clamp a number. |
+| `useTimelineProject()` | The whole project being rendered (tracks, clips, assets, transcripts), or `null` outside the timeline, such as in the FX library card. Read it; never mutate it. |
+| `useTimelineFrame()` | The current position on the project timeline in project frames, or `null` outside the timeline. `useCurrentFrame()` counts from your clip's start; this adds the start back and undoes an export fps override. |
+| `TimelineProjectContext` | The React context behind both hooks, for tests or custom providers. |
+
+Pair the timeline hooks with `@neon/core` helpers to react to the rest of the edit. For example,
+the caption being spoken now:
+
+```tsx
+const project = useTimelineProject();
+const frame = useTimelineFrame();
+const cues = useMemo(() => (project ? projectCaptions(project) : []), [project]);
+const cue = frame === null ? undefined : cueAt(cues, frame);
+```
 
 ### Rules of the road
 

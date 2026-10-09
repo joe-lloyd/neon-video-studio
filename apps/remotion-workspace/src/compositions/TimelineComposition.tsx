@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import { sortClips, sortTracks, speedOf, volumeAt, zoomAt, type Asset, type Clip, type MediaClip, type Project, type Track } from '@neon/core';
+import { TimelineProjectContext, type TimelineContextValue } from '@neon/fx-kit';
 import { getTemplateComponent } from '../templates/index.ts';
 
 /** Kept as a type alias (not an interface) so it satisfies Remotion's Record<string, unknown> constraint. */
@@ -181,10 +182,15 @@ const MissingBox: React.FC<{ label: string }> = ({ label }) => (
   </AbsoluteFill>
 );
 
-const ComponentClipView: React.FC<{ clip: Extract<Clip, { kind: 'component' }> }> = ({ clip }) => {
+/** Templates read the project from context; `timeline.clipFrom` lets them map their frame back to the timeline. */
+const ComponentClipView: React.FC<{ clip: Extract<Clip, { kind: 'component' }>; timeline: TimelineContextValue }> = ({ clip, timeline }) => {
   const Template = getTemplateComponent(clip.componentName);
   if (!Template) return <MissingBox label={`Unknown component ${clip.componentName}`} />;
-  return <Template {...clip.props} />;
+  return (
+    <TimelineProjectContext.Provider value={timeline}>
+      <Template {...clip.props} />
+    </TimelineProjectContext.Provider>
+  );
 };
 
 export const TimelineComposition: React.FC<TimelineProps> = (props) => {
@@ -214,7 +220,7 @@ export const TimelineComposition: React.FC<TimelineProps> = (props) => {
               <Sequence key={clip.id} from={from} durationInFrames={durationInFrames} name={clip.name} layout="none">
                 {clip.kind === 'component' ? (
                   <ElementWrapper clip={clip} scale={scale}>
-                    <ComponentClipView clip={clip} />
+                    <ComponentClipView clip={clip} timeline={{ project, scale, clipFrom: from }} />
                   </ElementWrapper>
                 ) : clip.kind === 'audio' ? (
                   <MediaClipView clip={clip} asset={assetsById.get(clip.assetId)} track={track} props={props} scale={scale} />

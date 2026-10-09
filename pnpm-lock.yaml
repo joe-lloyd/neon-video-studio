@@ -196,6 +196,9 @@ importers:
 
   packages/fx-kit:
     devDependencies:
+      '@neon/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/react':
         specifier: ^19.1.0
         version: 19.2.18
