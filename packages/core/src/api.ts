@@ -1,4 +1,5 @@
 import type { Asset, Clip, Project, Track } from './types.ts';
+import type { CaptureRect, CaptureSource } from './schemas.ts';
 
 /**
  * Control API shared by the desktop main process (server), the CLI and the renderer.
@@ -239,6 +240,11 @@ export const API_ROUTES = {
   historyRedo: '/api/history/redo',
   historyCheckpoint: '/api/history/checkpoint',
   shutdown: '/api/shutdown',
+  captureDevices: '/api/capture/devices',
+  captureStart: '/api/capture/start',
+  captureStop: '/api/capture/stop',
+  captureCancel: '/api/capture/cancel',
+  captureState: '/api/capture/state',
   yjs: '/yjs',
   signaling: '/signaling',
   assets: '/assets',
@@ -286,6 +292,24 @@ export interface BatchFailure {
   /** `details` of the failing op's own error, e.g. zod issues. */
   cause?: unknown;
 }
+
+/** GET /api/capture/devices: what `capture start` can record on this machine. */
+export interface CaptureDevices {
+  platform: 'darwin' | 'win32' | 'linux';
+  /** Index 0 is the primary display. Bounds are known on Windows only. */
+  displays: { index: number; name: string; primary: boolean; bounds: CaptureRect | null }[];
+  mics: string[];
+  /** The microphone used when none is named. */
+  defaultMic: string | null;
+  /** `--window "Title"` works (Windows only). */
+  windowCapture: boolean;
+}
+
+/** GET /api/capture/state. */
+export type CaptureState =
+  | { status: 'idle' }
+  | { status: 'recording'; startedAt: string; source: CaptureSource; mic: string | null; encoder: string; fps: number }
+  | { status: 'finishing'; startedAt: string };
 
 /** Who caused an action. */
 export type ActivitySource = 'cli' | 'ui' | 'peer' | 'render' | 'room' | 'system' | 'ai';

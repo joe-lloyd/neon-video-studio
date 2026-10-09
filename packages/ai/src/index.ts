@@ -14,3 +14,4 @@ export * from './rip.ts';
 export * from './matte.ts';
 export * from './reframe.ts';
 export * from './broll.ts';
+export * from './capture.ts';
