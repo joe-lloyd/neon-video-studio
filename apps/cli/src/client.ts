@@ -1,5 +1,5 @@
 /** Typed HTTP client for the desktop app's control API. */
-import { API_ROUTES, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type CaptureDevices, type CaptureStartBody, type CaptureState, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary, type SheetRequestInput, type StillRequestInput, type StillResult } from '@neon/core';
+import { API_ROUTES, parseTimecode, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type CaptureDevices, type CaptureStartBody, type CaptureState, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary, type SheetRequestInput, type StillRequestInput, type StillResult } from '@neon/core';
 import { isProcessAlive, readInstanceInfo } from '@neon/core/node';
 import type { Asset, BatchRequest, BatchResult, Clip, Project, Track } from '@neon/core';
 
@@ -175,7 +175,7 @@ export class NeonClient {
   }
 
   /** Resolve a clip by id, id prefix or (unique) name. */
-  async resolveClip(ref: string, clips?: Clip[]): Promise<Clip> {
+  async resolveClip(ref: string, clips?: Clip[], at?: string): Promise<Clip> {
     const list = clips ?? (await this.list()).clips;
     const exact = list.find((c) => c.id === ref);
     if (exact) return exact;
@@ -183,7 +183,16 @@ export class NeonClient {
     if (prefix.length === 1) return prefix[0]!;
     const byName = list.filter((c) => c.name.toLowerCase() === ref.toLowerCase());
     if (byName.length === 1) return byName[0]!;
-    if (prefix.length > 1 || byName.length > 1) throw new ApiError('AMBIGUOUS', `Clip reference "${ref}" is ambiguous`);
+    // After cuts one take is many clips with the same name: a time picks the piece under it.
+    if (byName.length > 1 && at !== undefined) {
+      const frame = parseTimecode(at, (await this.status()).project.fps);
+      const under = byName.find((c) => c.startFrame <= frame && frame < c.startFrame + c.durationFrames);
+      if (under) return under;
+    }
+    if (prefix.length > 1 || byName.length > 1) {
+      const hint = byName.length > 1 ? ` (${byName.length} clips are named that; use an id from \`neon-cli timeline\`${at === undefined ? ' or pass --from to pick the one under that time' : ''})` : '';
+      throw new ApiError('AMBIGUOUS', `Clip reference "${ref}" is ambiguous${hint}`);
+    }
     throw new ApiError('NOT_FOUND', `No clip matches "${ref}"`);
   }
 }

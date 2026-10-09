@@ -620,7 +620,7 @@ async function main(): Promise<void> {
         out(r, () => `Removed ${r.removedFrames} frames (${r.cuts} clip segment(s) touched)`);
       } else if (sub === 'speed') {
         if (!rest[0] || !rest[1]) throw usage('timeline', 'speed', 'e.g. neon-cli timeline speed take.mp4 4 --from 1:20 --to 2:05');
-        const target = await api.resolveClip(rest[0]);
+        const target = await api.resolveClip(rest[0], undefined, flags.from);
         const rate = num(rest[1].replace(/x$/i, ''))!;
         const c = await api.speed({ id: target.id, speed: rate, from: flags.from, to: flags.to });
         out(c, () => `“${c.name}” plays at ${rate}× → ${c.durationFrames}f at ${c.startFrame}${rate > 2 ? ' (audio silent above 2×)' : ''}; later clips rippled`);
@@ -862,7 +862,7 @@ async function main(): Promise<void> {
     case 'zoom': {
       if (!sub || !['add', 'list', 'clear'].includes(sub)) throw unknownSub('zoom', sub, ['add', 'list', 'clear']);
       if (!rest[0]) throw usage('zoom', sub);
-      const target = await api.resolveClip(rest[0]);
+      const target = await api.resolveClip(rest[0], undefined, flags.from);
       if (target.kind === 'component') throw new ApiError('USAGE', 'Zoom works on video and image clips');
       const fps = (await api.status()).project.fps;
       if (sub === 'add') {

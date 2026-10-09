@@ -108,6 +108,12 @@ neon-cli timeline cut --from 4s --to 6s [--track REF] [--no-ripple]   # remove a
 neon-cli timeline detach <clip>     # split a video's audio onto an audio track (video muted)
 neon-cli timeline update <clip> --pos 0.8,0.2 --scale 0.4 --rotation 15   # canvas placement (fractions of the frame; rotation in degrees)
 neon-cli timeline update <clip> --in pop:12 --out fade:10     # enter/exit animation (type:frames; 'none' clears)
+neon-cli timeline speed <clip> 4 [--from T --to T]   # re-time a clip or a range of it (0.1–16); later clips ripple on every track
+    # audio is silent above 2×; overlays that span the clip (captions, watermark) stretch with it
+neon-cli zoom add <clip> --from T --to T [--center 0.7,0.3] [--zoom 2] [--ramp 0.5s]   # ease in, hold, ease out
+neon-cli zoom list <clip> · zoom clear <clip> [n]
+    # zooms are stored in source time, so they stay on their moment through later cuts and speed changes;
+    # back-to-back zooms pan straight across instead of zooming out in between
 neon-cli record start · record stop [--at T]   # mic voice-over → VO track
     # macOS: grant mic access in System Settings → Privacy & Security → Microphone.
     # Windows: enable “Microphone access” AND “Let desktop apps access your microphone” in
@@ -224,7 +230,10 @@ neon-cli ai silence  <clip|asset> [--apply] [--threshold=-38] [--min 400] [--kee
 neon-cli ai breaths  <clip|asset> [--db 15]
 neon-cli ai denoise  <clip|asset> [--engine auto|rnnoise|afftdn|deepfilter] [--strength 0.7]
 neon-cli ai enhance  <clip|asset> [--lufs=-16] [--no-denoise]   # clarity + broadcast loudness
-neon-cli ai clean    <clip|asset> [--no-fillers] [--no-silences] [--no-breaths] [--denoise]
+neon-cli ai clean    <clip|asset> [--no-fillers] [--no-silences] [--no-breaths] [--denoise] [--screen]
+neon-cli ai pace     <clip|asset> [--apply] [--min 1200] [--keep 300] [--rate 6]
+    # screen recordings: pauses over a still screen are cut, pauses while it changes play at --rate;
+    # `ai clean --screen` uses this instead of the plain silence trim
 neon-cli ai matte    <clip> [--mode person|chroma] [--quality fast|balanced|accurate] [--color 0x00FF00]
 neon-cli ai reframe  <clip> [--aspect 9:16] [--resize]
 neon-cli ai broll    [<asset>] [--apply] [--no-claude] [--duration 3]
@@ -233,6 +242,9 @@ neon-cli ai cut      <asset> --words 3,7,12-15 [--audio-only]  # non-contiguous 
     # mutes the words in place via volume keyframes — video and timing stay untouched (VO fixes)
 neon-cli ai jobs · ai job <id> · ai cancel <id>
 ```
+
+Word timings come from whisper.cpp's DTW anchors, aligned to the real pauses in the audio, so filler
+and word cuts land between words. Transcripts made before this alignment are redone automatically.
 
 AI jobs run in the app; the CLI shows a live progress bar (skip with `--no-wait`). Denoise,
 enhance and matte create **new assets** (`derivedFrom` links the original, which stays in Media).
@@ -264,9 +276,8 @@ neon-cli captions vtt [--out talk.vtt] [--source A1,V1]   # WebVTT; both print t
   `style` (`karaoke` lights the word being spoken, `block` shows plain text), `position`
   (`bottom`, `top`, `middle`), `fontSize` (pixels at 1080p), `maxWords`, `color`,
   `highlightColor`, `background` (box on or off), `backgroundColor`, `tracks`.
-- Run `captions add` last, or again after `timeline speed`. Cuts shorten the Captions clip along
-  with everything else. A slow-down makes the timeline longer than the clip, and a speed-up leaves
-  the clip running past the end of the video.
+- Cuts shorten the Captions clip along with everything else, and `timeline speed` stretches or
+  shrinks it with the re-timed clip, so it keeps spanning the edit.
 
 ## Rendering
 
@@ -368,6 +379,12 @@ neon-cli render --output final.mp4 --preset 1080p30
 # Text-driven edit:
 neon-cli ai transcript talk.mp4         # note the word indexes
 neon-cli ai cut talk.mp4 33 35          # delete words 33–35 from the video
+
+# Screen demo with live narration (full walkthrough: docs/screen-demos.md):
+neon-cli capture start --display 0 --duration 2m      # or import a recording made elsewhere
+neon-cli ai clean take.mp4 --screen && neon-cli ai enhance take.mp4
+neon-cli zoom add take.mp4 --from 0:12 --to 0:18 --center 0.7,0.3
+neon-cli sheet --count 12 --out sheet.png            # look before you render
 
 # Captions after the edit (burned in + a sidecar file):
 neon-cli captions add --style karaoke
