@@ -45,7 +45,7 @@ function findChrome(): string {
   throw new Error('No headless Chrome found: render once (Remotion downloads it) or set NEON_CHROME');
 }
 
-const chrome = spawn(findChrome(), ['--headless', '--remote-debugging-port=0', `--window-size=${width},${height}`, '--hide-scrollbars', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+const chrome = spawn(findChrome(), ['--headless', '--remote-debugging-port=0', `--window-size=${width},${height}`, '--hide-scrollbars', '--autoplay-policy=no-user-gesture-required', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
 const wsUrl = await new Promise<string>((resolve, reject) => {
   let buf = '';
   chrome.stderr.on('data', (d: Buffer) => {

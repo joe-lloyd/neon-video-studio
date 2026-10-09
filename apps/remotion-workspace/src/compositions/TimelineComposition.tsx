@@ -216,8 +216,10 @@ export const TimelineComposition: React.FC<TimelineProps> = (props) => {
           {(clipsByTrack.get(track.id) ?? []).map((clip) => {
             const from = Math.round(clip.startFrame * scale);
             const durationInFrames = Math.max(1, Math.round(clip.durationFrames * scale));
+            // Every cut piece is its own <video>/<audio>: mount it a second early, hidden and parked on its
+            // first frame, so the Player does not stop to load and seek at each join.
             return (
-              <Sequence key={clip.id} from={from} durationInFrames={durationInFrames} name={clip.name} layout="none">
+              <Sequence key={clip.id} from={from} durationInFrames={durationInFrames} name={clip.name} premountFor={clip.kind === 'component' ? 0 : fps}>
                 {clip.kind === 'component' ? (
                   <ElementWrapper clip={clip} scale={scale}>
                     <ComponentClipView clip={clip} timeline={{ project, scale, clipFrom: from }} />
