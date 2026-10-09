@@ -22,6 +22,7 @@ import { SyncHub } from './sync-hub.ts';
 import { EventHub } from './events.ts';
 import { AiManager } from './ai-manager.ts';
 import { VoiceRecorder } from './recorder.ts';
+import { ScreenRecorder } from './screen-recorder.ts';
 import { ensureRenderRuntime } from './render-runtime.ts';
 import { HistoryStore } from './history.ts';
 import { WaveformCache } from './waveforms.ts';
@@ -64,15 +65,16 @@ export async function bootCore(opts: { headless: boolean }): Promise<Core> {
     settings,
     store,
     events,
-    recorder: new VoiceRecorder(),
+    recorder: new VoiceRecorder(() => ctx.capture.busy()),
     localPort: 0,
     startedAt,
     rpc: null,
     isDev: false,
     headless: opts.headless,
     requestExit: null,
-  } as Omit<MainContext, 'assets' | 'renders' | 'sync' | 'room' | 'ai' | 'history' | 'waveforms' | 'packs'> as MainContext;
+  } as Omit<MainContext, 'assets' | 'capture' | 'renders' | 'sync' | 'room' | 'ai' | 'history' | 'waveforms' | 'packs'> as MainContext;
   ctx.assets = new AssetManager(store, settings.peerId);
+  ctx.capture = new ScreenRecorder(ctx);
   ctx.waveforms = new WaveformCache(ctx.assets);
   ctx.history = new HistoryStore(store);
   await ctx.history.load();
@@ -161,6 +163,7 @@ export async function bootCore(opts: { headless: boolean }): Promise<Core> {
     console.log('[main] shutting down');
     ctx.renders.cancelAll();
     void ctx.recorder.discard();
+    void ctx.capture.cancel();
     void ctx.room.leave();
     local.stop();
     void clearInstanceInfo(process.pid);

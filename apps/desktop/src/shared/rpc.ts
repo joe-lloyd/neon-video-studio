@@ -2,7 +2,7 @@
  * Typed RPC contract between the Bun main process and the webview. Types only — no runtime code.
  */
 import type { RPCSchema } from 'electrobun/view';
-import type { ActivityEntry, AiCapabilities, AiJob, AiOperation, AppStatus, HistoryStatus, ImportAssetResponse, PackManifest, RenderJob, RoomInfo } from '@neon/core';
+import type { ActivityEntry, AiCapabilities, AiJob, AiOperation, AppStatus, CaptureDevices, CaptureState, HistoryStatus, ImportAssetResponse, PackManifest, RenderJob, RoomInfo } from '@neon/core';
 
 export interface Bootstrap {
   version: string;
@@ -90,6 +90,12 @@ export type DesktopRPC = {
       voStart: { params: Record<string, never>; response: { device: string } };
       voStop: { params: { startFrame: number }; response: ImportAssetResponse };
       voCancel: { params: Record<string, never>; response: boolean };
+      captureDevices: { params: Record<string, never>; response: CaptureDevices };
+      captureState: { params: Record<string, never>; response: CaptureState };
+      /** Body of POST /api/capture/start. */
+      captureStart: { params: { display?: number; mic?: string | false; cursor?: boolean; fps?: number }; response: CaptureState };
+      captureStop: { params: { at?: number; track?: string }; response: ImportAssetResponse & { durationMs: number } };
+      captureCancel: { params: Record<string, never>; response: { cancelled: boolean } };
       updateCheck: { params: Record<string, never>; response: UpdateState };
       updateApply: { params: Record<string, never>; response: UpdateState };
       historyStatus: { params: Record<string, never>; response: HistoryStatus };

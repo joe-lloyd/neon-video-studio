@@ -198,6 +198,16 @@ async function httpBridge(): Promise<Bridge> {
           return call('POST', '/api/record/stop', { at: (params as { startFrame: number }).startFrame }) as never;
         case 'voCancel':
           return true as never;
+        case 'captureDevices':
+          return call('GET', '/api/capture/devices') as never;
+        case 'captureState':
+          return call('GET', '/api/capture/state') as never;
+        case 'captureStart':
+          return call('POST', '/api/capture/start', params) as never;
+        case 'captureStop':
+          return call('POST', '/api/capture/stop', params) as never;
+        case 'captureCancel':
+          return call('POST', '/api/capture/cancel') as never;
         case 'windowCommand':
           return false as never;
         case 'listPacks':
