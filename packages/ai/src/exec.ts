@@ -61,3 +61,13 @@ export function ffmpegTime(line: string): number | null {
   if (!m) return null;
   return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
 }
+
+/**
+ * A file path as an ffmpeg filter option value (e.g. arnndn=m=…). Filter args are escaped twice:
+ * the option level splits on ':' (so a Windows drive letter must become 'C\:'), then the whole value
+ * is single-quoted for the filtergraph level. Forward slashes work on every OS.
+ */
+export function filterPath(path: string): string {
+  const option = path.replace(/\\/g, '/').replace(/[\\':]/g, (c) => `\\${c}`);
+  return `'${option.replace(/'/g, "'\\''")}'`;
+}
