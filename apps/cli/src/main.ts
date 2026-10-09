@@ -71,7 +71,8 @@ AI (local engines: whisper.cpp, ffmpeg, Apple Vision; Claude optional for B-roll
   ai matte <clip> [--mode person|chroma] [--quality fast|balanced|accurate] [--color 0x00FF00]
   ai reframe <clip> [--aspect 9:16] [--resize]                     Face-tracked auto-reframe
   ai broll [<asset>] [--apply] [--no-claude] [--duration 3]        Suggest/place B-roll from the transcript
-  ai clean <clip> [--no-fillers] [--no-silences] [--no-breaths] [--denoise]   One-shot voice clean-up
+  ai clean <clip> [--no-fillers] [--no-silences] [--no-breaths] [--denoise] [--screen]   One-shot voice clean-up (--screen: speed up pauses while the screen moves)
+  ai pace <clip> [--apply] [--min 1200] [--keep 300] [--rate 6]   Screen recordings: cut pauses over a still screen, speed up the rest
   ai cut <asset> <fromWord> <toWord>      Text-driven edit: delete words → cut the video
   ai cut <asset> --words 3,7,12-15 [--audio-only]   Non-contiguous words; --audio-only mutes them in place
   ai jobs | ai job <id> | ai cancel <id>
@@ -147,6 +148,8 @@ const { values: flags, positionals } = parseArgs({
     detach: { type: 'boolean', default: false },
     zoom: { type: 'string' },
     center: { type: 'string' },
+    rate: { type: 'string' },
+    screen: { type: 'boolean', default: false },
     ramp: { type: 'string' },
     buckets: { type: 'string' },
     by: { type: 'string' },
@@ -859,6 +862,14 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       });
       return;
     }
+    case 'pace': {
+      const target = await assetOrClipParam(rest[0], 'ai pace <clip> [--apply] [--min 1200] [--keep 300] [--rate 6]');
+      await finish(await api.aiRun('pace', { ...target, apply: flags.apply, minSilenceMs: numOr(flags.min), keepMs: numOr(flags.keep), rate: numOr(flags.rate), thresholdDb: numOr(flags.threshold) }), (j) => {
+        const r = j.result as { pauses: number; cut: number; spedUp: number; removedFrames: number; applied: boolean };
+        return `${r.pauses} pause(s): ${r.cut} over a still screen (cut), ${r.spedUp} while it changes (sped up)${r.applied ? ` · applied, ${r.removedFrames} frames shorter` : ' — add --apply'}`;
+      });
+      return;
+    }
     case 'breaths': {
       const target = await assetOrClipParam(rest[0], 'ai breaths <clip> [--db 15]');
       await finish(await api.aiRun('breaths', { ...target, reductionDb: numOr(flags.db) }), (j) => {
@@ -919,7 +930,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
     }
     case 'clean': {
       const target = await assetOrClipParam(rest[0], 'ai clean <clip>');
-      await finish(await api.aiRun('clean', { ...target, fillers: flags.fillers, silences: flags.silences, breaths: flags.breaths, denoise: flags.denoise ?? false }), (j) => `Voice clean-up finished: ${(j.result as { steps: string[] }).steps.join(' → ')}`);
+      await finish(await api.aiRun('clean', { ...target, fillers: flags.fillers, silences: flags.silences, breaths: flags.breaths, denoise: flags.denoise ?? false, screen: flags.screen }), (j) => `Voice clean-up finished: ${(j.result as { steps: string[] }).steps.join(' → ')}`);
       return;
     }
     case 'cut': {
