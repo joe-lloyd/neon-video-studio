@@ -31,6 +31,9 @@ import {
   runSetup,
   analyseBreaths,
   analyseSilences,
+  detectFreezes,
+  planPacing,
+  type PaceAction,
   breathKeyframes,
   muteRangeKeyframes,
   chooseDenoiseEngine,
@@ -290,6 +293,8 @@ export class AiManager {
         return this.opBroll(job, params);
       case 'clean':
         return this.opClean(job, params);
+      case 'pace':
+        return this.opPace(job, params);
       case 'transcript-cut':
         return this.opTranscriptCut(job, params);
       default:
@@ -646,7 +651,11 @@ export class AiManager {
       out.fillers = await this.opFillers(job, { ...params, apply: true });
       steps.push('fillers');
     }
-    if (params.silences !== false) {
+    if (params.silences !== false && params.screen) {
+      this.progress(job, 0.35, 'Step 2/4 · pauses (screen pacing)');
+      out.pace = await this.opPace(job, { ...params, apply: true });
+      steps.push('pacing');
+    } else if (params.silences !== false) {
       this.progress(job, 0.35, 'Step 2/4 · silences');
       out.silence = await this.opSilence(job, { ...params, apply: true });
       steps.push('silences');
@@ -662,6 +671,57 @@ export class AiManager {
       steps.push('denoise');
     }
     return { steps, ...out };
+  }
+
+  private async opPace(job: AiJob, params: Params) {
+    const target = await this.resolveTarget(params);
+    const paths = await this.paths();
+    const doc = this.ctx.store.doc;
+    const fps = doc.fps;
+    this.progress(job, 0.2, 'Finding pauses in the narration');
+    const minSilenceMs = Number(params.minSilenceMs ?? 1200);
+    const keepMs = Number(params.keepMs ?? 300);
+    const rate = Number(params.rate ?? 6);
+    const plan = await analyseSilences(paths.ffmpeg, target.file, {
+      thresholdDb: params.thresholdDb === undefined ? undefined : Number(params.thresholdDb),
+      minSilenceMs,
+      keepMs,
+    });
+    let freezes: Segment[] = [];
+    if (target.asset.kind === 'video') {
+      this.progress(job, 0.5, 'Checking where the screen is still');
+      freezes = await detectFreezes(paths.ffmpeg, target.file, (target.asset.durationFrames ?? 0) / fps);
+    }
+    const actions = planPacing(plan.silences, freezes, { keepMs, rate });
+    // One timeline range per action and clip piece; applied from the end so earlier ranges stay valid.
+    const steps = actions
+      .flatMap((a) => target.clips.map((clip) => ({ action: a, range: sourceSecondsToTimeline(clip, a.start, a.end, fps) })))
+      .filter((s): s is { action: PaceAction; range: FrameRange } => s.range !== null && s.range.end - s.range.start >= 2)
+      .sort((x, y) => y.range.start - x.range.start);
+    let removedFrames = 0;
+    if (params.apply && steps.length) {
+      this.progress(job, 0.85, `Pacing ${steps.length} pause(s)`);
+      const family = new Set(target.clips.map((c) => c.assetId));
+      for (const { action, range } of steps) {
+        if (action.kind === 'cut') {
+          removedFrames += doc.cutRanges([range], { ripple: true, crossfadeFrames: 2 }, ORIGIN_API).removedFrames;
+          continue;
+        }
+        const piece = doc.toJSON().clips.find((c): c is MediaClip => c.kind !== 'component' && family.has(c.assetId) && c.startFrame <= range.start && range.start < c.startFrame + c.durationFrames);
+        if (!piece) continue;
+        const before = doc.durationFrames();
+        doc.setClipSpeed(piece.id, action.rate, range, ORIGIN_API);
+        removedFrames += before - doc.durationFrames();
+      }
+    }
+    return {
+      pauses: plan.silences.length,
+      cut: actions.filter((a) => a.kind === 'cut').length,
+      spedUp: actions.filter((a) => a.kind === 'speed').length,
+      actions,
+      removedFrames,
+      applied: Boolean(params.apply),
+    };
   }
 
   private async opTranscriptCut(job: AiJob, params: Params) {
@@ -750,6 +810,8 @@ function summarize(op: AiOperation, result: unknown): string {
       return r.applied ? `Placed ${String(r.placed)} B-roll clip(s)` : `${(r.suggestions as unknown[])?.length ?? 0} B-roll suggestion(s)`;
     case 'clean':
       return `Voice clean-up done (${(r.steps as string[])?.join(', ')})`;
+    case 'pace':
+      return r.applied ? `Paced the pauses: ${String(r.cut)} still stretch(es) cut, ${String(r.spedUp)} sped up, ${String(r.removedFrames)} frames shorter` : `${String(r.cut)} pause(s) to cut, ${String(r.spedUp)} to speed up`;
     case 'transcript-cut':
       return `Cut “${String(r.words).slice(0, 40)}” (${String(r.removedFrames)} frames)`;
     default:

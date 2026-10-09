@@ -12,7 +12,10 @@ export function table(rows: string[][], header?: string[]): string {
 
 export function clipRow(clip: Clip, fps: number, tracks: Track[]): string[] {
   const track = tracks.find((t) => t.id === clip.trackId);
-  const detail = clip.kind === 'component' ? clip.componentName : `${clip.assetId.slice(0, 8)}… trim ${clip.trimBefore}f`;
+  const detail =
+    clip.kind === 'component'
+      ? clip.componentName
+      : `${clip.assetId.slice(0, 8)}… trim ${clip.trimBefore}f${clip.speed ? ` · ${clip.speed}×` : ''}${clip.zooms?.length ? ` · ${clip.zooms.length} zoom${clip.zooms.length === 1 ? '' : 's'}` : ''}`;
   return [
     clip.id,
     track?.name ?? clip.trackId,

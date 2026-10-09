@@ -247,6 +247,19 @@ export const AiCleanRequestSchema = AiTargetSchema.extend({
   silences: z.boolean().default(true),
   breaths: z.boolean().default(true),
   denoise: z.boolean().default(false),
+  /** Screen recording: pauses over a moving screen are sped up instead of cut (see AiPaceRequestSchema). */
+  screen: z.boolean().default(false),
+});
+/** Screen-recording pacing: cut pauses over a frozen screen, speed up pauses while the screen changes. */
+export const AiPaceRequestSchema = AiTargetSchema.extend({
+  apply: z.boolean().default(false),
+  /** Pauses shorter than this are left alone. */
+  minSilenceMs: z.number().min(300).max(60000).default(1200),
+  /** Part of each pause kept at normal speed, split over both edges. */
+  keepMs: z.number().min(0).max(2000).default(300),
+  /** Playback rate for pauses over a changing screen. */
+  rate: z.number().min(1.5).max(16).default(6),
+  thresholdDb: z.number().min(-90).max(0).optional(),
 });
 export const TranscriptCutRequestSchema = z
   .object({
