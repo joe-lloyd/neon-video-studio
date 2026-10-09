@@ -92,7 +92,7 @@ export const KEY_COMBO = defineTemplate({
     { key: 'platform', type: 'select', default: 'pc', options: ['pc', 'mac'], description: 'mac draws modifier glyphs (⌘ ⌥ ⇧ ⌃ ↩); pc spells modifiers out (Ctrl, Alt, Shift).' },
     { key: 'label', type: 'text', default: '', description: 'Optional caption beside the keys, e.g. "Command palette". Empty for none.' },
     fraction('x', 0.5, 'Horizontal centre of the key tray, as a fraction of frame width.'),
-    fraction('y', 0.86, 'Vertical centre of the key tray, as a fraction of frame height.'),
+    fraction('y', 0.72, 'Vertical centre of the key tray, as a fraction of frame height (default sits above burned-in captions).'),
     { key: 'size', type: 'number', default: 30, min: 14, max: 96, description: 'Key label size in px at 1080p.' },
     color,
   ],
