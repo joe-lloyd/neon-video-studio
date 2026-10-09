@@ -9,6 +9,13 @@ import { basename } from 'node:path';
 import {
   ZodError,
   API_ROUTES,
+  BatchRequestSchema,
+  IdRequestSchema,
+  checkBatchRoute,
+  resolveRefs,
+  type BatchFailure,
+  type BatchRequest,
+  type BatchResult,
   AddTrackRequestSchema,
   ImportAssetRequestSchema,
   InsertClipRequestSchema,
@@ -90,10 +97,12 @@ const CORS: Record<string, string> = {
 class HttpError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string, message: string) {
+  readonly details: unknown;
+  constructor(status: number, code: string, message: string, details?: unknown) {
     super(message);
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -105,15 +114,20 @@ function ok<T>(data: T): Response {
   return json({ ok: true, data });
 }
 
-function fail(err: unknown): Response {
-  if (err instanceof HttpError) return json({ ok: false, error: { code: err.code, message: err.message } }, err.status);
+function toHttpError(err: unknown): HttpError {
+  if (err instanceof HttpError) return err;
   if (err instanceof ZodError) {
     const message = err.issues.map((i: { path: PropertyKey[]; message: string }) => `${i.path.map(String).join('.') || '(body)'}: ${i.message}`).join('; ');
-    return json({ ok: false, error: { code: 'VALIDATION', message, details: err.issues } }, 400);
+    return new HttpError(400, 'VALIDATION', message, err.issues);
   }
   const message = err instanceof Error ? err.message : String(err);
   const status = /not found/i.test(message) ? 404 : 400;
-  return json({ ok: false, error: { code: status === 404 ? 'NOT_FOUND' : 'BAD_REQUEST', message } }, status);
+  return new HttpError(status, status === 404 ? 'NOT_FOUND' : 'BAD_REQUEST', message);
+}
+
+function fail(err: unknown): Response {
+  const e = toHttpError(err);
+  return json({ ok: false, error: { code: e.code, message: e.message, ...(e.details === undefined ? {} : { details: e.details }) } }, e.status);
 }
 
 export interface RunningServer {
@@ -353,6 +367,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
   const fps = doc.fps;
   const T = (v: string | number | undefined): number | undefined => (v === undefined ? undefined : parseTimecode(v, fps));
   const key = `${method} ${path}`;
+  if (key === `POST ${API_ROUTES.batch}`) return runBatch(ctx, BatchRequestSchema.parse(body));
 
   // FX packs: uninstall carries the pack name in the path.
   const packUninstall = /^POST \/api\/packs\/([a-z][a-z0-9-]*)\/uninstall$/.exec(key);
@@ -690,8 +705,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     }
 
     case `POST ${API_ROUTES.trackRemove}`: {
-      const { id } = (body ?? {}) as { id?: string };
-      if (!id) throw new HttpError(400, 'VALIDATION', 'id is required');
+      const { id } = IdRequestSchema.parse(body);
       doc.removeTrack(id, ORIGIN_API);
       return { removed: id };
     }
@@ -702,8 +716,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     }
 
     case `POST ${API_ROUTES.assetsRemove}`: {
-      const { id } = (body ?? {}) as { id?: string };
-      if (!id) throw new HttpError(400, 'VALIDATION', 'id is required');
+      const { id } = IdRequestSchema.parse(body);
       doc.removeAsset(id, ORIGIN_API);
       return { removed: id };
     }
@@ -745,6 +758,44 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
   }
 }
 
+// ---- batches (neon-cli apply) ---------------------------------------------------------------
+
+/**
+ * Run ops through handleApi as one unit. Every route is checked before anything runs; if an op
+ * fails, the document goes back to its state before the batch. On success one history checkpoint
+ * covers the whole batch, so a single `history undo` reverts it.
+ *
+ * Rollback re-applies an in-memory snapshot rather than history.restore(): restore() is a no-op
+ * when the target is the cursor, and otherwise folds the live (half-applied) state into the
+ * cursor checkpoint first.
+ */
+async function runBatch(ctx: MainContext, { ops }: BatchRequest): Promise<BatchResult> {
+  for (const [i, op] of ops.entries()) {
+    const check = checkBatchRoute(op.route);
+    if (!check.ok) throw new HttpError(400, 'NOT_BATCHABLE', `op ${i}: ${check.reason}`, { failedAt: i, results: [], rolledBack: false } satisfies BatchFailure);
+  }
+  const before = ctx.store.toJSON();
+  await ctx.history.push();
+  const results: unknown[] = [];
+  for (const [i, op] of ops.entries()) {
+    try {
+      const body = resolveRefs(op.body ?? {}, results);
+      const result = await handleApi(ctx, 'POST', op.route, body);
+      recordActivity(ctx, op.route, body, result);
+      results.push(result);
+    } catch (err) {
+      ctx.store.doc.applySnapshot(before);
+      const e = toHttpError(err);
+      ctx.events.activity('cli', 'batch.rollback', `Batch stopped at op ${i} (${op.route}): ${e.message}. Rolled back ${results.length} edit${results.length === 1 ? '' : 's'}`);
+      const details: BatchFailure = { failedAt: i, results, rolledBack: true, ...(e.details === undefined ? {} : { cause: e.details }) };
+      throw new HttpError(e.status, e.code, `op ${i} (${op.route}): ${e.message}`, details);
+    }
+  }
+  const history = await ctx.history.push();
+  ctx.rpc?.send.historyChanged({ status: history });
+  ctx.events.activity('cli', 'batch.apply', `Applied ${ops.length} edit${ops.length === 1 ? '' : 's'} as one undo step`);
+  return { results, history };
+}
 
 async function packSummaries(ctx: MainContext): Promise<PackSummary[]> {
   const enabled = new Set(ctx.store.doc.getMeta().packs ?? []);

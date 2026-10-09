@@ -243,7 +243,48 @@ export const API_ROUTES = {
   signaling: '/signaling',
   assets: '/assets',
   waveforms: '/waveforms',
+  // Concrete forms of the prefix routes above, so every route has its own entry in api-catalog.ts.
+  aiJob: '/api/ai/jobs/:id',
+  aiJobCancel: '/api/ai/jobs/:id/cancel',
+  aiTranscriptGet: '/api/ai/transcript/:assetId',
+  aiTranscriptCut: '/api/ai/transcript/cut',
+  aiTranscribe: '/api/ai/transcribe',
+  aiFillers: '/api/ai/fillers',
+  aiSilence: '/api/ai/silence',
+  aiBreaths: '/api/ai/breaths',
+  aiDenoise: '/api/ai/denoise',
+  aiEnhance: '/api/ai/enhance',
+  aiMatte: '/api/ai/matte',
+  aiReframe: '/api/ai/reframe',
+  aiBroll: '/api/ai/broll',
+  aiClean: '/api/ai/clean',
+  aiSetup: '/api/ai/setup',
+  aiRip: '/api/ai/rip',
+  recordStart: '/api/record/start',
+  recordStop: '/api/record/stop',
+  recordState: '/api/record/state',
+  batch: '/api/batch',
 } as const;
+
+export type ApiRouteKey = keyof typeof API_ROUTES;
+
+/** POST /api/batch on success: one result per op, and the history position (one undo reverts the batch). */
+export interface BatchResult {
+  results: unknown[];
+  history: HistoryStatus;
+}
+
+/** `error.details` of a failed POST /api/batch. */
+export interface BatchFailure {
+  /** Index of the op that failed (or was refused before anything ran). */
+  failedAt: number;
+  /** Results of the ops that ran before it. */
+  results: unknown[];
+  /** True when ops had started: the project was restored to its state before the batch. False when the plan was refused up front. */
+  rolledBack: boolean;
+  /** `details` of the failing op's own error, e.g. zod issues. */
+  cause?: unknown;
+}
 
 /** Who caused an action. */
 export type ActivitySource = 'cli' | 'ui' | 'peer' | 'render' | 'room' | 'system' | 'ai';
