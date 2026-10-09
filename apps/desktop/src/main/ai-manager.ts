@@ -32,6 +32,7 @@ import {
   analyseBreaths,
   analyseSilences,
   detectFreezes,
+  ffmpegNeedsInstall,
   planPacing,
   type PaceAction,
   breathKeyframes,
@@ -441,8 +442,9 @@ export class AiManager {
   async autoProvision(): Promise<void> {
     try {
       const caps = await this.capabilities(true);
-      if (caps.ffmpeg.available && caps.ytdlp.available) return;
-      const missing = [!caps.ffmpeg.available ? 'ffmpeg' : null, !caps.ytdlp.available ? 'yt-dlp' : null].filter(Boolean).join(' + ');
+      const ffmpegStale = await ffmpegNeedsInstall();
+      if (!ffmpegStale && caps.ytdlp.available) return;
+      const missing = [ffmpegStale ? (caps.ffmpeg.available ? 'ffmpeg update' : 'ffmpeg') : null, !caps.ytdlp.available ? 'yt-dlp' : null].filter(Boolean).join(' + ');
       this.ctx.rpc?.send.toast({ kind: 'info', message: `Setting up media engines (${missing}) — imports and rips will work in a moment…` });
       this.ctx.events.activity('ai', 'setup.auto', `Installing missing media engines: ${missing}`);
       const job = this.start('setup', { whisper: false, rnnoise: false, ffmpeg: true, ytdlp: true });
