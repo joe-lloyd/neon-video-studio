@@ -520,6 +520,8 @@ export const CaptureStartRequestSchema = z
     return { source, mic, fps: v.fps, cursor: v.cursor };
   });
 export type CaptureStartRequest = z.output<typeof CaptureStartRequestSchema>;
+/** The JSON body a client sends to POST /api/capture/start. */
+export type CaptureStartBody = z.input<typeof CaptureStartRequestSchema>;
 
 /** POST /api/capture/stop. Default placement: appended to the end of the first video track. */
 export const CaptureStopRequestSchema = z.object({

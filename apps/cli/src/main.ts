@@ -21,6 +21,7 @@ import { closest, helpCommands, usageLines } from './usage.ts';
 import { batchFailure, formatApplied, formatPlanCheck, loadPlan, readJsonArg } from './apply.ts';
 import { formatTimeline, timelineView } from './timeline-view.ts';
 import { captionsCommand } from './captions.ts';
+import { captureCommand } from './capture.ts';
 
 const HELP = `neon-cli — Neon Video Studio control
 
@@ -73,6 +74,10 @@ COMMANDS
   captions srt|vtt [--out file] [--source A1,V1]   Subtitle file of what is said on the timeline now (stdout without --out)
   timeline update <clip> --pos 0.5,0.3 --scale 0.6 --rotation -15 --in pop:12 --out fade:10   Canvas placement + enter/exit animation
   record start | record stop [--at T]     Record a mic voice-over in the app (take lands on the VO track)
+  capture devices                         Displays and microphones the screen recorder can use
+  capture start [--display N] [--region x,y,w,h] [--window "Title"] [--fps 30] [--mic NAME|--no-mic] [--no-cursor] [--countdown 3] [--duration T]
+  capture stop [--at T] [--track REF] | capture cancel | capture status
+      Record the screen with narration; the take is appended to V1 (--duration stops by itself)
   rip <url> [--quality 1080|720|best|audio] [--at T]   Download a YouTube/web video into the media library (yt-dlp)
 
 AI (local engines: whisper.cpp, ffmpeg, Apple Vision; Claude optional for B-roll)
@@ -203,6 +208,13 @@ const { values: flags, positionals } = parseCli(() => parseArgs({
     'dry-run': { type: 'boolean', default: false },
     style: { type: 'string' },
     source: { type: 'string' },
+    display: { type: 'string' },
+    region: { type: 'string' },
+    window: { type: 'string' },
+    mic: { type: 'string' },
+    'no-mic': { type: 'boolean' },
+    cursor: { type: 'boolean' },
+    countdown: { type: 'string' },
   },
 }));
 
@@ -807,6 +819,10 @@ async function main(): Promise<void> {
       } else throw unknownSub('record', sub, ['start', 'stop']);
       return;
     }
+
+    case 'capture':
+      await captureCommand(api, sub, flags, { json, out });
+      return;
 
     case 'ai': {
       await aiCommand(api, sub, rest);

@@ -1,5 +1,5 @@
 /** Typed HTTP client for the desktop app's control API. */
-import { API_ROUTES, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary, type SheetRequestInput, type StillRequestInput, type StillResult } from '@neon/core';
+import { API_ROUTES, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type CaptureDevices, type CaptureStartBody, type CaptureState, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary, type SheetRequestInput, type StillRequestInput, type StillResult } from '@neon/core';
 import { isProcessAlive, readInstanceInfo } from '@neon/core/node';
 import type { Asset, BatchRequest, BatchResult, Clip, Project, Track } from '@neon/core';
 
@@ -127,6 +127,11 @@ export class NeonClient {
   shutdown = () => this.call<{ stopping: boolean; pid: number }>('POST', API_ROUTES.shutdown, {});
   historyCheckpoint = () => this.call<HistoryStatus>('POST', API_ROUTES.historyCheckpoint, {});
   batch = (plan: BatchRequest) => this.call<BatchResult>('POST', API_ROUTES.batch, plan);
+  captureDevices = () => this.call<CaptureDevices>('GET', API_ROUTES.captureDevices);
+  captureState = () => this.call<CaptureState>('GET', API_ROUTES.captureState);
+  captureStart = (body: CaptureStartBody) => this.call<CaptureState>('POST', API_ROUTES.captureStart, body);
+  captureStop = (body: { at?: string; track?: string }) => this.call<ImportAssetResponse & { durationMs: number }>('POST', API_ROUTES.captureStop, body);
+  captureCancel = () => this.call<{ cancelled: boolean }>('POST', API_ROUTES.captureCancel, {});
 
   /** Waveform peaks (one byte per 10 ms, 0..255); empty array = no audio stream, null = unavailable. */
   async waveform(assetId: string): Promise<Uint8Array | null> {
