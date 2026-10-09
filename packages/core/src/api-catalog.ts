@@ -154,6 +154,7 @@ export const API_CATALOG: { readonly [K in ApiRouteKey]: RouteSpec } = {
   captureStop: { method: 'POST', summary: 'Stop the screen recording and place the take (end of V1 by default)', body: CaptureStopRequestSchema, notInBatch: 'records the screen' },
   captureCancel: { method: 'POST', summary: 'Stop the screen recording and throw the take away', body: null, notInBatch: 'records the screen' },
   captureState: { method: 'GET', summary: 'Screen recorder state' },
+  files: { method: 'GET', summary: 'Download a file this app rendered (?path=…): renders, stills, sheets' },
   batch: { method: 'POST', summary: 'Run POST ops as one unit: all apply (one undo step) or the project is restored', body: BatchRequestSchema, notInBatch: 'batches do not nest' },
 };
 

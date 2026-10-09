@@ -228,15 +228,17 @@ async function start(ctx: MainContext, scope: Scope, hostname: string, port: num
             const name = (url.searchParams.get('name') ?? 'upload.bin').replace(/[^\w.\- ]/g, '_');
             const at = url.searchParams.get('at');
             const trackId = url.searchParams.get('track') ?? undefined;
-            const { mkdtemp: mkTmp, rm: rmTmp, writeFile: writeTmp } = await import('node:fs/promises');
+            srv.timeout(req, 0);
+            const { mkdtemp: mkTmp, rm: rmTmp } = await import('node:fs/promises');
             const { tmpdir: osTmp } = await import('node:os');
             const { join: joinPath } = await import('node:path');
             const dir = await mkTmp(joinPath(osTmp(), 'neon-upload-'));
             try {
               const file = joinPath(dir, name);
-              await writeTmp(file, new Uint8Array(await req.arrayBuffer()));
+              // Stream the body to disk: remote CLIs upload whole screen recordings this way.
+              await Bun.write(file, new Response(req.body));
               const result = await ctx.assets.import(file, {
-                insertAt: at !== null ? Math.max(0, Math.round(Number(at))) : undefined,
+                insertAt: at === null ? undefined : /^\d+$/.test(at) ? Number(at) : parseTimecode(at, ctx.store.doc.fps),
                 trackId,
                 origin: ORIGIN_API,
               });
@@ -245,6 +247,14 @@ async function start(ctx: MainContext, scope: Scope, hostname: string, port: num
             } finally {
               await rmTmp(dir, { recursive: true, force: true }).catch(() => undefined);
             }
+          }
+          // Files this app produced (renders, stills), for CLIs on another machine (neon-cli --on).
+          if (path === API_ROUTES.files && req.method === 'GET') {
+            const wanted = url.searchParams.get('path') ?? '';
+            if (!wanted || !ctx.renders.isProduced(wanted)) throw new HttpError(404, 'NOT_FOUND', 'Only files this app rendered in this session can be fetched');
+            const file = Bun.file(wanted);
+            if (!(await file.exists())) throw new HttpError(404, 'NOT_FOUND', `${wanted} no longer exists`);
+            return new Response(file, { headers: { ...CORS, 'Content-Type': mediaTypeForFile(wanted)?.mime ?? 'application/octet-stream' } });
           }
           const body = req.method === 'POST' ? ((await req.json().catch(() => ({}))) as unknown) : {};
           // Stills answer when the PNG exists; a first-run bundle can outlast the idle timeout.

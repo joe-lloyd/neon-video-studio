@@ -42,6 +42,10 @@ export class NeonClient {
     this.opts = opts;
   }
 
+  get token(): string {
+    return this.opts.token;
+  }
+
   get endpoint(): string {
     return this.opts.endpoint;
   }

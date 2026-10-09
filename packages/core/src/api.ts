@@ -240,6 +240,7 @@ export const API_ROUTES = {
   historyRedo: '/api/history/redo',
   historyCheckpoint: '/api/history/checkpoint',
   shutdown: '/api/shutdown',
+  files: '/api/files',
   captureDevices: '/api/capture/devices',
   captureStart: '/api/capture/start',
   captureStop: '/api/capture/stop',
