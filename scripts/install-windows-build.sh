@@ -40,14 +40,16 @@ tar -xf (Join-Path \$src 'win-x64-NeonVideoStudio-Setup.zip') -C (Join-Path \$sr
 # An interactive-logon task runs in the signed-in desktop session (SSH sessions have no desktop).
 # The cmdlets keep the spaced path intact; PowerShell 5 strips embedded quotes from schtasks /tr.
 \$task = Register-ScheduledTask -TaskName NeonVideoStudioSetup -Force -Action (New-ScheduledTaskAction -Execute \$setup) -Principal (New-ScheduledTaskPrincipal -UserId \$env:USERNAME -LogonType Interactive)
-\$before = (Get-Content (Join-Path \$env:LOCALAPPDATA 'com.hypersolid.neon-video-studio\stable\app\Resources\version.json') -Raw | ConvertFrom-Json).hash
+# The installer deletes the app folder before writing the new one, so a missing file means "not yet".
+function BundleHash { \$f = Join-Path \$env:LOCALAPPDATA 'com.hypersolid.neon-video-studio\stable\app\Resources\version.json'; if (Test-Path \$f) { try { (Get-Content \$f -Raw | ConvertFrom-Json).hash } catch { \$null } } }
+\$before = BundleHash
 Start-ScheduledTask -TaskName NeonVideoStudioSetup
 for (\$i = 0; \$i -lt 60; \$i++) {
   Start-Sleep 2
-  \$now = (Get-Content (Join-Path \$env:LOCALAPPDATA 'com.hypersolid.neon-video-studio\stable\app\Resources\version.json') -Raw | ConvertFrom-Json).hash
-  if (\$now -ne \$before) { break }
+  \$now = BundleHash
+  if (\$now -and \$now -ne \$before) { break }
 }
-if (\$now -eq \$before) { throw "the installer did not replace the app (bundle still \$before); is someone signed in at the desktop?" }
+if (-not \$now -or \$now -eq \$before) { throw "the installer did not replace the app (bundle still \$before); is someone signed in at the desktop?" }
 "installed bundle \$now (was \$before)"
 Get-Process 'Neon Video Studio-Setup' -ErrorAction SilentlyContinue | Stop-Process -Force
 Get-Process bun, launcher -ErrorAction SilentlyContinue | Where-Object { \$_.Path -like '*com.hypersolid.neon-video-studio*' } | Stop-Process -Force
