@@ -66,7 +66,7 @@ import {
   type ListResponse,
 } from '@neon/core';
 import { mediaTypeForFile } from '@neon/core/node';
-import { parseRange } from '@neon/render';
+import { parseCapture, parseRange } from '@neon/render';
 import { WAVEFORM_RATE } from './waveforms.ts';
 import type { SignalSocket, SyncSocket } from '@neon/p2p/server';
 import { ffprobeAvailable } from './assets.ts';
@@ -231,6 +231,8 @@ async function start(ctx: MainContext, scope: Scope, hostname: string, port: num
             }
           }
           const body = req.method === 'POST' ? ((await req.json().catch(() => ({}))) as unknown) : {};
+          // Stills answer when the PNG exists; a first-run bundle can outlast the idle timeout.
+          if (path === API_ROUTES.renderStill || path === API_ROUTES.renderSheet) srv.timeout(req, 0);
           const result = await handleApi(ctx, req.method, path, body);
           if (req.method === 'POST') recordActivity(ctx, path, body, result);
           return ok(result);
@@ -472,6 +474,12 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     const req = CutRangesRequestSchema.parse(body);
     const ranges = req.ranges.map((r) => ({ start: T(r.start)!, end: T(r.end)! }));
     return doc.cutRanges(ranges, { trackIds: req.trackIds, ripple: req.ripple, crossfadeFrames: req.crossfadeFrames }, ORIGIN_API);
+  }
+
+  // Stills and contact sheets: wait for the PNG so an agent can look at its edit.
+  if (key === `POST ${API_ROUTES.renderStill}` || key === `POST ${API_ROUTES.renderSheet}`) {
+    const { target, output } = parseCapture(path === API_ROUTES.renderStill ? 'still' : 'sheet', body, fps, doc.durationFrames());
+    return ctx.renders.capture(target, output);
   }
 
   // Dynamic render routes.

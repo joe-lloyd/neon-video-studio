@@ -364,6 +364,7 @@ export const StillRequestSchema = z.object({
   width: z.number().int().min(64).max(7680).default(1280),
 });
 export type StillRequest = z.infer<typeof StillRequestSchema>;
+export type StillRequestInput = z.input<typeof StillRequestSchema>;
 
 /** A grid of frames in one PNG. Default: 12 frames spread over the whole timeline. */
 export const SheetRequestSchema = z
@@ -378,6 +379,7 @@ export const SheetRequestSchema = z
   })
   .refine((r) => r.count === undefined || r.every === undefined, { message: 'Pass count or every, not both' });
 export type SheetRequest = z.infer<typeof SheetRequestSchema>;
+export type SheetRequestInput = z.input<typeof SheetRequestSchema>;
 
 export const UpdateMetaRequestSchema = z.object({
   name: z.string().min(1).optional(),
