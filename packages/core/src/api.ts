@@ -27,12 +27,22 @@ export interface RenderJob {
   renderedFrames: number;
   totalFrames: number;
   outputPath: string;
+  /** Render preset, or 'still' / 'sheet' for PNG captures. */
   presetId: string;
   startedAt: string;
   finishedAt?: string;
   error?: string;
   /** Last few log lines from the worker, for diagnostics. */
   log: string[];
+}
+
+/** Result of POST /api/render/still and /api/render/sheet. */
+export interface StillResult {
+  path: string;
+  /** Project frames captured, in order. */
+  frames: number[];
+  width: number;
+  height: number;
 }
 
 export type AiOperation = 'transcribe' | 'fillers' | 'silence' | 'breaths' | 'denoise' | 'enhance' | 'matte' | 'reframe' | 'broll' | 'clean' | 'pace' | 'transcript-cut' | 'setup' | 'rip';
@@ -199,6 +209,8 @@ export const API_ROUTES = {
   assetsImport: '/api/assets/import',
   assetsRemove: '/api/assets/remove',
   render: '/api/render',
+  renderStill: '/api/render/still',
+  renderSheet: '/api/render/sheet',
   renderJob: '/api/render/:id',
   renderCancel: '/api/render/:id/cancel',
   roomHost: '/api/room/host',

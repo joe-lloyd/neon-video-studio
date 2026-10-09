@@ -7,6 +7,7 @@ export * from './doc.ts';
 export * from './templates.ts';
 export * from './packs.ts';
 export * from './presets.ts';
+export * from './stills.ts';
 export * from './schemas.ts';
 export * from './api.ts';
 export * from './theme.ts';
