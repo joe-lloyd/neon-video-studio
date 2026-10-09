@@ -7,7 +7,7 @@
 import { parseArgs } from 'node:util';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { RENDER_PRESETS, getPreset, projectPreset, framesToTimecode, timelineFrameAt, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type ImportAssetResponse, type RenderJob } from '@neon/core';
+import { RENDER_PRESETS, bodyJsonSchema, catalogEntries, checkPlan, findRoute, getPreset, projectPreset, framesToTimecode, timelineFrameAt, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type CatalogEntry, type ImportAssetResponse, type RenderJob } from '@neon/core';
 import { renderHeadless } from '@neon/render';
 import { registerAllPacks } from '@neon/remotion-workspace/packs';
 import { registerInstalledPacks } from '@neon/core/node';
@@ -17,17 +17,27 @@ import { ApiError, NeonClient, discoverClient } from './client.ts';
 import { clipRow, progressBar, table } from './format.ts';
 import { serve } from './serve.ts';
 import { describeStill, stillCommand } from './stills.ts';
+import { closest, helpCommands, usageLines } from './usage.ts';
+import { batchFailure, formatApplied, formatPlanCheck, loadPlan, readJsonArg } from './apply.ts';
+import { formatTimeline, timelineView } from './timeline-view.ts';
 
 const HELP = `neon-cli — Neon Video Studio control
 
 USAGE
   neon-cli <command> [subcommand] [options]
 
+AGENT (start here: docs/cli.md "Agent quickstart")
+  timeline [show]                         The edit at a glance: tracks, clips, gaps, speed, zooms, fades (--json for structure)
+  schema [route]                          Every control route with its JSON body schema (works without the app)
+  api GET|POST <path> [json|@file|-]      Call any control route; prints {ok, data|error}
+  apply <plan.json|-> [--dry-run]         Run [{route, body}] ops as one undo step; "$0.id" = op 0's result; a failure rolls back
+
 COMMANDS
   serve [--project <dir>] [--detach]    Run the app headless (no window) so the CLI works without the GUI
   stop                                    Stop a headless instance
   status                                  App, project, room and render status
   list [templates|packs|tracks|clips|assets|presets]
+  templates [<Name>]                      Template names, or one template's props JSON Schema and defaults (works without the app)
   state dump [--out file]                 Full project JSON
   project new [--name N] [--fps 30] [--width W] [--height H]
   project open <dir>                      Open a .neon project directory
@@ -105,7 +115,7 @@ GLOBAL OPTIONS
   -h, --help
 `;
 
-const { values: flags, positionals } = parseArgs({
+const { values: flags, positionals } = parseCli(() => parseArgs({
   allowPositionals: true,
   allowNegative: true,
   strict: true,
@@ -187,10 +197,51 @@ const { values: flags, positionals } = parseArgs({
     silences: { type: 'boolean', default: true },
     breaths: { type: 'boolean', default: true },
     denoise: { type: 'boolean' },
+    'dry-run': { type: 'boolean', default: false },
   },
-});
+}));
 
-const json = flags.json;
+// `api` is a raw passthrough: its output is always the {ok, data|error} envelope.
+const json = flags.json || positionals[0] === 'api';
+
+function printError(e: ApiError, asJson: boolean): never {
+  if (asJson) process.stdout.write(`${JSON.stringify({ ok: false, error: { code: e.code, message: e.message, details: e.details } })}\n`);
+  else process.stderr.write(`error [${e.code}]: ${e.message}\n`);
+  process.exit(1);
+}
+
+/** Flag errors happen before `main` runs: report them like any other usage error, with the closest flag. */
+function parseCli<T>(parse: () => T): T {
+  try {
+    return parse();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const unknown = /^Unknown option '(-[^']+)'/.exec(message)?.[1];
+    const flagsInHelp = [...new Set(HELP.match(/--[a-z][a-z-]*/g) ?? [])];
+    const guess = unknown ? closest(unknown, flagsInHelp) : undefined;
+    const [cmd, sub] = process.argv.slice(2).filter((a) => !a.startsWith('-'));
+    const problem = unknown ? `Unknown option ${unknown}.${guess ? ` Did you mean ${guess}?` : ''}` : message;
+    printError(cmd ? usage(cmd, sub, problem) : new ApiError('USAGE', `${problem} Run neon-cli --help`), process.argv.includes('--json'));
+  }
+}
+
+/** A USAGE error quoting the HELP lines for `cmd sub`, after an optional one-line problem. */
+function usage(cmd: string, sub?: string, problem?: string): ApiError {
+  const lines = usageLines(HELP, cmd, sub).map((l) => `neon-cli ${l}`);
+  const text = lines.length ? `usage: ${lines.join('\n       ')}` : 'Run neon-cli --help';
+  return new ApiError('USAGE', problem ? `${problem}\n${text}` : text, { usage: lines });
+}
+
+function unknownSub(cmd: string, sub: string | undefined, subs: string[]): ApiError {
+  if (sub === undefined) return usage(cmd, undefined, `${cmd} needs a subcommand: ${subs.join(', ')}`);
+  const guess = closest(sub, subs);
+  return usage(cmd, undefined, `Unknown subcommand "${cmd} ${sub}".${guess ? ` Did you mean "${cmd} ${guess}"?` : ''}`);
+}
+
+function unknownCommand(cmd: string): ApiError {
+  const guess = closest(cmd, helpCommands(HELP));
+  return new ApiError('USAGE', `Unknown command "${cmd}".${guess ? ` Did you mean "${guess}"?` : ''} Run neon-cli --help`);
+}
 
 function out(data: unknown, human: () => string | void): void {
   if (json) process.stdout.write(`${JSON.stringify({ ok: true, data }, null, 2)}\n`);
@@ -201,10 +252,7 @@ function out(data: unknown, human: () => string | void): void {
 }
 
 function fail(err: unknown): never {
-  const e = err instanceof ApiError ? err : err instanceof Error ? new ApiError('ERROR', err.message) : new ApiError('ERROR', String(err));
-  if (json) process.stdout.write(`${JSON.stringify({ ok: false, error: { code: e.code, message: e.message, details: e.details } })}\n`);
-  else process.stderr.write(`error [${e.code}]: ${e.message}\n`);
-  process.exit(1);
+  printError(err instanceof ApiError ? err : err instanceof Error ? new ApiError('ERROR', err.message) : new ApiError('ERROR', String(err)), json);
 }
 
 function parseJsonFlag(raw: string | undefined, label: string): Record<string, unknown> | undefined {
@@ -226,7 +274,14 @@ function num(raw: string | undefined): number | undefined {
 }
 
 async function client(): Promise<NeonClient> {
-  return new NeonClient(await discoverClient({ endpoint: flags.endpoint, token: flags.token }));
+  try {
+    return new NeonClient(await discoverClient({ endpoint: flags.endpoint, token: flags.token }));
+  } catch (err) {
+    // A mistyped command deserves a suggestion, not "start the app". (With the app up, the switch's default answers.)
+    const cmd = positionals[0];
+    if (cmd && cmd !== 'watch' && !helpCommands(HELP).includes(cmd)) throw unknownCommand(cmd);
+    throw err;
+  }
 }
 
 async function waitForRender(api: NeonClient, job: RenderJob): Promise<RenderJob> {
@@ -258,7 +313,7 @@ async function main(): Promise<void> {
 
   // Headless render does not need the app.
   if (cmd === 'render' && flags.headless) {
-    if (!flags.project || !flags.output) throw new ApiError('USAGE', 'render --headless requires --project <dir> and --output <file>');
+    if (!flags.project || !flags.output) throw usage('render', '--headless', 'render --headless needs --project <dir> and --output <file>');
     let last = '';
     const outputPath = resolve(flags.output);
     const presetId = flags.preset;
@@ -298,7 +353,10 @@ async function main(): Promise<void> {
       out(listTemplates().map((t) => ({ name: t.name, pack: t.pack ?? 'core', category: t.category, description: t.description })), () => table(listTemplates().map((t) => [t.name, t.pack ?? 'core', t.category ?? '', t.description]), ['name', 'pack', 'category', 'description']));
       return;
     }
-    if (!listTemplates().some((t) => t.name === sub)) throw new ApiError('NOT_FOUND', `No template "${sub}". Run neon-cli templates`);
+    if (!listTemplates().some((t) => t.name === sub)) {
+      const guess = closest(sub, listTemplates().map((t) => t.name));
+      throw new ApiError('NOT_FOUND', `No template "${sub}".${guess ? ` Did you mean "${guess}"?` : ''} Run neon-cli templates`);
+    }
     const info = { name: sub, defaults: templateDefaults(sub), jsonSchema: templateJsonSchema(sub) };
     out(info, () => JSON.stringify(info, null, 2));
     return;
@@ -313,9 +371,76 @@ async function main(): Promise<void> {
     return;
   }
 
+  // -- agent surface: schema (offline), apply (dry-run offline) -------------------------------
+  if (cmd === 'schema') {
+    const callable = catalogEntries().filter((e) => e.spec.method === 'GET' || e.spec.method === 'POST');
+    const describe = (e: CatalogEntry) => ({
+      route: e.path,
+      method: e.spec.method,
+      summary: e.spec.summary,
+      ...(e.spec.method === 'POST' ? { batch: !e.spec.notInBatch, ...(e.spec.notInBatch ? { notInBatch: e.spec.notInBatch } : {}), body: bodyJsonSchema(e.spec) } : {}),
+    });
+    if (!sub) {
+      out(callable.map(describe), () =>
+        `${table(callable.map((e) => [e.spec.method, e.path, e.spec.method === 'POST' && !e.spec.notInBatch ? 'yes' : '', e.spec.summary]), ['method', 'route', 'batch', 'summary'])}\n\nBody schema: neon-cli schema <route> · component props: neon-cli templates <Name>`,
+      );
+      return;
+    }
+    const wanted = sub.startsWith('/') ? sub : `/api/${sub.replace(/^api\//, '')}`;
+    const entry = callable.find((e) => e.path === wanted || e.key === sub) ?? findRoute('POST', wanted) ?? findRoute('GET', wanted);
+    if (!entry) {
+      const guess = closest(wanted, callable.map((e) => e.path));
+      throw new ApiError('NOT_FOUND', `No route "${sub}".${guess ? ` Did you mean "${guess}"?` : ''} Run neon-cli schema`);
+    }
+    const info = describe(entry);
+    out(info, () => JSON.stringify(info, null, 2));
+    return;
+  }
+
+  if (cmd === 'apply') {
+    if (!sub) throw usage('apply');
+    const plan = await loadPlan(sub);
+    if (flags['dry-run']) {
+      const checks = checkPlan(plan);
+      const bad = checks.filter((c) => c.problems.length > 0);
+      if (bad.length) throw new ApiError('PLAN_INVALID', `${bad.length} of ${checks.length} op(s) would fail:\n${formatPlanCheck(bad)}`, checks);
+      out({ valid: true, ops: checks }, () => `${formatPlanCheck(checks)}\nPlan is valid (${checks.length} op(s)); nothing was run`);
+      return;
+    }
+    const applyApi = await client();
+    try {
+      const r = await applyApi.batch(plan);
+      out(r, () => formatApplied(plan, r));
+    } catch (err) {
+      const failure = err instanceof ApiError ? batchFailure(err.details) : null;
+      if (!(err instanceof ApiError) || !failure) throw err;
+      const note = failure.rolledBack ? 'rolled back: the project is as it was before the batch' : 'nothing ran';
+      if (json) process.stdout.write(`${JSON.stringify({ ok: false, failedAt: failure.failedAt, error: { code: err.code, message: err.message, details: failure.cause }, results: failure.results, rolledBack: failure.rolledBack })}\n`);
+      else process.stderr.write(`error [${err.code}]: ${err.message}\n${note}\n`);
+      process.exit(1);
+    }
+    return;
+  }
+
   const api = await client();
 
   switch (cmd) {
+    case 'api': {
+      const method = sub?.toUpperCase();
+      if ((method !== 'GET' && method !== 'POST') || !rest[0]) throw usage('api');
+      const path = rest[0].startsWith('/') ? rest[0] : `/api/${rest[0].replace(/^api\//, '')}`;
+      if (method === 'GET' && rest[1] !== undefined) throw usage('api', undefined, 'GET takes no body');
+      const body = method === 'POST' ? (rest[1] === undefined ? {} : await readJsonArg(rest[1])) : undefined;
+      try {
+        out(await api.call2(method, path, body), () => undefined);
+      } catch (err) {
+        if (!(err instanceof ApiError) || !err.message.startsWith('No route') || findRoute(method, path)) throw err;
+        const guess = closest(path, catalogEntries().filter((e) => e.spec.method === method).map((e) => e.path));
+        throw new ApiError(err.code, `${err.message}.${guess ? ` Did you mean ${method} ${guess}?` : ''} Run neon-cli schema`);
+      }
+      return;
+    }
+
     case 'status': {
       const s = await api.status();
       out(s, () =>
@@ -334,6 +459,8 @@ async function main(): Promise<void> {
 
     case 'list': {
       const what = sub ?? 'all';
+      const kinds = ['all', 'templates', 'packs', 'tracks', 'clips', 'assets', 'presets'];
+      if (!kinds.includes(what)) throw unknownSub('list', what, kinds);
       const data = await api.list();
       const fps = (await api.status()).project.fps;
       if (json) {
@@ -373,7 +500,7 @@ async function main(): Promise<void> {
     }
 
     case 'state': {
-      if (sub !== 'dump') throw new ApiError('USAGE', 'state dump [--out file]');
+      if (sub !== 'dump') throw unknownSub('state', sub, ['dump']);
       const s = await api.state();
       if (flags.out) {
         await writeFile(resolve(flags.out), JSON.stringify(s.project, null, 2));
@@ -389,18 +516,22 @@ async function main(): Promise<void> {
         const r = await api.projectNew({ name: flags.name, fps: num(flags.fps), width: num(flags.width), height: num(flags.height) });
         out(r, () => `Created project "${r.project.meta.name}" (${r.path ?? 'unsaved'})`);
       } else if (sub === 'open') {
-        if (!rest[0]) throw new ApiError('USAGE', 'project open <dir>');
+        if (!rest[0]) throw usage('project', 'open');
         const r = await api.projectOpen(resolve(rest[0]));
         out(r, () => `Opened ${r.path} — ${r.project.clips.length} clips`);
       } else if (sub === 'save') {
         const r = await api.projectSave(rest[0] ? resolve(rest[0]) : undefined);
         out(r, () => `Saved ${r.path}`);
-      } else throw new ApiError('USAGE', 'project new|open|save');
+      } else throw unknownSub('project', sub, ['new', 'open', 'save']);
       return;
     }
 
     case 'timeline': {
-      if (sub === 'insert') {
+      if (!sub || sub === 'show') {
+        const s = await api.state();
+        const view = timelineView(s.project, s.durationFrames);
+        out(view, () => formatTimeline(view));
+      } else if (sub === 'insert') {
         const placement = flags.overlap ? 'overlap' : flags.free ? 'free' : flags.ripple ? 'ripple' : undefined;
         const trackId = flags.track ? (await api.resolveTrack(flags.track)).id : undefined;
         let clip;
@@ -409,10 +540,10 @@ async function main(): Promise<void> {
         } else if (flags.asset) {
           const asset = await api.resolveAsset(flags.asset);
           clip = await api.insert({ kind: asset.kind, assetId: asset.id, at: flags.at, duration: flags.duration, trimBefore: flags.trim, trackId, name: flags.name, volume: num(flags.volume), placement });
-        } else throw new ApiError('USAGE', 'timeline insert requires --component NAME or --asset REF');
+        } else throw usage('timeline', 'insert', 'timeline insert needs --component NAME or --asset REF');
         out(clip, () => `Inserted ${clip.kind} "${clip.name}" as ${clip.id} at frame ${clip.startFrame} (${clip.durationFrames} frames)`);
       } else if (sub === 'update') {
-        if (!rest[0]) throw new ApiError('USAGE', 'timeline update <clip> [...]');
+        if (!rest[0]) throw usage('timeline', 'update');
         const target = await api.resolveClip(rest[0]);
         const trackId = flags.track ? (await api.resolveTrack(flags.track)).id : undefined;
         const parseAnim = (raw: string | undefined) => {
@@ -447,7 +578,7 @@ async function main(): Promise<void> {
         });
         out(clip, () => `Updated ${clip.id}: start ${clip.startFrame}, length ${clip.durationFrames}`);
       } else if (sub === 'move') {
-        if (rest.length === 0 || (!flags.at && !flags.by)) throw new ApiError('USAGE', 'timeline move <clip> --at T [--track REF]  |  timeline move <clip...> --by T (negative allowed: --by=-2s)');
+        if (rest.length === 0 || (!flags.at && !flags.by)) throw usage('timeline', 'move');
         const all = (await api.list()).clips;
         const targets = [];
         for (const ref of rest) targets.push(await api.resolveClip(ref, all));
@@ -455,50 +586,50 @@ async function main(): Promise<void> {
           const moved = await api.nudge(targets.map((c) => c.id), flags.by);
           out(moved, () => moved.map((c) => `Moved ${c.id} to frame ${c.startFrame}`).join('\n'));
         } else {
-          if (targets.length > 1) throw new ApiError('USAGE', 'Use --by to move several clips together (--at positions exactly one clip)');
+          if (targets.length > 1) throw usage('timeline', 'move', 'Use --by to move several clips together (--at positions exactly one clip)');
           const trackId = flags.track ? (await api.resolveTrack(flags.track)).id : undefined;
           const clip = await api.move(targets[0]!.id, flags.at!, trackId);
           out(clip, () => `Moved ${clip.id} to frame ${clip.startFrame}`);
         }
       } else if (sub === 'split') {
-        if (!rest[0] || !flags.at) throw new ApiError('USAGE', 'timeline split <clip> --at T');
+        if (!rest[0] || !flags.at) throw usage('timeline', 'split');
         const target = await api.resolveClip(rest[0]);
         const [l, r] = await api.split(target.id, flags.at);
         out([l, r], () => `Split into ${l.id} (${l.durationFrames}f) and ${r.id} (${r.durationFrames}f)`);
       } else if (sub === 'cut') {
-        if (!flags.from || !flags.to) throw new ApiError('USAGE', 'timeline cut --from T --to T [--track REF] [--no-ripple]');
+        if (!flags.from || !flags.to) throw usage('timeline', 'cut');
         const trackIds = flags.track ? [(await api.resolveTrack(flags.track)).id] : undefined;
         const r = await api.cut({ ranges: [{ start: flags.from, end: flags.to }], trackIds, ripple: flags.ripple ?? true });
         out(r, () => `Removed ${r.removedFrames} frames (${r.cuts} clip segment(s) touched)`);
       } else if (sub === 'speed') {
-        if (!rest[0] || !rest[1]) throw new ApiError('USAGE', 'timeline speed <clip> <rate> [--from T --to T]   e.g. timeline speed take.mp4 4 --from 1:20 --to 2:05');
+        if (!rest[0] || !rest[1]) throw usage('timeline', 'speed', 'e.g. neon-cli timeline speed take.mp4 4 --from 1:20 --to 2:05');
         const target = await api.resolveClip(rest[0]);
         const rate = num(rest[1].replace(/x$/i, ''))!;
         const c = await api.speed({ id: target.id, speed: rate, from: flags.from, to: flags.to });
         out(c, () => `“${c.name}” plays at ${rate}× → ${c.durationFrames}f at ${c.startFrame}${rate > 2 ? ' (audio silent above 2×)' : ''}; later clips rippled`);
       } else if (sub === 'detach') {
-        if (!rest[0]) throw new ApiError('USAGE', 'timeline detach <clip>');
+        if (!rest[0]) throw usage('timeline', 'detach');
         const target = await api.resolveClip(rest[0]);
         const audio = await api.detach(target.id);
         out(audio, () => `Audio detached → clip ${audio.id} on an audio track (video muted; undo with ⌘Z in the app)`);
       } else if (sub === 'remove') {
-        if (rest.length === 0) throw new ApiError('USAGE', 'timeline remove <clip...>');
+        if (rest.length === 0) throw usage('timeline', 'remove');
         const all = (await api.list()).clips;
         const ids = [];
         for (const ref of rest) ids.push((await api.resolveClip(ref, all)).id);
         const r = await api.remove(ids);
         out(r, () => `Removed ${r.removed} clip(s)`);
-      } else throw new ApiError('USAGE', 'timeline insert|update|move|split|remove|cut|detach');
+      } else throw unknownSub('timeline', sub, ['show', 'insert', 'update', 'move', 'split', 'remove', 'cut', 'detach', 'speed']);
       return;
     }
 
     case 'tracks': {
       if (sub === 'add') {
-        if (!flags.kind) throw new ApiError('USAGE', 'tracks add --kind video|audio|overlay');
+        if (!flags.kind) throw usage('tracks', 'add');
         const t = await api.trackAdd(flags.kind, flags.name);
         out(t, () => `Added ${t.kind} track "${t.name}" (${t.id})`);
       } else if (sub === 'update') {
-        if (!rest[0]) throw new ApiError('USAGE', 'tracks update <track> [...]');
+        if (!rest[0]) throw usage('tracks', 'update');
         const target = await api.resolveTrack(rest[0]);
         const patch: Record<string, unknown> = { name: flags.name };
         if (flags.mute) patch.muted = true;
@@ -510,17 +641,17 @@ async function main(): Promise<void> {
         const t = await api.trackUpdate(target.id, patch);
         out(t, () => `Updated track ${t.name}`);
       } else if (sub === 'remove') {
-        if (!rest[0]) throw new ApiError('USAGE', 'tracks remove <track>');
+        if (!rest[0]) throw usage('tracks', 'remove');
         const target = await api.resolveTrack(rest[0]);
         const r = await api.trackRemove(target.id);
         out(r, () => `Removed track ${target.name}`);
-      } else throw new ApiError('USAGE', 'tracks add|update|remove');
+      } else throw unknownSub('tracks', sub, ['add', 'update', 'remove']);
       return;
     }
 
     case 'assets': {
       if (sub === 'import') {
-        if (rest.length === 0) throw new ApiError('USAGE', 'assets import <file...>');
+        if (rest.length === 0) throw usage('assets', 'import');
         const trackId = flags.track ? (await api.resolveTrack(flags.track)).id : undefined;
         const results: ImportAssetResponse[] = [];
         for (const file of rest) {
@@ -533,12 +664,12 @@ async function main(): Promise<void> {
             .join('\n'),
         );
       } else if (sub === 'remove') {
-        if (!rest[0]) throw new ApiError('USAGE', 'assets remove <ref>');
+        if (!rest[0]) throw usage('assets', 'remove');
         const asset = await api.resolveAsset(rest[0]);
         const r = await api.removeAsset(asset.id);
         out(r, () => `Removed asset ${asset.name}`);
       } else if (sub === 'waveform') {
-        if (!rest[0]) throw new ApiError('USAGE', 'assets waveform <ref> [--buckets 60]');
+        if (!rest[0]) throw usage('assets', 'waveform');
         const asset = await api.resolveAsset(rest[0]);
         const peaks = await api.waveform(asset.id);
         if (peaks === null) throw new ApiError('UNAVAILABLE', `No waveform for ${asset.name} (ffmpeg missing or asset not readable)`);
@@ -552,7 +683,7 @@ async function main(): Promise<void> {
           const bars = Array.from(envelope, (v) => glyphs[Math.min(8, Math.round((v / 255) * 8))]).join('');
           return `${asset.name} · ${seconds.toFixed(1)}s · peak ${Math.round((Math.max(...peaks) / 255) * 100)}%\n${bars}`;
         });
-      } else throw new ApiError('USAGE', 'assets import|remove|waveform');
+      } else throw unknownSub('assets', sub, ['import', 'remove', 'waveform']);
       return;
     }
 
@@ -561,25 +692,25 @@ async function main(): Promise<void> {
         const packs = await api.packs();
         out(packs, () => packsTable(packs));
       } else if (sub === 'install') {
-        if (!rest[0]) throw new ApiError('USAGE', 'packs install <dir>');
+        if (!rest[0]) throw usage('packs', 'install');
         const p = await api.packsInstall(resolve(rest[0]));
         out(p, () => `Installed ${p.label} v${p.version} (${p.templates.join(', ')}) — added to the project`);
       } else if (sub === 'uninstall') {
-        if (!rest[0]) throw new ApiError('USAGE', 'packs uninstall <name>');
+        if (!rest[0]) throw usage('packs', 'uninstall');
         const r = await api.packsUninstall(rest[0]);
         out(r, () => `Uninstalled ${r.removed}`);
       } else if (sub === 'add' || sub === 'enable') {
-        if (rest.length === 0) throw new ApiError('USAGE', 'packs add <name...>');
+        if (rest.length === 0) throw usage('packs', 'add');
         const r = await api.projectPacks({ enable: rest });
         out(r, () => `Project packs: ${r.packs.join(', ') || '(none)'}`);
       } else if (sub === 'remove' || sub === 'disable') {
-        if (rest.length === 0) throw new ApiError('USAGE', 'packs remove <name...>');
+        if (rest.length === 0) throw usage('packs', 'remove');
         const r = await api.projectPacks({ disable: rest });
         out(r, () => `Project packs: ${r.packs.join(', ') || '(none)'}`);
       } else if (sub === 'reload') {
         const packs = await api.packsReload();
         out(packs, () => packsTable(packs));
-      } else throw new ApiError('USAGE', 'packs [list]|install <dir>|uninstall <name>|add <name...>|remove <name...>|reload');
+      } else throw unknownSub('packs', sub, ['list', 'install', 'uninstall', 'add', 'remove', 'reload']);
       return;
     }
 
@@ -598,24 +729,24 @@ async function main(): Promise<void> {
       } else if (sub === 'checkpoint' || sub === 'save') {
         const s = await api.historyCheckpoint();
         out(s, () => `Checkpoint recorded → ${describe(s)}`);
-      } else throw new ApiError('USAGE', 'history [status|undo|redo|checkpoint]');
+      } else throw unknownSub('history', sub, ['status', 'undo', 'redo', 'checkpoint']);
       return;
     }
 
     case 'render': {
       if (sub === 'status') {
-        if (!rest[0]) throw new ApiError('USAGE', 'render status <jobId>');
+        if (!rest[0]) throw usage('render', 'status');
         const job = await api.renderJob(rest[0]);
         out(job, () => `${job.id} ${job.status} ${progressBar(job.progress)} → ${job.outputPath}${job.error ? `\n${job.error}` : ''}`);
         return;
       }
       if (sub === 'cancel') {
-        if (!rest[0]) throw new ApiError('USAGE', 'render cancel <jobId>');
+        if (!rest[0]) throw usage('render', 'cancel');
         const job = await api.renderCancel(rest[0]);
         out(job, () => `${job.id} ${job.status}`);
         return;
       }
-      if (!flags.output) throw new ApiError('USAGE', 'render --output <file.mp4> [--preset ID] [--from T] [--to T]');
+      if (!flags.output) throw usage('render', '--output', 'render needs --output <file.mp4>');
       let job = await api.render({ output: resolve(flags.output), preset: flags.preset ?? 'project', from: flags.from, to: flags.to });
       if (flags.wait) job = await waitForRender(api, job);
       if (job.status === 'failed') throw new ApiError('RENDER_FAILED', job.error ?? 'Render failed', job.log);
@@ -628,7 +759,7 @@ async function main(): Promise<void> {
         const r = await api.roomHost(flags.password);
         out(r, () => `Hosting room ${r.roomCode}${r.lanUrl ? ` · LAN ${r.lanUrl}` : ''}\nOthers join with: neon-cli room join ${r.roomCode}${flags.password ? ' --password …' : ''}`);
       } else if (sub === 'join') {
-        if (!rest[0]) throw new ApiError('USAGE', 'room join <code> [--password P] [--host-url ws://ip:port]');
+        if (!rest[0]) throw usage('room', 'join');
         const r = await api.roomJoin({ roomCode: rest[0], password: flags.password, hostUrl: flags['host-url'] });
         out(r, () => `Joined room ${r.roomCode} (${r.peers.length} peer(s))`);
       } else if (sub === 'leave') {
@@ -641,21 +772,21 @@ async function main(): Promise<void> {
             ? 'Not in a room'
             : `${r.role} ${r.roomCode}${r.lanUrl ? ` · ${r.lanUrl}` : ''}\n${table(r.peers.map((p) => [p.name, p.isLocal ? 'you' : p.transport, p.playheadFrame !== undefined ? String(p.playheadFrame) : '']), ['peer', 'via', 'playhead'])}`,
         );
-      } else throw new ApiError('USAGE', 'room host|join|leave|info');
+      } else throw unknownSub('room', sub, ['host', 'join', 'leave', 'info']);
       return;
     }
 
     case 'preview': {
-      if (!sub || !['play', 'pause', 'toggle', 'seek'].includes(sub)) throw new ApiError('USAGE', 'preview play|pause|toggle|seek <T>');
-      if (sub === 'seek' && !rest[0] && !flags.at) throw new ApiError('USAGE', 'preview seek <T>');
+      if (!sub || !['play', 'pause', 'toggle', 'seek'].includes(sub)) throw unknownSub('preview', sub, ['play', 'pause', 'toggle', 'seek']);
+      if (sub === 'seek' && !rest[0] && !flags.at) throw usage('preview', 'seek');
       const r = await api.preview(sub as 'play' | 'pause' | 'toggle' | 'seek', rest[0] ?? flags.at);
       out(r, () => (sub === 'seek' ? `Playhead → frame ${r.frame}` : `Preview ${sub}`));
       return;
     }
 
     case 'rip': {
-      if (!sub) throw new ApiError('USAGE', 'rip <url> [--quality 1080|720|best|audio] [--at T]');
-      const job = await api.aiRun('rip', { url: sub, quality: flags.quality && ['360','480','720','1080','1440','2160','best','audio'].includes(flags.quality) ? flags.quality : flags.quality === undefined ? undefined : (() => { throw new ApiError('USAGE', '--quality 360|480|720|1080|1440|2160|best|audio'); })(), at: flags.at });
+      if (!sub) throw usage('rip');
+      const job = await api.aiRun('rip', { url: sub, quality: flags.quality && ['360','480','720','1080','1440','2160','best','audio'].includes(flags.quality) ? flags.quality : flags.quality === undefined ? undefined : (() => { throw usage('rip', undefined, '--quality must be one of 360|480|720|1080|1440|2160|best|audio'); })(), at: flags.at });
       const done = flags.wait ? await waitForAi(api, job) : job;
       out(done, () => (done.status === 'done' ? (done.result as { title: string; assetId: string; clipId?: string; startFrame?: number; deduplicated: boolean }).deduplicated ? `Already in the library: ${(done.result as { name: string }).name}` : `Ripped “${(done.result as { title: string }).title}” → ${(done.result as { name: string }).name}${(done.result as { clipId?: string }).clipId ? ` (placed at frame ${(done.result as { startFrame?: number }).startFrame})` : ''}` : `${done.op} ${done.status} (${done.id})`));
       return;
@@ -668,7 +799,7 @@ async function main(): Promise<void> {
       } else if (sub === 'stop') {
         const r = (await api.call2('POST', '/api/record/stop', { at: flags.at ?? 0 })) as ImportAssetResponse;
         out(r, () => `Take “${r.asset.name}” placed${r.clip ? ` at frame ${r.clip.startFrame} on the VO track` : ''}`);
-      } else throw new ApiError('USAGE', 'record start | record stop [--at T]');
+      } else throw unknownSub('record', sub, ['start', 'stop']);
       return;
     }
 
@@ -681,11 +812,11 @@ async function main(): Promise<void> {
       const panelAlias: Record<string, string> = { media: 'assets', assets: 'assets', fx: 'templates', templates: 'templates', inspect: 'inspector', inspector: 'inspector', room: 'peers', peers: 'peers', render: 'renders', renders: 'renders', live: 'activity', activity: 'activity', ai: 'ai', script: 'script' };
       if (sub === 'panel') {
         const panel = panelAlias[(rest[0] ?? '').toLowerCase()];
-        if (!panel) throw new ApiError('USAGE', 'ui panel <media|fx|inspect|room|ai|script|render|live>');
+        if (!panel) throw usage('ui', 'panel');
         const r = await api.ui({ panel });
         out(r, () => `Opened ${panel} panel`);
       } else if (sub === 'select') {
-        if (rest.length === 0) throw new ApiError('USAGE', 'ui select <clip...> | ui select none');
+        if (rest.length === 0) throw usage('ui', 'select');
         let ids: string[] = [];
         if (rest[0] !== 'none') {
           const all = (await api.list()).clips;
@@ -694,10 +825,10 @@ async function main(): Promise<void> {
         const r = await api.ui({ select: ids, panel: ids.length ? 'inspector' : undefined });
         out(r, () => (ids.length ? `Selected ${ids.length} clip(s)` : 'Selection cleared'));
       } else if (sub === 'dialog') {
-        if (!rest[0]) throw new ApiError('USAGE', 'ui dialog <render|room|shortcuts|none>');
+        if (!rest[0]) throw usage('ui', 'dialog');
         const r = await api.ui({ dialog: rest[0] });
         out(r, () => `Dialog: ${rest[0]}`);
-      } else throw new ApiError('USAGE', 'ui panel|select|dialog');
+      } else throw unknownSub('ui', sub, ['panel', 'select', 'dialog']);
       return;
     }
 
@@ -708,13 +839,13 @@ async function main(): Promise<void> {
     }
 
     case 'zoom': {
-      const usage = 'zoom add <clip> --from T --to T [--center 0.7,0.3] [--zoom 2] [--ramp 0.5s] · zoom list <clip> · zoom clear <clip> [n]';
-      if (!rest[0] || !sub) throw new ApiError('USAGE', usage);
+      if (!sub || !['add', 'list', 'clear'].includes(sub)) throw unknownSub('zoom', sub, ['add', 'list', 'clear']);
+      if (!rest[0]) throw usage('zoom', sub);
       const target = await api.resolveClip(rest[0]);
       if (target.kind === 'component') throw new ApiError('USAGE', 'Zoom works on video and image clips');
       const fps = (await api.status()).project.fps;
       if (sub === 'add') {
-        if (!flags.from || !flags.to) throw new ApiError('USAGE', usage);
+        if (!flags.from || !flags.to) throw usage('zoom', 'add');
         const [cx, cy] = flags.center ? flags.center.split(',').map((v) => num(v)!) : [0.5, 0.5];
         const c = await api.zoom({ id: target.id, from: flags.from, to: flags.to, cx, cy, zoom: num(flags.zoom), ramp: flags.ramp });
         out(c, () => `Zoom added on “${c.name}” (${c.kind !== 'component' ? c.zooms?.length ?? 0 : 0} total)`);
@@ -729,7 +860,7 @@ async function main(): Promise<void> {
         const keep = rest[1] === undefined ? [] : (target.zooms ?? []).filter((_, i) => i !== num(rest[1]));
         const c = await api.update(target.id, { zooms: keep.length ? keep : null });
         out(c, () => `${rest[1] === undefined ? 'Cleared all zooms' : `Removed zoom ${rest[1]}`} on “${c.name}”`);
-      } else throw new ApiError('USAGE', usage);
+      }
       return;
     }
 
@@ -740,7 +871,7 @@ async function main(): Promise<void> {
     }
 
     default:
-      throw new ApiError('USAGE', `Unknown command "${cmd}". Run neon-cli --help`);
+      throw unknownCommand(cmd);
   }
 }
 
@@ -787,8 +918,8 @@ async function waitForAi(api: NeonClient, job: AiJob): Promise<AiJob> {
 
 async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[]): Promise<void> {
   const numOr = (v: string | undefined, d?: number) => (v === undefined ? d : Number(v));
-  const assetOrClipParam = async (ref: string | undefined, usage: string): Promise<{ clipId: string; assetId?: never } | { assetId: string; clipId?: never }> => {
-    if (!ref) throw new ApiError('USAGE', usage);
+  const assetOrClipParam = async (ref: string | undefined): Promise<{ clipId: string; assetId?: never } | { assetId: string; clipId?: never }> => {
+    if (!ref) throw usage('ai', sub);
     const list = await api.list();
     const byId = list.clips.filter((c) => c.id === ref || c.id.startsWith(ref));
     if (byId.length === 1) return { clipId: byId[0]!.id };
@@ -829,19 +960,19 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     case 'job': {
-      if (!rest[0]) throw new ApiError('USAGE', 'ai job <id>');
+      if (!rest[0]) throw usage('ai', 'job');
       const j = await api.aiJob(rest[0]);
       out(j, () => `${j.id} ${j.op} ${j.status} ${Math.round(j.progress * 100)}% — ${j.message}${j.result ? `\n${JSON.stringify(j.result, null, 2)}` : ''}${j.error ? `\n${j.error}` : ''}`);
       return;
     }
     case 'cancel': {
-      if (!rest[0]) throw new ApiError('USAGE', 'ai cancel <id>');
+      if (!rest[0]) throw usage('ai', 'cancel');
       const j = await api.aiCancel(rest[0]);
       out(j, () => `${j.id} ${j.status}`);
       return;
     }
     case 'transcribe': {
-      const target = await assetOrClipParam(rest[0], 'ai transcribe <clip|asset>');
+      const target = await assetOrClipParam(rest[0]);
       await finish(await api.aiRun('transcribe', { ...target, force: flags.force }), (j) => {
         const r = j.result as { words: number; fillers: number; text: string; engine: string };
         return `${r.words} words · ${r.fillers} fillers · ${r.engine}\n${r.text}`;
@@ -849,7 +980,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     case 'transcript': {
-      const target = await assetOrClipParam(rest[0], 'ai transcript <clip|asset>');
+      const target = await assetOrClipParam(rest[0]);
       let assetId: string;
       if (target.assetId) assetId = target.assetId;
       else {
@@ -862,7 +993,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     case 'fillers': {
-      const target = await assetOrClipParam(rest[0], 'ai fillers <clip> [--apply]');
+      const target = await assetOrClipParam(rest[0]);
       await finish(await api.aiRun('fillers', { ...target, apply: flags.apply, words: flags.words?.split(',').map((w) => w.trim()).filter(Boolean), padMs: numOr(flags.pad) }), (j) => {
         const r = j.result as { fillers: number; words: string[]; removedFrames: number; applied: boolean; ranges: unknown[] };
         return r.applied ? `Removed ${r.fillers} filler(s): ${r.words.join(' ')} — ${r.removedFrames} frames cut` : `${r.fillers} filler(s) in ${r.ranges.length} range(s): ${r.words.join(' ')}\nRe-run with --apply to cut them.`;
@@ -870,7 +1001,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     case 'silence': {
-      const target = await assetOrClipParam(rest[0], 'ai silence <clip> [--apply]');
+      const target = await assetOrClipParam(rest[0]);
       await finish(await api.aiRun('silence', { ...target, apply: flags.apply, thresholdDb: numOr(flags.threshold), minSilenceMs: numOr(flags.min), keepMs: numOr(flags.keep) }), (j) => {
         const r = j.result as { silences: number; cuts: unknown[]; removedFrames: number; applied: boolean; noiseFloorDb: number; thresholdDb: number };
         return `${r.silences} pause(s) ≥ threshold (floor ${r.noiseFloorDb.toFixed(1)} dB, speech > ${r.thresholdDb.toFixed(1)} dB) · ${r.cuts.length} cut(s)${r.applied ? ` applied — ${r.removedFrames} frames removed` : ' — add --apply to trim'}`;
@@ -878,7 +1009,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     case 'pace': {
-      const target = await assetOrClipParam(rest[0], 'ai pace <clip> [--apply] [--min 1200] [--keep 300] [--rate 6]');
+      const target = await assetOrClipParam(rest[0]);
       await finish(await api.aiRun('pace', { ...target, apply: flags.apply, minSilenceMs: numOr(flags.min), keepMs: numOr(flags.keep), rate: numOr(flags.rate), thresholdDb: numOr(flags.threshold) }), (j) => {
         const r = j.result as { pauses: number; cut: number; spedUp: number; removedFrames: number; applied: boolean };
         return `${r.pauses} pause(s): ${r.cut} over a still screen (cut), ${r.spedUp} while it changes (sped up)${r.applied ? ` · applied, ${r.removedFrames} frames shorter` : ' — add --apply'}`;
@@ -886,7 +1017,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     case 'breaths': {
-      const target = await assetOrClipParam(rest[0], 'ai breaths <clip> [--db 15]');
+      const target = await assetOrClipParam(rest[0]);
       await finish(await api.aiRun('breaths', { ...target, reductionDb: numOr(flags.db) }), (j) => {
         const r = j.result as { breaths: number; reductionDb: number };
         return `${r.breaths} breath/mouth-noise event(s) attenuated by ${r.reductionDb} dB (volume keyframes on the clip)`;
@@ -894,7 +1025,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     case 'enhance': {
-      const target = await assetOrClipParam(rest[0], 'ai enhance <clip> [--lufs=-16] [--no-denoise]');
+      const target = await assetOrClipParam(rest[0]);
       await finish(await api.aiRun('enhance', { ...target, lufs: numOr(flags.lufs), denoise: flags.denoise ?? true, strength: numOr(flags.strength) }), (j) => {
         const r = j.result as { lufs: number; filter: string; newAssetId: string };
         return `Voice enhanced to ${r.lufs} LUFS → clip now uses asset ${r.newAssetId.slice(0, 12)}… (original kept)\nchain: ${r.filter}`;
@@ -909,7 +1040,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     case 'denoise': {
-      const target = await assetOrClipParam(rest[0], 'ai denoise <clip>');
+      const target = await assetOrClipParam(rest[0]);
       await finish(await api.aiRun('denoise', { ...target, engine: flags.engine, strength: numOr(flags.strength) }), (j) => {
         const r = j.result as { engine: string; filter: string; newAssetId: string };
         return `Denoised with ${r.engine} (${r.filter}) → clip now uses asset ${r.newAssetId.slice(0, 12)}… (original kept)`;
@@ -917,7 +1048,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     case 'matte': {
-      const target = await assetOrClipParam(rest[0], 'ai matte <clip> [--mode person|chroma]');
+      const target = await assetOrClipParam(rest[0]);
       await finish(await api.aiRun('matte', { ...target, mode: flags.mode, quality: flags.quality, color: flags.color }), (j) => {
         const r = j.result as { mode: string; newAssetId: string; frames?: number };
         return `Background removed (${r.mode}${r.frames ? `, ${r.frames} frames` : ''}) → ProRes 4444 alpha asset ${r.newAssetId.slice(0, 12)}…`;
@@ -925,7 +1056,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     case 'reframe': {
-      const target = await assetOrClipParam(rest[0], 'ai reframe <clip> [--aspect 9:16] [--resize]');
+      const target = await assetOrClipParam(rest[0]);
       await finish(await api.aiRun('reframe', { ...target, aspect: flags.aspect, resizeProject: flags.resize }), (j) => {
         const r = j.result as { mode: string; detectedRatio: number; samples: number; resized: { width: number; height: number } | null };
         return `${r.mode}: faces in ${Math.round(r.detectedRatio * 100)}% of ${r.samples} samples${r.resized ? ` · project resized to ${r.resized.width}×${r.resized.height}` : ''}`;
@@ -944,13 +1075,13 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     case 'clean': {
-      const target = await assetOrClipParam(rest[0], 'ai clean <clip>');
+      const target = await assetOrClipParam(rest[0]);
       await finish(await api.aiRun('clean', { ...target, fillers: flags.fillers, silences: flags.silences, breaths: flags.breaths, denoise: flags.denoise ?? false, screen: flags.screen }), (j) => `Voice clean-up finished: ${(j.result as { steps: string[] }).steps.join(' → ')}`);
       return;
     }
     case 'cut': {
       // Word list: positional pair (33 35 = inclusive range) or --words 3,7,12-15 (non-contiguous).
-      if (rest.length < 2 && !flags.words) throw new ApiError('USAGE', 'ai cut <asset> <fromWord> <toWord> · ai cut <asset> --words 3,7,12-15 [--audio-only]');
+      if (rest.length < 2 && !flags.words) throw usage('ai', 'cut');
       const asset = await api.resolveAsset(rest[0]!);
       const words = flags.words
         ? flags.words.split(',').flatMap((part) => {
@@ -967,7 +1098,7 @@ async function aiCommand(api: NeonClient, sub: string | undefined, rest: string[
       return;
     }
     default:
-      throw new ApiError('USAGE', 'ai status|setup|transcribe|transcript|fillers|silence|breaths|denoise|enhance|matte|reframe|broll|clean|cut|jobs|job|cancel');
+      throw unknownSub('ai', sub, ['status', 'setup', 'transcribe', 'transcript', 'fillers', 'silence', 'breaths', 'denoise', 'enhance', 'matte', 'reframe', 'broll', 'clean', 'pace', 'cut', 'jobs', 'job', 'cancel']);
   }
 }
 

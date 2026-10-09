@@ -1,7 +1,7 @@
 /** Typed HTTP client for the desktop app's control API. */
 import { API_ROUTES, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary, type SheetRequestInput, type StillRequestInput, type StillResult } from '@neon/core';
 import { isProcessAlive, readInstanceInfo } from '@neon/core/node';
-import type { Asset, Clip, Project, Track } from '@neon/core';
+import type { Asset, BatchRequest, BatchResult, Clip, Project, Track } from '@neon/core';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -126,6 +126,7 @@ export class NeonClient {
   historyRedo = () => this.call<HistoryStatus>('POST', API_ROUTES.historyRedo, {});
   shutdown = () => this.call<{ stopping: boolean; pid: number }>('POST', API_ROUTES.shutdown, {});
   historyCheckpoint = () => this.call<HistoryStatus>('POST', API_ROUTES.historyCheckpoint, {});
+  batch = (plan: BatchRequest) => this.call<BatchResult>('POST', API_ROUTES.batch, plan);
 
   /** Waveform peaks (one byte per 10 ms, 0..255); empty array = no audio stream, null = unavailable. */
   async waveform(assetId: string): Promise<Uint8Array | null> {
