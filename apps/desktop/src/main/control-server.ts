@@ -335,6 +335,7 @@ export async function buildStatus(ctx: MainContext): Promise<AppStatus> {
     },
     room: ctx.room.info(),
     renders: ctx.renders.list(),
+    headless: ctx.headless,
     capabilities: { ffprobe: await ffprobeAvailable(), node: true, renderRuntime: process.env.NEON_RENDER_RUNTIME === 'node' ? 'node' : `bun ${Bun.version} (bundled)` },
   };
 }
@@ -413,12 +414,18 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     const { file } = await ctx.recorder.stop();
     let track = doc.toJSON().tracks.find((t) => t.kind === 'audio' && t.name === 'VO');
     track ??= doc.addTrack('audio', 'VO', ORIGIN_API);
-    const result = await ctx.assets.import(file, { insertAt: startFrame, trackId: track.id, origin: ORIGIN_API });
-    await ctx.recorder.discard();
+    const result = await ctx.assets.import(file, { insertAt: startFrame, trackId: track.id, origin: ORIGIN_API }).finally(() => ctx.recorder.discard());
     ctx.events.activity('cli', 'vo.done', `Voice-over take placed on ${track.name} at frame ${startFrame}`, { clipIds: result.clip ? [result.clip.id] : [] });
     return result;
   }
   if (key === 'GET /api/record/state') return ctx.recorder.state();
+  if (key === `POST ${API_ROUTES.shutdown}`) {
+    const exit = ctx.requestExit;
+    if (!exit) throw new HttpError(409, 'NOT_HEADLESS', 'Only a headless instance (neon-cli serve) stops from the CLI; quit the desktop app instead');
+    // Answer first, then flush and exit.
+    setTimeout(exit, 50);
+    return { stopping: true, pid: process.pid };
+  }
   if (key === `POST ${API_ROUTES.timelineDetach}`) {
     const { id } = DetachAudioRequestSchema.parse(body);
     return doc.detachAudio(id, ORIGIN_API);
@@ -821,7 +828,7 @@ function recordActivity(ctx: MainContext, path: string, body: unknown, result: u
       ctx.events.activity('cli', 'timeline.detach', `Detached audio of “${String((r as { name?: string }).name ?? '')}” to ${trackName(String((r as { trackId?: string }).trackId))}`, { clipIds: [String((r as { id?: string }).id)] });
       break;
     case API_ROUTES.timelineCut:
-      ctx.events.activity('cli', 'timeline.cut', `Cut ${String((r as { cuts?: number }).cuts ?? 0)} clip segment(s), ${String(r.removedFrames)} frames removed (ripple)`);
+      ctx.events.activity('cli', 'timeline.cut', `Cut ${String((r as { cuts?: number }).cuts ?? 0)} clip segment(s), ${String(r.removedFrames)} frames removed${(b.ripple as boolean | undefined) === false ? '' : ' (ripple)'}`);
       break;
     case API_ROUTES.ui: {
       const parts: string[] = [];

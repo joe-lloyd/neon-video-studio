@@ -69,7 +69,7 @@ pnpm install --ignore-scripts       # 7-day minimumReleaseAge enforced in pnpm-w
 pnpm dev                            # electrobun prepare → vite build → launch the app
 pnpm dev:renderer                   # optional: Vite HMR on :5173 (the app picks it up automatically)
 pnpm test && pnpm typecheck
-scripts/smoke.sh                    # e2e against the running app: import → insert → render
+node scripts/e2e.ts                 # e2e through the CLI on a headless app: import → edit → render
 ```
 
 ```
@@ -81,7 +81,7 @@ neon-video-editor/
 ├── packages/p2p/            Sync + signaling servers, LAN discovery, browser PeerSession
 ├── packages/render/         Remotion render worker + headless renders
 ├── packages/icon-kit/       Neon icons + logo
-└── scripts/                 smoke test · release · install-mac · build-icons
+└── scripts/                 e2e test · release · install-mac · build-icons
 ```
 
 ## Integrated AI (local-first)
