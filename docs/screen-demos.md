@@ -37,6 +37,11 @@ Recorded somewhere else (OBS, Game Bar, QuickTime)? Import the file instead:
 Prefer to narrate afterwards? Record the screen with `--no-mic`, then record the voice-over
 while the timeline plays: `neon-cli record start` … `neon-cli record stop --at 0`.
 
+Every video you record or import also gets a preview proxy: a 720p copy with frequent keyframes,
+made in the background and kept in `~/.neon-video/proxies`. The editor's preview plays the proxy,
+so scrubbing a 4K recording shows a picture straight away. Exports always read the original, so
+the final video is at full quality. `neon-cli status` shows how many proxies are ready.
+
 ## 2. Clean the narration
 
 ```bash

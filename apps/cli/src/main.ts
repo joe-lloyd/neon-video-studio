@@ -511,6 +511,7 @@ async function main(): Promise<void> {
           `Room    : ${s.room.role === 'none' ? 'not connected' : `${s.room.role} ${s.room.roomCode} · ${s.room.peers.length} peer(s)${s.room.lanUrl ? ` · ${s.room.lanUrl}` : ''}`}`,
           `Renders : ${s.renders.length === 0 ? 'none' : s.renders.map((r) => `${r.id} ${r.status} ${(r.progress * 100).toFixed(0)}%`).join(', ')}`,
           `Tools   : ffprobe ${s.capabilities.ffprobe ? 'yes' : 'no'} · render runtime ${s.capabilities.renderRuntime}`,
+          `Proxies : ${s.proxies.ready.length} ready${s.proxies.pending ? `, ${s.proxies.pending} being made` : ''} (preview only; exports use the originals)`,
         ].join('\n'),
       );
       return;

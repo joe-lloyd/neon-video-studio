@@ -112,7 +112,7 @@ commands fall back to the whole asset, which is usually what you want.
 ## Project & status
 
 ```bash
-neon-cli status                     # app, project, room, renders, engines
+neon-cli status                     # app, project, room, renders, engines, preview proxies
 neon-cli list [templates|packs|tracks|clips|assets|presets]   # `--json` includes JSON Schemas for template props; templates carry pack + category
 neon-cli state dump [--json] [--out project.json]       # full project document
 neon-cli project new [--name N] [--fps 30] [--width W] [--height H]

@@ -11,6 +11,8 @@ export type TimelineProps = {
   assetBaseUrl: string;
   /** Optional query string (without '?') appended to asset URLs, e.g. a room key. */
   assetQuery?: string;
+  /** Editor preview only: assets with a quick-seek proxy to play instead of the original. Renders leave it out. */
+  proxies?: string[];
   /** Output overrides; null = project settings. */
   render: { width: number; height: number; fps: number } | null;
 };
@@ -43,7 +45,8 @@ const MediaClipView: React.FC<{ clip: MediaClip; asset: Asset | undefined; track
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
   if (!asset) return <MissingBox label={`Missing asset ${clip.assetId.slice(0, 8)}…`} />;
-  const src = assetUrl(props.assetBaseUrl, asset, props.assetQuery);
+  const query = props.proxies?.includes(asset.id) ? ['proxy=1', props.assetQuery].filter(Boolean).join('&') : props.assetQuery;
+  const src = assetUrl(props.assetBaseUrl, asset, query);
   const fadeIn = Math.round(clip.fadeIn * scale);
   const fadeOut = Math.round(clip.fadeOut * scale);
   const envelope = fadeEnvelope(frame, durationInFrames, fadeIn, fadeOut);
