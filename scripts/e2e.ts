@@ -94,13 +94,26 @@ async function main(): Promise<void> {
     assert(after.durationFrames === 90, `ripple cut leaves 90 frames, got ${after.durationFrames}`);
     log('ripple cut removed 1 s (90 frames left)');
 
+    // Re-time the first second to 2×: 30 frames become 15, everything after ripples left.
+    const first = cli<{ project: { clips: Clip[] } }>('state', 'dump').project.clips.filter((c) => c.kind === 'video').sort((a, b) => a.startFrame - b.startFrame)[0];
+    assert(first, 'a video clip is on the timeline');
+    const fast = cli<Clip & { speed?: number }>('timeline', 'speed', first.id, '2', '--from', '0', '--to', '1s');
+    assert(fast.speed === 2 && fast.durationFrames === 15, `2× over 1 s → 15 frames, got ${fast.speed}× ${fast.durationFrames}f`);
+    const timed = cli<{ durationFrames: number }>('state', 'dump');
+    assert(timed.durationFrames === 75, `speed-up leaves 75 frames, got ${timed.durationFrames}`);
+    log('first second re-timed to 2× (75 frames left)');
+
+    const zoomed = cli<Clip & { zooms?: { start: number; end: number; zoom: number }[] }>('zoom', 'add', fast.id, '--from', '0', '--to', '15f', '--center', '0.25,0.25', '--zoom', '2');
+    assert(zoomed.zooms?.length === 1 && zoomed.zooms[0]!.start === 0 && zoomed.zooms[0]!.end === 30, `zoom stored in source frames 0–30, got ${JSON.stringify(zoomed.zooms)}`);
+    log('zoom added (stored as source frames 0–30)');
+
     if (!opts['no-render']) {
       const out = join(home, 'e2e.mp4');
       const job = cli<{ status: string; error?: string; outputPath: string }>('render', '--output', out, '--preset', 'draft');
       assert(job.status === 'done', `render finished: ${job.status} ${job.error ?? ''}`);
       const probe = spawnSync(tool('ffprobe'), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', out], { encoding: 'utf8' });
       const seconds = Number(probe.stdout.trim());
-      assert(Math.abs(seconds - 3) < 0.2, `rendered 3 s, got ${probe.stdout.trim()}`);
+      assert(Math.abs(seconds - 2.5) < 0.2, `rendered 2.5 s, got ${probe.stdout.trim()}`);
       log(`rendered ${out} (${seconds.toFixed(2)} s)`);
     }
   } finally {

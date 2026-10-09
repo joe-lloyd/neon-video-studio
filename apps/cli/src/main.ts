@@ -7,7 +7,7 @@
 import { parseArgs } from 'node:util';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { RENDER_PRESETS, framesToTimecode, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type ImportAssetResponse, type RenderJob } from '@neon/core';
+import { RENDER_PRESETS, framesToTimecode, timelineFrameAt, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type ImportAssetResponse, type RenderJob } from '@neon/core';
 import { renderHeadless } from '@neon/render';
 import { registerAllPacks } from '@neon/remotion-workspace/packs';
 import { registerInstalledPacks } from '@neon/core/node';
@@ -51,6 +51,9 @@ COMMANDS
   events [--history N]                    Live-tail everything the app does (CLI actions, renders, peers) — Ctrl-C to stop
   timeline cut --from T --to T [--track REF] [--no-ripple]   Remove a timeline range (all tracks, ripple)
   timeline detach <clip>                  Split a video clip's audio onto an audio track (video muted)
+  timeline speed <clip> <rate> [--from T --to T]   Re-time a clip or part of it (4 = 4× faster; audio silent above 2×); later clips ripple
+  zoom add <clip> --from T --to T [--center cx,cy] [--zoom 2] [--ramp 0.5s]   Ease in to a zoomed area, hold, ease out (cx,cy = 0..1 of the picture)
+  zoom list <clip> | zoom clear <clip> [n]
   timeline update <clip> --pos 0.5,0.3 --scale 0.6 --rotation -15 --in pop:12 --out fade:10   Canvas placement + enter/exit animation
   record start | record stop [--at T]     Record a mic voice-over in the app (take lands on the VO track)
   rip <url> [--quality 1080|720|best|audio] [--at T]   Download a YouTube/web video into the media library (yt-dlp)
@@ -142,6 +145,9 @@ const { values: flags, positionals } = parseArgs({
     'host-url': { type: 'string' },
     history: { type: 'string' },
     detach: { type: 'boolean', default: false },
+    zoom: { type: 'string' },
+    center: { type: 'string' },
+    ramp: { type: 'string' },
     buckets: { type: 'string' },
     by: { type: 'string' },
     force: { type: 'boolean', default: false },
@@ -446,6 +452,12 @@ async function main(): Promise<void> {
         const trackIds = flags.track ? [(await api.resolveTrack(flags.track)).id] : undefined;
         const r = await api.cut({ ranges: [{ start: flags.from, end: flags.to }], trackIds, ripple: flags.ripple ?? true });
         out(r, () => `Removed ${r.removedFrames} frames (${r.cuts} clip segment(s) touched)`);
+      } else if (sub === 'speed') {
+        if (!rest[0] || !rest[1]) throw new ApiError('USAGE', 'timeline speed <clip> <rate> [--from T --to T]   e.g. timeline speed take.mp4 4 --from 1:20 --to 2:05');
+        const target = await api.resolveClip(rest[0]);
+        const rate = num(rest[1].replace(/x$/i, ''))!;
+        const c = await api.speed({ id: target.id, speed: rate, from: flags.from, to: flags.to });
+        out(c, () => `“${c.name}” plays at ${rate}× → ${c.durationFrames}f at ${c.startFrame}${rate > 2 ? ' (audio silent above 2×)' : ''}; later clips rippled`);
       } else if (sub === 'detach') {
         if (!rest[0]) throw new ApiError('USAGE', 'timeline detach <clip>');
         const target = await api.resolveClip(rest[0]);
@@ -674,6 +686,32 @@ async function main(): Promise<void> {
     case 'events':
     case 'watch': {
       await tailEvents(api, Number(flags.history ?? 20));
+      return;
+    }
+
+    case 'zoom': {
+      const usage = 'zoom add <clip> --from T --to T [--center 0.7,0.3] [--zoom 2] [--ramp 0.5s] · zoom list <clip> · zoom clear <clip> [n]';
+      if (!rest[0] || !sub) throw new ApiError('USAGE', usage);
+      const target = await api.resolveClip(rest[0]);
+      if (target.kind === 'component') throw new ApiError('USAGE', 'Zoom works on video and image clips');
+      const fps = (await api.status()).project.fps;
+      if (sub === 'add') {
+        if (!flags.from || !flags.to) throw new ApiError('USAGE', usage);
+        const [cx, cy] = flags.center ? flags.center.split(',').map((v) => num(v)!) : [0.5, 0.5];
+        const c = await api.zoom({ id: target.id, from: flags.from, to: flags.to, cx, cy, zoom: num(flags.zoom), ramp: flags.ramp });
+        out(c, () => `Zoom added on “${c.name}” (${c.kind !== 'component' ? c.zooms?.length ?? 0 : 0} total)`);
+      } else if (sub === 'list') {
+        const zooms = target.zooms ?? [];
+        out(zooms, () => (zooms.length === 0 ? 'No zooms' : table(zooms.map((z, i) => {
+          const t0 = timelineFrameAt(target, z.start);
+          const t1 = timelineFrameAt(target, z.end - 1);
+          return [String(i), t0 === null ? '(cut)' : framesToTimecode(t0, fps), t1 === null ? '(cut)' : framesToTimecode(t1, fps), `${z.zoom}×`, `${z.cx},${z.cy}`];
+        }), ['n', 'from', 'to', 'zoom', 'centre'])));
+      } else if (sub === 'clear') {
+        const keep = rest[1] === undefined ? [] : (target.zooms ?? []).filter((_, i) => i !== num(rest[1]));
+        const c = await api.update(target.id, { zooms: keep.length ? keep : null });
+        out(c, () => `${rest[1] === undefined ? 'Cleared all zooms' : `Removed zoom ${rest[1]}`} on “${c.name}”`);
+      } else throw new ApiError('USAGE', usage);
       return;
     }
 

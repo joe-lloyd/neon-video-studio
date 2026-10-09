@@ -210,6 +210,8 @@ export const API_ROUTES = {
   timelineCut: '/api/timeline/cut',
   timelineNudge: '/api/timeline/nudge',
   timelineDetach: '/api/timeline/detach',
+  timelineSpeed: '/api/timeline/speed',
+  timelineZoom: '/api/timeline/zoom',
   assetsUpload: '/api/assets/upload',
   ai: '/api/ai',
   aiStatus: '/api/ai/status',

@@ -20,6 +20,7 @@ import {
   type RenderJob,
   type RoomInfo,
   registerPack,
+  timelineFrameAt,
   unregisterPack,
 } from '@neon/core';
 import { PeerSession, type SessionSnapshot } from '@neon/p2p/browser';
@@ -573,8 +574,8 @@ export class Editor {
     for (const a of assets) if (a.id === assetId && a.derivedFrom) family.add(a.derivedFrom);
     const clips = this.project.get().project.clips.filter((c): c is Clip & { kind: 'video' | 'audio' | 'image' } => c.kind !== 'component' && family.has(c.assetId));
     for (const c of clips) {
-      const local = Math.round(seconds * fps) - c.trimBefore;
-      if (local >= 0 && local < c.durationFrames) return c.startFrame + local;
+      const frame = timelineFrameAt(c, seconds * fps);
+      if (frame !== null) return frame;
     }
     return null;
   }

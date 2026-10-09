@@ -29,6 +29,11 @@ import {
   AiSetupRequestSchema,
   AiRipRequestSchema,
   DetachAudioRequestSchema,
+  ClipSpeedRequestSchema,
+  ClipZoomRequestSchema,
+  sourceFrameAt,
+  speedOf,
+  clipEnd,
   NudgeClipsRequestSchema,
   PacksInstallRequestSchema,
   ProjectPacksRequestSchema,
@@ -430,6 +435,37 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     const { id } = DetachAudioRequestSchema.parse(body);
     return doc.detachAudio(id, ORIGIN_API);
   }
+  if (key === `POST ${API_ROUTES.timelineSpeed}`) {
+    const req = ClipSpeedRequestSchema.parse(body);
+    const from = T(req.from);
+    const to = T(req.to);
+    const clip = doc.getClip(req.id);
+    if (!clip) throw new HttpError(404, 'NOT_FOUND', `Clip ${req.id} not found`);
+    const range = from !== undefined || to !== undefined ? { start: from ?? clip.startFrame, end: to ?? clipEnd(clip) } : undefined;
+    return doc.setClipSpeed(req.id, req.speed, range, ORIGIN_API);
+  }
+  if (key === `POST ${API_ROUTES.timelineZoom}`) {
+    const req = ClipZoomRequestSchema.parse(body);
+    const clip = doc.getClip(req.id);
+    if (!clip) throw new HttpError(404, 'NOT_FOUND', `Clip ${req.id} not found`);
+    if (clip.kind === 'component' || clip.kind === 'audio') throw new HttpError(400, 'BAD_REQUEST', 'Zoom works on video and image clips');
+    const from = Math.max(clip.startFrame, T(req.from)!);
+    const to = Math.min(clipEnd(clip), T(req.to)!);
+    if (to <= from) throw new HttpError(400, 'BAD_REQUEST', `Zoom range must overlap the clip (${framesToTimecode(clip.startFrame, fps)}–${framesToTimecode(clipEnd(clip), fps)})`);
+    // Store in source frames so the zoom follows its moment through later cuts and re-timing.
+    const region = {
+      start: Math.round(sourceFrameAt(clip, from)),
+      end: Math.round(sourceFrameAt(clip, to)),
+      cx: req.cx,
+      cy: req.cy,
+      zoom: req.zoom,
+      ...(req.ramp !== undefined ? { ramp: Math.round(T(req.ramp)! * speedOf(clip)) } : {}),
+    };
+    const overlapping = (clip.zooms ?? []).find((z) => z.start < region.end && region.start < z.end);
+    if (overlapping) throw new HttpError(409, 'ZOOM_OVERLAP', 'That range overlaps an existing zoom on this clip — clear it first (neon-cli zoom clear)');
+    const zooms = [...(clip.zooms ?? []), region].sort((a, b) => a.start - b.start);
+    return doc.updateClip(clip.id, { zooms }, ORIGIN_API);
+  }
   if (key === `POST ${API_ROUTES.timelineCut}`) {
     const req = CutRangesRequestSchema.parse(body);
     const ranges = req.ranges.map((r) => ({ start: T(r.start)!, end: T(r.end)! }));
@@ -600,6 +636,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
           animateOut: patch.animateOut,
           volumeKeyframes: patch.volumeKeyframes,
           reframe: patch.reframe,
+          zooms: patch.zooms,
         },
         ORIGIN_API,
       );
@@ -826,6 +863,12 @@ function recordActivity(ctx: MainContext, path: string, body: unknown, result: u
       break;
     case API_ROUTES.timelineDetach:
       ctx.events.activity('cli', 'timeline.detach', `Detached audio of “${String((r as { name?: string }).name ?? '')}” to ${trackName(String((r as { trackId?: string }).trackId))}`, { clipIds: [String((r as { id?: string }).id)] });
+      break;
+    case API_ROUTES.timelineSpeed:
+      ctx.events.activity('cli', 'timeline.speed', `“${clip.name}” now plays at ${String((r as { speed?: number }).speed ?? 1)}× (${clip.durationFrames}f)`, { clipIds: clip.id ? [clip.id] : [] });
+      break;
+    case API_ROUTES.timelineZoom:
+      ctx.events.activity('cli', 'timeline.zoom', `Added a zoom on “${clip.name}”`, { clipIds: clip.id ? [clip.id] : [] });
       break;
     case API_ROUTES.timelineCut:
       ctx.events.activity('cli', 'timeline.cut', `Cut ${String((r as { cuts?: number }).cuts ?? 0)} clip segment(s), ${String(r.removedFrames)} frames removed${(b.ripple as boolean | undefined) === false ? '' : ' (ripple)'}`);

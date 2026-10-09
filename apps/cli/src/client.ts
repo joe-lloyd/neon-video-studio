@@ -101,6 +101,8 @@ export class NeonClient {
   ui = (body: { panel?: string; select?: string[]; dialog?: string }) => this.call<typeof body>('POST', API_ROUTES.ui, body);
 
   cut = (body: Record<string, unknown>) => this.call<{ removedFrames: number; cuts: number }>('POST', API_ROUTES.timelineCut, body);
+  speed = (body: { id: string; speed: number; from?: string; to?: string }) => this.call<Clip>('POST', API_ROUTES.timelineSpeed, body);
+  zoom = (body: { id: string; from: string; to: string; cx?: number; cy?: number; zoom?: number; ramp?: string }) => this.call<Clip>('POST', API_ROUTES.timelineZoom, body);
   detach = (id: string) => this.call<Clip>('POST', API_ROUTES.timelineDetach, { id });
   aiStatus = () => this.call<AiCapabilities & { hints: Record<string, string> }>('GET', API_ROUTES.aiStatus);
   aiJobs = () => this.call<AiJob[]>('GET', API_ROUTES.aiJobs);

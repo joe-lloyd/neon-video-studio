@@ -2,6 +2,7 @@ export * from './types.ts';
 export * from './ids.ts';
 export * from './timecode.ts';
 export * from './ops.ts';
+export * from './timing.ts';
 export * from './doc.ts';
 export * from './templates.ts';
 export * from './packs.ts';

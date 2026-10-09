@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import { newId } from './ids.ts';
-import { clipEnd, mergeRanges, planRippleInsert, resolveFreePosition, sortClips, sortTracks, trackEnd } from './ops.ts';
+import { clipEnd, mergeRanges, planRippleInsert, resolveFreePosition, sortClips, sortTracks, trackEnd, volumeAt } from './ops.ts';
+import { sliceKeyframes, speedOf } from './timing.ts';
 import { CORE_PACK_NAME, getPack, getTemplate, hasTemplate, resolveTemplateProps } from './templates.ts';
 import {
   DEFAULT_PROJECT_META,
@@ -14,6 +15,7 @@ import {
   type MediaClip,
   type Project,
   type ProjectMeta,
+  type Reframe,
   type Track,
   type TrackKind,
   type Transcript,
@@ -47,10 +49,11 @@ export interface InsertClipInput {
   placement?: 'ripple' | 'free' | 'overlap';
 }
 
-export type ClipPatch = Partial<Omit<MediaClip, 'id' | 'kind' | 'assetId' | 'volumeKeyframes' | 'reframe' | 'transform' | 'animateIn' | 'animateOut'>> &
+export type ClipPatch = Partial<Omit<MediaClip, 'id' | 'kind' | 'assetId' | 'volumeKeyframes' | 'reframe' | 'zooms' | 'transform' | 'animateIn' | 'animateOut'>> &
   Partial<Pick<ComponentClip, 'props'>> & {
     volumeKeyframes?: MediaClip['volumeKeyframes'] | null;
     reframe?: MediaClip['reframe'] | null;
+    zooms?: MediaClip['zooms'] | null;
     transform?: MediaClip['transform'] | null;
     animateIn?: MediaClip['animateIn'] | null;
     animateOut?: MediaClip['animateOut'] | null;
@@ -497,7 +500,10 @@ export class ProjectDoc {
       const start = Math.min(Math.max(0, Math.round(newFrame)), end - 1);
       const delta = start - clip.startFrame;
       const patch: ClipPatch = { startFrame: start, durationFrames: end - start };
-      if (clip.kind !== 'component') patch.trimBefore = Math.max(0, clip.trimBefore + delta);
+      if (clip.kind !== 'component') {
+        patch.trimBefore = Math.max(0, Math.round(clip.trimBefore + delta * speedOf(clip)));
+        Object.assign(patch, sliceLocalAutomation(clip, delta, clip.durationFrames));
+      }
       return this.updateClip(id, patch, origin);
     }, origin);
   }
@@ -522,15 +528,67 @@ export class ProjectDoc {
             id: newId('clip'),
             startFrame: at,
             durationFrames: clip.durationFrames - leftDuration,
-            trimBefore: clip.trimBefore + leftDuration,
+            trimBefore: Math.round(clip.trimBefore + leftDuration * speedOf(clip)),
             fadeIn: 0,
+            ...sliceLocalAutomation(clip, leftDuration, clip.durationFrames),
           };
     const left = this.clips.get(id)!;
     left.set('durationFrames', leftDuration);
-    if (clip.kind !== 'component') left.set('fadeOut', 0);
+    if (clip.kind !== 'component') {
+      left.set('fadeOut', 0);
+      const sliced = sliceLocalAutomation(clip, 0, leftDuration);
+      for (const key of ['volumeKeyframes', 'reframe'] as const) {
+        const value = sliced[key];
+        if (value) left.set(key, value);
+      }
+    }
     this.clips.set(right.id, clipToMap(right));
     this.touch();
     return [mapToClip(left), right];
+  }
+
+  /**
+   * Re-time a media clip, or just the timeline range [range.start, range.end) of it (the clip is
+   * split at the range edges). Its length scales with 1/speed and every clip after its old end,
+   * on every track, ripples by the difference so the rest of the edit stays in sync.
+   */
+  setClipSpeed(id: string, speed: number, range?: FrameRange, origin?: unknown): MediaClip {
+    const clip = this.getClip(id);
+    if (!clip) throw new Error(`Clip ${id} not found`);
+    if (clip.kind === 'component') throw new Error('Speed applies to video, audio and image clips');
+    if (!(speed >= 0.1 && speed <= 16)) throw new Error(`Speed must be between 0.1 and 16, got ${speed}`);
+    return this.transact(() => {
+      let targetId = id;
+      if (range) {
+        const start = Math.max(clip.startFrame, Math.round(range.start));
+        const end = Math.min(clipEnd(clip), Math.round(range.end));
+        if (end <= start) throw new Error(`Range ${range.start}–${range.end} is outside clip ${id} (${clip.startFrame}–${clipEnd(clip)})`);
+        if (start > clip.startFrame) targetId = this.splitClipInternal(targetId, start)[1].id;
+        if (end < clipEnd(clip)) this.splitClipInternal(targetId, end);
+      }
+      const target = this.getClip(targetId);
+      if (!target || target.kind === 'component') throw new Error(`Clip ${targetId} not found`);
+      const oldEnd = clipEnd(target);
+      const factor = speedOf(target) / speed;
+      const durationFrames = Math.max(1, Math.round(target.durationFrames * factor));
+      const delta = durationFrames - target.durationFrames;
+      const m = this.clips.get(targetId)!;
+      m.set('durationFrames', durationFrames);
+      if (speed === 1) m.delete('speed');
+      else m.set('speed', speed);
+      const scaled = scaleLocalAutomation(target, factor);
+      for (const key of ['volumeKeyframes', 'reframe'] as const) {
+        const value = scaled[key];
+        if (value) m.set(key, value);
+      }
+      if (delta !== 0) {
+        // Process in the direction of travel so shifted clips never pass each other.
+        const later = this.toJSON().clips.filter((c) => c.id !== targetId && c.startFrame >= oldEnd).sort((a, b) => (delta > 0 ? b.startFrame - a.startFrame : a.startFrame - b.startFrame));
+        for (const c of later) this.clips.get(c.id)!.set('startFrame', c.startFrame + delta);
+      }
+      this.touch();
+      return mapToClip(m) as MediaClip;
+    }, origin);
   }
 
   removeClips(ids: string[], origin?: unknown): void {
@@ -641,6 +699,7 @@ export class ProjectDoc {
         fadeIn: clip.fadeIn,
         fadeOut: clip.fadeOut,
         ...(clip.volumeKeyframes ? { volumeKeyframes: clip.volumeKeyframes.map((k) => ({ ...k })) } : {}),
+        ...(clip.speed ? { speed: clip.speed } : {}),
       };
       this.clips.set(audio.id, clipToMap(audio));
       this.updateClip(clipId, { volume: 0, volumeKeyframes: null }, origin);
@@ -719,6 +778,41 @@ export class ProjectDoc {
 }
 
 // ---- helpers ---------------------------------------------------------------------------
+
+/** Clip-local automation (volume envelope, reframe track) re-based onto the clip sub-range [from, to). */
+function sliceLocalAutomation(clip: MediaClip, from: number, to: number): Pick<MediaClip, 'volumeKeyframes' | 'reframe'> {
+  const out: Pick<MediaClip, 'volumeKeyframes' | 'reframe'> = {};
+  const vol = clip.volumeKeyframes;
+  if (vol?.length) out.volumeKeyframes = sliceKeyframes(vol, from, to, (frame) => ({ frame, gain: volumeAt(vol, frame) }));
+  const rf = clip.reframe;
+  if (rf?.keyframes.length) {
+    const keyframes = sliceKeyframes(rf.keyframes, from, to, (frame) => reframeAt(rf.keyframes, frame));
+    if (keyframes) out.reframe = { ...rf, keyframes };
+  }
+  return out;
+}
+
+/** Stretch clip-local automation when the clip is re-timed (length × factor). */
+function scaleLocalAutomation(clip: MediaClip, factor: number): Pick<MediaClip, 'volumeKeyframes' | 'reframe'> {
+  const out: Pick<MediaClip, 'volumeKeyframes' | 'reframe'> = {};
+  if (clip.volumeKeyframes?.length) out.volumeKeyframes = clip.volumeKeyframes.map((k) => ({ ...k, frame: Math.round(k.frame * factor) }));
+  if (clip.reframe?.keyframes.length) out.reframe = { ...clip.reframe, keyframes: clip.reframe.keyframes.map((k) => ({ ...k, frame: Math.round(k.frame * factor) })) };
+  return out;
+}
+
+function reframeAt(kfs: Reframe['keyframes'], frame: number): Reframe['keyframes'][number] {
+  const first = kfs[0]!;
+  if (frame <= first.frame) return { ...first, frame };
+  for (let i = 1; i < kfs.length; i++) {
+    const a = kfs[i - 1]!;
+    const b = kfs[i]!;
+    if (frame <= b.frame) {
+      const t = b.frame === a.frame ? 1 : (frame - a.frame) / (b.frame - a.frame);
+      return { frame, cx: a.cx + (b.cx - a.cx) * t, cy: a.cy + (b.cy - a.cy) * t, zoom: a.zoom + (b.zoom - a.zoom) * t };
+    }
+  }
+  return { ...kfs[kfs.length - 1]!, frame };
+}
 
 /** Replace/insert/delete entries of a Y.Map so it mirrors `items`, leaving identical entries untouched. */
 function syncCollection<T extends object>(target: Y.Map<YMap>, items: T[], keyOf: (item: T) => string, toMap: (item: T) => YMap, fromMap: (m: YMap) => unknown): void {

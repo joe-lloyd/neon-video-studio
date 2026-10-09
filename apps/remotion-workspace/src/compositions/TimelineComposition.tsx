@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
-import { sortClips, sortTracks, volumeAt, type Asset, type Clip, type MediaClip, type Project, type Track } from '@neon/core';
+import { sortClips, sortTracks, speedOf, volumeAt, zoomAt, type Asset, type Clip, type MediaClip, type Project, type Track } from '@neon/core';
 import { getTemplateComponent } from '../templates/index.ts';
 
 /** Kept as a type alias (not an interface) so it satisfies Remotion's Record<string, unknown> constraint. */
@@ -46,7 +46,9 @@ const MediaClipView: React.FC<{ clip: MediaClip; asset: Asset | undefined; track
   const fadeIn = Math.round(clip.fadeIn * scale);
   const fadeOut = Math.round(clip.fadeOut * scale);
   const envelope = fadeEnvelope(frame, durationInFrames, fadeIn, fadeOut);
-  const baseVolume = track.muted ? 0 : Math.max(0, Math.min(2, clip.volume));
+  const speed = speedOf(clip);
+  // Sped-up screen time should not chirp: audio is silent above 2×.
+  const baseVolume = track.muted || speed > 2 ? 0 : Math.max(0, Math.min(2, clip.volume));
   const keyframes = clip.volumeKeyframes;
   // Volume automation (breath attenuation etc.). Keyframes are in project frames, `f` in output frames.
   const volume = keyframes && keyframes.length
@@ -75,18 +77,24 @@ const MediaClipView: React.FC<{ clip: MediaClip; asset: Asset | undefined; track
   }
 
   if (clip.kind === 'audio') {
-    return <Audio src={src} trimBefore={trimBefore} volume={volume} />;
+    return <Audio src={src} trimBefore={trimBefore} volume={volume} playbackRate={speed} />;
   }
-  if (clip.kind === 'image') {
-    return (
-      <AbsoluteFill style={{ opacity: envelope }}>
-        <Img src={src} style={style} />
-      </AbsoluteFill>
+  // Zoom camera: zoomAt works in source frames, so regions follow the content through cuts and re-timing.
+  const camera = zoomAt(clip.zooms, clip.trimBefore + (frame / scale) * speed);
+  // Always wrapped (even at zoom 1) so the video element is never remounted when a zoom starts.
+  const cameraStyle: React.CSSProperties =
+    camera.zoom > 1.0001
+      ? { transform: `scale(${camera.zoom.toFixed(4)}) translate(${((0.5 - camera.cx) * 100).toFixed(3)}%, ${((0.5 - camera.cy) * 100).toFixed(3)}%)`, transformOrigin: '50% 50%' }
+      : {};
+  const media =
+    clip.kind === 'image' ? (
+      <Img src={src} style={style} />
+    ) : (
+      <OffthreadVideo src={src} trimBefore={trimBefore} volume={volume} playbackRate={speed} style={style} pauseWhenBuffering transparent={Boolean(asset.hasAlpha)} />
     );
-  }
   return (
-    <AbsoluteFill style={{ opacity: envelope }}>
-      <OffthreadVideo src={src} trimBefore={trimBefore} volume={volume} style={style} pauseWhenBuffering transparent={Boolean(asset.hasAlpha)} />
+    <AbsoluteFill style={{ opacity: envelope, overflow: 'hidden' }}>
+      <AbsoluteFill style={cameraStyle}>{media}</AbsoluteFill>
     </AbsoluteFill>
   );
 };
