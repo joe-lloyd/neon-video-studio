@@ -59,6 +59,7 @@ export {
   MousePointer2,
   Link,
   Mic,
+  Monitor,
   AudioLines,
   Captions,
   Crop,

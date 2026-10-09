@@ -15,6 +15,7 @@ import {
   type AiCapabilities,
   type AiJob,
   type AiOperation,
+  type CaptureState,
   type Clip,
   type Project,
   type RenderJob,
@@ -58,6 +59,14 @@ export interface Toast {
   message: string;
 }
 
+/** Screen recording as the transport shows it (the main process owns the actual capture). */
+export type ScreenCaptureUi =
+  | { phase: 'idle' }
+  | { phase: 'countdown'; remaining: number }
+  | { phase: 'starting' }
+  | { phase: 'recording'; startedAt: number }
+  | { phase: 'finishing' };
+
 export interface UiState {
   selection: string[];
   /** Pixels per frame on the timeline. */
@@ -91,6 +100,7 @@ export interface UiState {
   recentProjects: { path: string; name: string; updatedAt: string; current: boolean }[];
   /** Voice-over recording state. */
   recording: { startFrame: number; startedAt: number } | null;
+  screenCapture: ScreenCaptureUi;
   /** Auto-update state pushed by the main process. */
   update: UpdateState;
   /** Undo/redo availability — in-memory stack or persisted history (see main/history.ts). */
@@ -145,6 +155,7 @@ export class Editor {
     showStart: true,
     recentProjects: [],
     recording: null,
+    screenCapture: { phase: 'idle' },
     update: { phase: 'idle', currentVersion: '' },
     canUndo: false,
     canRedo: false,
@@ -190,7 +201,11 @@ export class Editor {
       packsChanged: ({ packs }) => void this.applyPacks(packs),
       historyChanged: ({ status }) => this.setHistory(status),
       menuAction: ({ action }) => this.handleMenuAction(action),
-      activity: ({ entry }) => this.pushActivity(entry),
+      activity: ({ entry }) => {
+        this.pushActivity(entry);
+        // A capture started or stopped from the CLI: mirror it on the transport.
+        if (entry.action.startsWith('capture.') && entry.source !== 'ui') void this.syncScreenCapture();
+      },
       aiUpdate: ({ job }) => this.upsertAiJob(job),
       previewControl: ({ action, frame }) => {
         switch (action) {
@@ -459,6 +474,82 @@ export class Editor {
       this.toast('success', `Voice-over placed on ${track.name} at frame ${startFrame}`);
     } catch (err) {
       this.toast('error', `Voice-over import failed: ${(err as Error).message}`);
+    }
+  }
+
+  // ---- screen recording -------------------------------------------------------------------
+
+  /** 3-2-1 on screen, then the main process starts ffmpeg. Calling cancelScreenCapture() during the countdown aborts it. */
+  async startScreenCapture(opts: { display: number; mic: string | false }): Promise<void> {
+    if (this.ui.get().screenCapture.phase !== 'idle') return;
+    if (this.ui.get().recording) {
+      this.toast('error', 'Stop the voice-over before recording the screen');
+      return;
+    }
+    for (let remaining = 3; remaining > 0; remaining--) {
+      this.ui.set({ screenCapture: { phase: 'countdown', remaining } });
+      await new Promise((r) => setTimeout(r, 1000));
+      if (this.ui.get().screenCapture.phase !== 'countdown') return;
+    }
+    this.ui.set({ screenCapture: { phase: 'starting' } });
+    try {
+      const state = await this.bridge.request('captureStart', { display: opts.display, mic: opts.mic });
+      this.applyCaptureState(state);
+    } catch (err) {
+      this.ui.set({ screenCapture: { phase: 'idle' } });
+      this.toast('error', (err as Error).message);
+    }
+  }
+
+  async stopScreenCapture(): Promise<void> {
+    if (this.ui.get().screenCapture.phase !== 'recording') return;
+    this.ui.set({ screenCapture: { phase: 'finishing' } });
+    try {
+      const result = await this.bridge.request('captureStop', {});
+      if (result.clip) {
+        this.select([result.clip.id]);
+        this.flashClips([result.clip.id]);
+        this.seek(result.clip.startFrame);
+      }
+      this.toast('success', `Screen recording added (${(result.durationMs / 1000).toFixed(1)} s)`);
+    } catch (err) {
+      this.toast('error', (err as Error).message);
+    }
+    await this.syncScreenCapture();
+  }
+
+  async cancelScreenCapture(): Promise<void> {
+    const phase = this.ui.get().screenCapture.phase;
+    if (phase === 'countdown') {
+      this.ui.set({ screenCapture: { phase: 'idle' } });
+      return;
+    }
+    if (phase !== 'recording') return;
+    await this.bridge.request('captureCancel', {}).catch((err: Error) => this.toast('error', err.message));
+    await this.syncScreenCapture();
+  }
+
+  async syncScreenCapture(): Promise<void> {
+    const state = await this.bridge.request('captureState', {}).catch(() => null);
+    if (state) this.applyCaptureState(state);
+  }
+
+  private applyCaptureState(state: CaptureState): void {
+    switch (state.status) {
+      case 'idle':
+        // Keep a local countdown/start in flight; anything else means the capture ended.
+        if (this.ui.get().screenCapture.phase !== 'countdown' && this.ui.get().screenCapture.phase !== 'starting') this.ui.set({ screenCapture: { phase: 'idle' } });
+        return;
+      case 'recording':
+        this.ui.set({ screenCapture: { phase: 'recording', startedAt: Date.parse(state.startedAt) } });
+        return;
+      case 'finishing':
+        this.ui.set({ screenCapture: { phase: 'finishing' } });
+        return;
+      default: {
+        const exhaustive: never = state;
+        return exhaustive;
+      }
     }
   }
 

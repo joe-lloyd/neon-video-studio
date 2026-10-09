@@ -520,3 +520,16 @@ button.link { background: none; border: none; padding: 0; color: var(--cyan); cu
 .pack-card .err { font-size: 11px; color: var(--danger); line-height: 1.4; word-break: break-word; }
 .pack-card .templates { font-family: var(--mono); font-size: 10px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pack-card .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+
+/* ---- screen recording ---------------------------------------------------------------- */
+.capture-wrap { position: relative; display: inline-flex; }
+.capture-pop { position: absolute; bottom: calc(100% + 10px); left: -8px; width: 280px; padding: 12px; z-index: 60; }
+.capture-pop h4 { margin: 0 0 10px; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--cyan); text-shadow: 0 0 8px var(--glow-c); }
+.capture-pop .hint { margin: 0 0 12px; }
+.capture-pop .err { margin: 0 0 12px; font-size: 12px; line-height: 1.5; color: var(--danger); }
+.capture-countdown { position: fixed; inset: 0; z-index: 95; display: grid; place-content: center; justify-items: center; gap: 10px; pointer-events: none; background: rgba(9, 9, 11, 0.55); backdrop-filter: blur(2px); }
+.capture-countdown span { font-family: var(--mono); font-size: 160px; font-weight: 700; line-height: 1; color: var(--magenta); text-shadow: 0 0 40px var(--glow-m); animation: countdown-pop 1s ease-out both; }
+.capture-countdown small { font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+@keyframes countdown-pop { from { transform: scale(1.35); opacity: 0; } 25% { transform: scale(1); opacity: 1; } to { opacity: 0.85; } }
+.spin { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
