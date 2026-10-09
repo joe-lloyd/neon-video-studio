@@ -70,6 +70,7 @@ import {
   type ApiResult,
   type AppStatus,
   type InsertClipInput,
+  type MediaClip,
   type ListResponse,
 } from '@neon/core';
 import { mediaTypeForFile } from '@neon/core/node';
@@ -474,22 +475,29 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     const clip = doc.getClip(req.id);
     if (!clip) throw new HttpError(404, 'NOT_FOUND', `Clip ${req.id} not found`);
     if (clip.kind === 'component' || clip.kind === 'audio') throw new HttpError(400, 'BAD_REQUEST', 'Zoom works on video and image clips');
-    const from = Math.max(clip.startFrame, T(req.from)!);
-    const to = Math.min(clipEnd(clip), T(req.to)!);
-    if (to <= from) throw new HttpError(400, 'BAD_REQUEST', `Zoom range must overlap the clip (${framesToTimecode(clip.startFrame, fps)}–${framesToTimecode(clipEnd(clip), fps)})`);
+    // After cuts a take is several pieces of the same asset on one track. A zoom over a cut is one
+    // continuous move, so every piece the range touches gets the same source-time region.
+    const pieces = doc
+      .toJSON()
+      .clips.filter((c): c is MediaClip => c.kind === clip.kind && c.assetId === clip.assetId && c.trackId === clip.trackId && c.startFrame < T(req.to)! && clipEnd(c) > T(req.from)!)
+      .sort((a, b) => a.startFrame - b.startFrame);
+    if (!pieces.some((c) => c.id === clip.id)) throw new HttpError(400, 'BAD_REQUEST', `Zoom range must overlap the clip (${framesToTimecode(clip.startFrame, fps)}–${framesToTimecode(clipEnd(clip), fps)})`);
+    const first = pieces[0]!;
+    const last = pieces[pieces.length - 1]!;
     // Store in source frames so the zoom follows its moment through later cuts and re-timing.
     const region = {
-      start: Math.round(sourceFrameAt(clip, from)),
-      end: Math.round(sourceFrameAt(clip, to)),
+      start: Math.round(sourceFrameAt(first, Math.max(first.startFrame, T(req.from)!))),
+      end: Math.round(sourceFrameAt(last, Math.min(clipEnd(last), T(req.to)!))),
       cx: req.cx,
       cy: req.cy,
       zoom: req.zoom,
       ...(req.ramp !== undefined ? { ramp: Math.round(T(req.ramp)! * speedOf(clip)) } : {}),
     };
-    const overlapping = (clip.zooms ?? []).find((z) => z.start < region.end && region.start < z.end);
-    if (overlapping) throw new HttpError(409, 'ZOOM_OVERLAP', 'That range overlaps an existing zoom on this clip — clear it first (neon-cli zoom clear)');
-    const zooms = [...(clip.zooms ?? []), region].sort((a, b) => a.start - b.start);
-    return doc.updateClip(clip.id, { zooms }, ORIGIN_API);
+    if (pieces.some((c) => (c.zooms ?? []).some((z) => z.start < region.end && region.start < z.end))) {
+      throw new HttpError(409, 'ZOOM_OVERLAP', 'That range overlaps an existing zoom on this clip; clear it first (neon-cli zoom clear)');
+    }
+    for (const c of pieces) doc.updateClip(c.id, { zooms: [...(c.zooms ?? []), region].sort((a, b) => a.start - b.start) }, ORIGIN_API);
+    return doc.getClip(clip.id)!;
   }
   if (key === `POST ${API_ROUTES.timelineCut}`) {
     const req = CutRangesRequestSchema.parse(body);
