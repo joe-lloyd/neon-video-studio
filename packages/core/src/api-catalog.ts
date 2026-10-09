@@ -10,6 +10,8 @@
 import { z } from 'zod';
 import { API_ROUTES, type ApiRouteKey } from './api.ts';
 import {
+  CaptureStartRequestSchema,
+  CaptureStopRequestSchema,
   AddTrackRequestSchema,
   AiBreathsRequestSchema,
   AiBrollRequestSchema,
@@ -147,6 +149,11 @@ export const API_CATALOG: { readonly [K in ApiRouteKey]: RouteSpec } = {
   recordStart: { method: 'POST', summary: 'Start recording a mic voice-over', body: null, notInBatch: 'records from the microphone' },
   recordStop: { method: 'POST', summary: 'Stop recording and place the take on the VO track', body: RecordStopRequestSchema, notInBatch: 'records from the microphone' },
   recordState: { method: 'GET', summary: 'Voice-over recorder state' },
+  captureDevices: { method: 'GET', summary: 'Displays and microphones screen capture can record on this machine' },
+  captureStart: { method: 'POST', summary: 'Start recording the screen (plus mic) into a new take', body: CaptureStartRequestSchema, notInBatch: 'records the screen' },
+  captureStop: { method: 'POST', summary: 'Stop the screen recording and place the take (end of V1 by default)', body: CaptureStopRequestSchema, notInBatch: 'records the screen' },
+  captureCancel: { method: 'POST', summary: 'Stop the screen recording and throw the take away', body: null, notInBatch: 'records the screen' },
+  captureState: { method: 'GET', summary: 'Screen recorder state' },
   batch: { method: 'POST', summary: 'Run POST ops as one unit: all apply (one undo step) or the project is restored', body: BatchRequestSchema, notInBatch: 'batches do not nest' },
 };
 
