@@ -89,6 +89,14 @@ neon-cli render --output demo.mp4 --preset 1080p30
 neon-cli captions srt --out demo.srt          # subtitles for YouTube and similar
 ```
 
+## Editing on another machine
+
+Run the agent on one machine and edit on another, such as a Windows PC that does the recording.
+Set `NEON_HOST=<ssh-host>` (or add `--on <ssh-host>`) and every command above runs against the
+app on that machine through an SSH tunnel. You watch the edit happen there. Local files are
+uploaded on import, and stills, sheets and `render --fetch` outputs are copied back. See
+"Driving the app on another machine" in `docs/cli.md`.
+
 ## Working without the app window
 
 `neon-cli serve` runs the whole app without a window, which is useful on a server or when an
