@@ -531,11 +531,13 @@ export class ProjectDoc {
             trimBefore: Math.round(clip.trimBefore + leftDuration * speedOf(clip)),
             fadeIn: 0,
             ...sliceLocalAutomation(clip, leftDuration, clip.durationFrames),
+            ...(clip.declick ? { declick: { in: 0, out: clip.declick.out } } : {}),
           };
     const left = this.clips.get(id)!;
     left.set('durationFrames', leftDuration);
     if (clip.kind !== 'component') {
       left.set('fadeOut', 0);
+      if (clip.declick) left.set('declick', { in: clip.declick.in, out: 0 });
       const sliced = sliceLocalAutomation(clip, 0, leftDuration);
       for (const key of ['volumeKeyframes', 'reframe'] as const) {
         const value = sliced[key];
@@ -652,14 +654,15 @@ export class ProjectDoc {
           }
           cuts++;
           if (xf > 0) {
-            if (keepLeft && keepLeft.kind !== 'component') {
-              const m = this.clips.get(keepLeft.id);
-              if (m && Number(m.get('fadeOut') ?? 0) < xf) m.set('fadeOut', Math.min(xf, keepLeft.durationFrames));
-            }
-            if (keepRight && keepRight.kind !== 'component') {
-              const m = this.clips.get(keepRight.id);
-              if (m && Number(m.get('fadeIn') ?? 0) < xf) m.set('fadeIn', Math.min(xf, keepRight.durationFrames));
-            }
+            // Audio-only ramps: a picture fade here would flash to black at every cut.
+            const ramp = (target: Clip | null, edge: 'in' | 'out') => {
+              const m = target && target.kind !== 'component' ? this.clips.get(target.id) : undefined;
+              if (!m || !target) return;
+              const current = (m.get('declick') as { in: number; out: number } | undefined) ?? { in: 0, out: 0 };
+              if (current[edge] < xf) m.set('declick', { ...current, [edge]: Math.min(xf, target.durationFrames) });
+            };
+            ramp(keepLeft, 'out');
+            ramp(keepRight, 'in');
           }
         }
         if (ripple) {
@@ -700,6 +703,7 @@ export class ProjectDoc {
         fadeOut: clip.fadeOut,
         ...(clip.volumeKeyframes ? { volumeKeyframes: clip.volumeKeyframes.map((k) => ({ ...k })) } : {}),
         ...(clip.speed ? { speed: clip.speed } : {}),
+        ...(clip.declick ? { declick: { ...clip.declick } } : {}),
       };
       this.clips.set(audio.id, clipToMap(audio));
       this.updateClip(clipId, { volume: 0, volumeKeyframes: null }, origin);

@@ -50,9 +50,12 @@ const MediaClipView: React.FC<{ clip: MediaClip; asset: Asset | undefined; track
   // Sped-up screen time should not chirp: audio is silent above 2×.
   const baseVolume = track.muted || speed > 2 ? 0 : Math.max(0, Math.min(2, clip.volume));
   const keyframes = clip.volumeKeyframes;
+  // Cut joins ramp the sound only (no click); the picture stays at full opacity.
+  const declickIn = Math.round((clip.declick?.in ?? 0) * scale);
+  const declickOut = Math.round((clip.declick?.out ?? 0) * scale);
   // Volume automation (breath attenuation etc.). Keyframes are in project frames, `f` in output frames.
-  const volume = keyframes && keyframes.length
-    ? (f: number) => baseVolume * volumeAt(keyframes, f / scale) * fadeEnvelope(f, durationInFrames, fadeIn, fadeOut)
+  const volume = (keyframes && keyframes.length) || declickIn || declickOut
+    ? (f: number) => baseVolume * volumeAt(keyframes, f / scale) * fadeEnvelope(f, durationInFrames, fadeIn, fadeOut) * fadeEnvelope(f, durationInFrames, declickIn, declickOut)
     : baseVolume * envelope;
   const trimBefore = Math.round(clip.trimBefore * scale);
   const style: React.CSSProperties = { width: '100%', height: '100%', objectFit: clip.fit };

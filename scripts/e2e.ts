@@ -125,6 +125,12 @@ async function main(): Promise<void> {
       assert(Math.abs(seconds - 2.5) < 0.2, `rendered 2.5 s, got ${probe.stdout.trim()}`);
       log(`rendered ${out} (${seconds.toFixed(2)} s)`);
 
+      // Frame 15 is the first frame after a cut join: it must show the picture, not dip to black.
+      const luma = spawnSync(tool('ffmpeg'), ['-v', 'error', '-i', out, '-vf', 'select=eq(n\\,15),scale=1:1', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'gray', '-'], { maxBuffer: 1024 });
+      const level = luma.stdout[0] ?? 0;
+      assert(level > 60, `frame after the cut is lit (mean luma ${level}), not a flash to black`);
+      log(`cut join keeps the picture (frame 15 mean luma ${level})`);
+
       // Stills: the PNG header must match the size asked for; a few KB at most means a blank frame.
       const still = cli<Still>('still', '--at', '1s', '--width', '640', '--out', join(home, 'still.png'));
       const stillPng = png(still.path);

@@ -86,6 +86,7 @@ export const MediaClipSchema = ClipBaseSchema.extend({
   reframe: ReframeSchema.optional(),
   speed: ClipSpeedSchema.optional(),
   zooms: z.array(ZoomRegionSchema).optional(),
+  declick: z.object({ in: z.number().int().nonnegative(), out: z.number().int().nonnegative() }).optional(),
 });
 
 export const ComponentClipSchema = ClipBaseSchema.extend({

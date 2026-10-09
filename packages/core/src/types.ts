@@ -125,6 +125,8 @@ export interface MediaClip extends ClipBase {
   speed?: number;
   /** Zoom/pan camera moves (visual clips). */
   zooms?: ZoomRegion[];
+  /** Audio-only ramps (frames) on edges joined by a cut, so joins don't click. Unlike fadeIn/fadeOut the picture is untouched. */
+  declick?: { in: number; out: number };
 }
 
 export interface ComponentClip extends ClipBase {
