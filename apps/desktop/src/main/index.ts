@@ -5,34 +5,18 @@
  * (CLI/agents), host Yjs sync + WebRTC signaling + asset server, drive renders, manage rooms.
  */
 import Electrobun, { BrowserView, BrowserWindow, Updater, Utils } from 'electrobun/main';
-import { randomBytes } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import { SUPPORTED_EXTENSIONS, clearInstanceInfo, writeInstanceInfo } from '@neon/core/node';
+import { SUPPORTED_EXTENSIONS } from '@neon/core/node';
 import { ORIGIN_LOCAL, type ImportAssetResponse } from '@neon/core';
-import { AssetManager } from './assets.ts';
-import type { MainContext } from './context.ts';
-import { buildStatus, startControlServer } from './control-server.ts';
+import { VERSION, bootCore } from './core.ts';
+import { buildStatus } from './control-server.ts';
+import { cancelCapture, startCapture, stopCapture } from './screen-recorder.ts';
 import { installMenu } from './menu.ts';
 import { paths } from './paths.ts';
 import { ProjectStore } from './project-store.ts';
-import { RenderManager } from './render-manager.ts';
-import { RoomManager } from './room.ts';
-import { loadSettings, saveSettings } from './settings.ts';
-import { SyncHub } from './sync-hub.ts';
-import { EventHub } from './events.ts';
-import { AiManager } from './ai-manager.ts';
-import { registerAllPacks } from '@neon/remotion-workspace/packs';
-import { VoiceRecorder } from './recorder.ts';
-import { ensureRenderRuntime } from './render-runtime.ts';
+import { saveSettings } from './settings.ts';
 import { UpdateManager } from './updates.ts';
-import { HistoryStore } from './history.ts';
-import { WaveformCache } from './waveforms.ts';
-import { PackManager } from './packs.ts';
-import { repoRoot } from './paths.ts';
 import type { Bootstrap, DesktopRPC } from '../shared/rpc.ts';
-
-const VERSION = '0.8.3';
 const DEV_SERVER_URL = 'http://localhost:5173';
 
 async function resolveViewUrl(port: number, token: string): Promise<{ url: string; isDev: boolean }> {
@@ -57,83 +41,9 @@ async function resolveViewUrl(port: number, token: string): Promise<{ url: strin
 }
 
 async function main(): Promise<void> {
-  registerAllPacks();
-  const startedAt = Date.now();
-  await mkdir(paths.home(), { recursive: true, mode: 0o700 });
-  await mkdir(paths.renders(), { recursive: true });
-  const settings = await loadSettings();
-  const store = await ProjectStore.openOrCreate(settings);
-  const token = randomBytes(24).toString('base64url');
-
-  const ctx: MainContext = {
-    version: VERSION,
-    token,
-    settings,
-    store,
-    assets: null as unknown as AssetManager,
-    renders: null as unknown as RenderManager,
-    sync: null as unknown as SyncHub,
-    room: null as unknown as RoomManager,
-    events: new EventHub(),
-    ai: null as unknown as AiManager,
-    recorder: new VoiceRecorder(),
-    updates: null as unknown as UpdateManager,
-    history: null as unknown as HistoryStore,
-    waveforms: null as unknown as WaveformCache,
-    packs: null as unknown as PackManager,
-    localPort: 0,
-    startedAt,
-    rpc: null,
-    isDev: false,
-  };
-  ctx.assets = new AssetManager(store, settings.peerId);
-  ctx.waveforms = new WaveformCache(ctx.assets);
-  ctx.history = new HistoryStore(store);
-  await ctx.history.load();
-  let examplesDir: string | null = null;
-  try {
-    examplesDir = join(repoRoot(), 'examples/packs');
-  } catch {
-    /* packaged app: no in-repo examples */
-  }
-  ctx.packs = new PackManager({ examplesDir, onChange: (packs) => ctx.rpc?.send.packsChanged({ packs }) });
-  await ctx.packs.load();
-  ctx.updates = new UpdateManager(ctx);
-  ctx.sync = new SyncHub(store);
-  ctx.room = new RoomManager(ctx);
-  ctx.ai = new AiManager(ctx);
-  ctx.renders = new RenderManager({
-    getProject: () => store.toJSON(),
-    projectDir: () => store.dir,
-    assetBaseUrl: () => `http://127.0.0.1:${ctx.localPort}/assets`,
-    renderRuntime: (onLog) => ensureRenderRuntime({ version: VERSION, settings }, onLog),
-    packsFor: (project) => ctx.packs.renderPacks(project.meta.packs),
-    onUpdate: (job) => {
-      ctx.rpc?.send.renderUpdate({ job });
-      ctx.events.emit({ type: 'render', job });
-      if (job.status === 'done') {
-        ctx.rpc?.send.toast({ kind: 'success', message: `Rendered ${basename(job.outputPath)}` });
-        ctx.events.activity('render', 'render.done', `Rendered ${job.totalFrames} frames → ${job.outputPath}`, { jobId: job.id });
-      }
-      if (job.status === 'failed') {
-        ctx.rpc?.send.toast({ kind: 'error', message: `Render failed: ${job.error ?? 'unknown error'}` });
-        ctx.events.activity('render', 'render.failed', `Render failed: ${job.error ?? 'unknown error'}`, { jobId: job.id });
-      }
-      if (job.status === 'rendering' && job.renderedFrames === 0) ctx.events.activity('render', 'render.started', `Rendering ${job.totalFrames} frames (${job.presetId})`, { jobId: job.id });
-    },
-  });
-
-  const local = await startControlServer(ctx);
-  ctx.localPort = local.port;
-  await writeInstanceInfo({
-    pid: process.pid,
-    port: local.port,
-    token,
-    startedAt: new Date(startedAt).toISOString(),
-    version: VERSION,
-    projectPath: store.isScratch ? null : store.dir,
-  });
-  console.log(`[main] control API on http://127.0.0.1:${local.port} (token in ${paths.home()}/instance.json)`);
+  const { ctx, local, shutdown } = await bootCore({ headless: false });
+  const { store, settings, token } = ctx;
+  const updates = new UpdateManager(ctx);
 
   // ---- RPC with the renderer ------------------------------------------------------------
 
@@ -280,8 +190,7 @@ async function main(): Promise<void> {
           const { file } = await ctx.recorder.stop();
           let track = store.toJSON().tracks.find((t) => t.kind === 'audio' && t.name === 'VO');
           track ??= store.doc.addTrack('audio', 'VO', ORIGIN_LOCAL);
-          const result = await ctx.assets.import(file, { insertAt: startFrame, trackId: track.id, origin: ORIGIN_LOCAL });
-          await ctx.recorder.discard();
+          const result = await ctx.assets.import(file, { insertAt: startFrame, trackId: track.id, origin: ORIGIN_LOCAL }).finally(() => ctx.recorder.discard());
           ctx.waveforms.warm(result.asset.id);
           ctx.events.activity('ui', 'vo.done', `Voice-over take placed on ${track.name} at frame ${startFrame}`, { clipIds: result.clip ? [result.clip.id] : [], assetIds: [result.asset.id] });
           return result;
@@ -290,6 +199,11 @@ async function main(): Promise<void> {
           await ctx.recorder.discard();
           return true;
         },
+        captureDevices: () => ctx.capture.devices(),
+        captureState: async () => ctx.capture.state(),
+        captureStart: (params) => startCapture(ctx, params, 'ui'),
+        captureStop: (params) => stopCapture(ctx, params, 'ui'),
+        captureCancel: () => cancelCapture(ctx, 'ui'),
         chooseFolder: async () => {
           const [dir] = await Utils.openFileDialog({ canChooseFiles: false, canChooseDirectory: true, allowsMultipleSelection: false });
           return dir ?? null;
@@ -299,8 +213,8 @@ async function main(): Promise<void> {
           await saveSettings(settings);
           return true;
         },
-        updateCheck: () => ctx.updates.check(),
-        updateApply: () => ctx.updates.apply(),
+        updateCheck: () => updates.check(),
+        updateApply: () => updates.apply(),
         historyStatus: () => ctx.history.status(),
         historyPush: () => ctx.history.push(),
         historyMove: ({ delta }) => ctx.history.move(delta),
@@ -332,36 +246,6 @@ async function main(): Promise<void> {
   ctx.events.subscribe((event) => {
     if (event.type === 'activity') rpc.send.activity({ entry: event.entry });
   });
-  ctx.room.onChange((info) => ctx.events.emit({ type: 'room', room: info }));
-  let knownPeers = new Map<string, string>();
-  ctx.sync.onPeersChanged(() => {
-    const now = ctx.sync.peerNames();
-    for (const [id, name] of now) if (!knownPeers.has(id) && id !== settings.peerId) ctx.events.activity('peer', 'peer.joined', `${name} joined`);
-    for (const [id, name] of knownPeers) if (!now.has(id) && id !== settings.peerId) ctx.events.activity('peer', 'peer.left', `${name} left`);
-    knownPeers = now;
-    ctx.rpc?.send.roomUpdate({ room: ctx.room.state, info: ctx.room.info() });
-  });
-  let changeTimer: ReturnType<typeof setTimeout> | null = null;
-  store.on('changed', () => {
-    if (changeTimer) return;
-    changeTimer = setTimeout(() => {
-      changeTimer = null;
-      ctx.events.emit({ type: 'project-changed', durationFrames: store.doc.durationFrames(), clips: store.toJSON().clips.length, updatedAt: new Date().toISOString() });
-    }, 250);
-  });
-
-  store.on('doc-replaced', async () => {
-    await ctx.history.load();
-    settings.lastProjectPath = store.dir;
-    settings.recent = [store.dir, ...settings.recent.filter((p) => p !== store.dir)].slice(0, 10);
-    await saveSettings(settings);
-    await writeInstanceInfo({ pid: process.pid, port: local.port, token, startedAt: new Date(startedAt).toISOString(), version: VERSION, projectPath: store.isScratch ? null : store.dir });
-    rpc.send.projectOpened({ projectId: store.projectId, path: store.isScratch ? null : store.dir, name: store.doc.isInitialized ? store.doc.getMeta().name : 'Syncing…' });
-    ctx.events.emit({ type: 'project-opened', projectId: store.projectId, path: store.isScratch ? null : store.dir, name: store.doc.isInitialized ? store.doc.getMeta().name : 'Syncing…' });
-    ctx.events.activity('system', 'project.switched', `Now editing “${store.doc.isInitialized ? store.doc.getMeta().name : basename(store.dir)}” (${store.dir})`);
-  });
-  settings.lastProjectPath = store.dir;
-  await saveSettings(settings);
 
   // ---- window ---------------------------------------------------------------------------
 
@@ -414,7 +298,7 @@ async function main(): Promise<void> {
           rpc.send.toast({ kind: 'info', message: 'Run `pnpm cli --help` in the repo (or neon-cli --help when linked).' });
           break;
         case 'help:check-updates': {
-          const state = await ctx.updates.check();
+          const state = await updates.check();
           if (state.phase === 'up-to-date') rpc.send.toast({ kind: 'success', message: `You're on the latest version (${VERSION}).` });
           else if (state.phase === 'error' || state.phase === 'unsupported') rpc.send.toast({ kind: 'info', message: `Update check: ${state.error ?? 'unavailable'}` });
           break;
@@ -436,35 +320,22 @@ async function main(): Promise<void> {
 
   // ---- shutdown -------------------------------------------------------------------------
 
-  let cleaned = false;
-  const cleanup = () => {
-    if (cleaned) return;
-    cleaned = true;
-    console.log('[main] shutting down');
-    ctx.renders.cancelAll();
-    void ctx.room.leave();
-    local.stop();
-    void clearInstanceInfo(process.pid);
-  };
   Electrobun.events.on('before-quit', () => {
-    cleanup();
+    shutdown();
     // Flush is async; best effort — autosave keeps the on-disk copy at most 1.5s stale.
     void store.flush();
   });
-  process.on('exit', cleanup);
+  process.on('exit', shutdown);
   process.on('SIGINT', () => {
-    cleanup();
+    shutdown();
     process.exit(0);
   });
   process.on('SIGTERM', () => {
-    cleanup();
+    shutdown();
     process.exit(0);
   });
 
-  ctx.updates.start();
-  // Fresh machine? Install the core media engines (ffmpeg/ffprobe, yt-dlp) so everything just works.
-  setTimeout(() => void ctx.ai.autoProvision(), 3000);
-
+  updates.start();
   ctx.events.activity('system', 'app.ready', `Neon Video Studio ${VERSION} ready · project “${store.doc.getMeta().name}” · API :${local.port}`);
   console.log(`[main] Neon Video Studio ${VERSION} ready (project: ${store.doc.getMeta().name} @ ${store.dir})`);
 }

@@ -25,6 +25,7 @@ watch an agent edit while you keep control of the timeline.
 - **Export** — H.264 MP4 through `@remotion/renderer` on the app's own bundled Bun runtime (no Node required at runtime); presets from draft to 4K, vertical and square
 - **Agent/CLI control** — `neon-cli` covers projects, media, timeline, tracks, FX packs, edit history, render, rooms, preview transport and a live event stream; `--json` everywhere
 - **P2P collaboration** — host a room, others on the LAN join by code (UDP discovery, no server); Yjs CRDT keeps everyone converged, peers' playheads are visible, assets replicate by SHA‑256
+- **Screen demos** — record screen + narration in the app, then let an agent clean the ums and pauses, zoom, speed up waiting, add callouts and captions, check frames and render, all through `neon-cli` ([docs/screen-demos.md](docs/screen-demos.md))
 - **Local‑first** — projects are folders (`project.json` + CRDT state + content‑addressed assets); autosave; nothing leaves your machine
 
 ## Screenshots
@@ -69,7 +70,7 @@ pnpm install --ignore-scripts       # 7-day minimumReleaseAge enforced in pnpm-w
 pnpm dev                            # electrobun prepare → vite build → launch the app
 pnpm dev:renderer                   # optional: Vite HMR on :5173 (the app picks it up automatically)
 pnpm test && pnpm typecheck
-scripts/smoke.sh                    # e2e against the running app: import → insert → render
+node scripts/e2e.ts                 # e2e through the CLI on a headless app: import → edit → render
 ```
 
 ```
@@ -81,7 +82,7 @@ neon-video-editor/
 ├── packages/p2p/            Sync + signaling servers, LAN discovery, browser PeerSession
 ├── packages/render/         Remotion render worker + headless renders
 ├── packages/icon-kit/       Neon icons + logo
-└── scripts/                 smoke test · release · install-mac · build-icons
+└── scripts/                 e2e test · release · install-mac · build-icons
 ```
 
 ## Integrated AI (local-first)
@@ -126,6 +127,7 @@ commands in **AI → engines** / `ai status`). The Vision helper compiles itself
 
 ## Docs
 
+- **[Screen demos](docs/screen-demos.md)** — record, clean, edit and render a narrated demo, mostly by agent
 - **[CLI reference](docs/cli.md)** — every command with examples and agent recipes
 - **[FX packs](docs/fx-packs.md)** — build your own animated React components (any npm library works)
 - **[Feedback log](FEEDBACK.md)** — running list of requests and their status

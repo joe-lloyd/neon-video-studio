@@ -16,7 +16,7 @@ Two kinds of packs exist:
 
 | Kind | Where it lives | Availability |
 |---|---|---|
-| **Built-in** (`core`, `neon-essentials`) | inside the app bundle | always, in every project |
+| **Built-in** (`core`, `neon-essentials`, `demo-kit`) | inside the app bundle | always, in every project |
 | **Installed** | `~/.neon-video/packs/<name>/` | listed in the Library; enabled per project |
 
 > **Security.** A pack is arbitrary code. It runs inside the app's renderer and inside the headless
@@ -86,7 +86,9 @@ Each entry in `templates`:
 | `previewProps` | object | Prop overrides used only for the thumbnail (e.g. a shorter text). |
 
 Template fields (`fields[]`). Every field has `key` (identifier, becomes the prop name), optional
-`label` and `description`, a `type` and a `default` of the matching type:
+`label` and `description`, a `type` and a `default` of the matching type. The `description` is
+copied into the template's JSON Schema, which is what an agent reads from `neon-cli templates`, so
+say what the value means and its units:
 
 | `type` | `default` | Extra options | Inspector control |
 |---|---|---|---|
@@ -198,6 +200,19 @@ inside `apps/remotion-workspace` where the workspace's dependencies are availabl
 | `SANS`, `MONO` | Font stacks matching the app (`Inter…`, `JetBrains Mono…`). |
 | `glow(color, strength = 1)` | Triple-layer neon glow string for `boxShadow` / `textShadow`. |
 | `clamp(value, min, max)` | Clamp a number. |
+| `useTimelineProject()` | The whole project being rendered (tracks, clips, assets, transcripts), or `null` outside the timeline, such as in the FX library card. Read it; never mutate it. |
+| `useTimelineFrame()` | The current position on the project timeline in project frames, or `null` outside the timeline. `useCurrentFrame()` counts from your clip's start; this adds the start back and undoes an export fps override. |
+| `TimelineProjectContext` | The React context behind both hooks, for tests or custom providers. |
+
+Pair the timeline hooks with `@neon/core` helpers to react to the rest of the edit. For example,
+the caption being spoken now:
+
+```tsx
+const project = useTimelineProject();
+const frame = useTimelineFrame();
+const cues = useMemo(() => (project ? projectCaptions(project) : []), [project]);
+const cue = frame === null ? undefined : cueAt(cues, frame);
+```
 
 ### Rules of the road
 
@@ -264,6 +279,9 @@ props for any installed template. Inserting a clip from an installed pack works 
 **enabled in the project** (see above); built-in packs need no enabling:
 
 ```bash
+# built-in: demo-kit (see "Ships with" below)
+neon-cli timeline insert --component Callout --props '{"text":"Click Save","x":0.88,"y":0.04}' --at 3s
+
 # built-in: neon-essentials
 neon-cli timeline insert --component NeonBadge --props '{"text":"50% OFF","corner":"top-left"}' --at 2s
 neon-cli timeline insert --component KineticList --props '{"title":"Agenda","items":"One\nTwo\nThree"}' --at 4s --duration 8s
@@ -281,6 +299,29 @@ neon-cli timeline insert --component BobaMorphLoader --props '{"color":"#deb8f7"
 **neon-essentials** (built-in): `NeonBadge` (animated pill badge) and `KineticList` (staggered
 bullet points) — small, readable components that make good copy-paste starting points. Source:
 `apps/remotion-workspace/src/templates/packs/neon-essentials/`.
+
+**demo-kit** (built-in): overlays for software demos. Positions are fractions of the frame (0..1,
+origin top-left), so read them off a screenshot as `pixel / width` and `pixel / height`; the same
+values work at any output size. Every component animates in and out by itself, so clips need no
+`animateIn`. Source: `apps/remotion-workspace/src/templates/packs/demo-kit/`.
+
+| Template | What it does | Key props |
+|---|---|---|
+| `Callout` | Label bubble with a curved arrow to a point | `text`, `x`/`y` (arrow tip), `side` (`auto` keeps it in frame), `color` |
+| `Spotlight` | Dims everything except a rounded rectangle | `x`/`y`/`w`/`h` (lit area), `radius`, `dim`, `feather` |
+| `HighlightBox` | Pulsing outline around an element | `x`/`y`/`w`/`h` (element bounds), `color`, `thickness`, `label`, `pulse` |
+| `KeyCombo` | Keycaps that press down | `combo` (`"Ctrl+Shift+P"`, `"Mod+K"`, `"Ctrl+K Ctrl+S"`), `platform` (`pc` or `mac` glyphs), `label`, `x`/`y` |
+| `StepBadge` | Numbered step with a title | `step`, `title`, `subtitle`, `total`, `position` |
+| `ClickPulse` | Rings at a click point | `x`/`y`, `color`, `double` |
+
+```bash
+neon-cli templates Callout    # every prop with its description, as JSON Schema
+neon-cli timeline insert --component Spotlight --props '{"x":0.38,"y":0.2,"w":0.19,"h":0.14}' --at 4s
+neon-cli timeline insert --component HighlightBox --props '{"x":0.01,"y":0.4,"w":0.14,"h":0.045,"label":"Settings"}' --at 8s
+neon-cli timeline insert --component KeyCombo --props '{"combo":"Mod+Shift+P","platform":"mac","label":"Command palette"}' --at 11s
+neon-cli timeline insert --component StepBadge --props '{"step":2,"total":5,"title":"Open Settings"}' --at 13s
+neon-cli timeline insert --component ClickPulse --props '{"x":0.87,"y":0.57}' --at 17s
+```
 
 **boba-expressive** (example pack, `examples/packs/boba-expressive/`): an M3-Expressive-inspired
 set — violet/lavender tonal palette, matte flatness (no glows), pills that square to 12px on exit,

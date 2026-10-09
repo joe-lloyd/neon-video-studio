@@ -2,7 +2,7 @@
  * One-click voice enhancement: high-pass → (optional light neural denoise) → de-esser →
  * compressor → EBU R128 loudness normalisation. Produces a new asset like denoise does.
  */
-import { ffmpegTime, runOrThrow } from './exec.ts';
+import { ffmpegTime, filterPath, runOrThrow } from './exec.ts';
 import type { ToolPaths } from './tools.ts';
 
 export interface EnhanceOptions {
@@ -20,7 +20,7 @@ export interface EnhanceOptions {
 export function buildEnhanceFilter(opts: Pick<EnhanceOptions, 'lufs' | 'denoise' | 'strength'> & { rnnoiseModel?: string }): string {
   const chain: string[] = ['highpass=f=75'];
   if (opts.denoise) {
-    if (opts.rnnoiseModel) chain.push(`aresample=48000`, `arnndn=m='${opts.rnnoiseModel.replace(/'/g, "\\'")}':mix=${Math.min(0.9, 0.3 + opts.strength * 0.5).toFixed(2)}`);
+    if (opts.rnnoiseModel) chain.push(`aresample=48000`, `arnndn=m=${filterPath(opts.rnnoiseModel)}:mix=${Math.min(0.9, 0.3 + opts.strength * 0.5).toFixed(2)}`);
     else chain.push(`afftdn=nr=${Math.round(6 + opts.strength * 10)}:nf=-32:tn=1`);
   }
   chain.push(

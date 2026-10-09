@@ -1,7 +1,7 @@
 /** Typed HTTP client for the desktop app's control API. */
-import { API_ROUTES, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary } from '@neon/core';
+import { API_ROUTES, parseTimecode, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type CaptureDevices, type CaptureStartBody, type CaptureState, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary, type SheetRequestInput, type StillRequestInput, type StillResult } from '@neon/core';
 import { isProcessAlive, readInstanceInfo } from '@neon/core/node';
-import type { Asset, Clip, Project, Track } from '@neon/core';
+import type { Asset, BatchRequest, BatchResult, Clip, Project, Track } from '@neon/core';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -26,11 +26,11 @@ export async function discoverClient(explicit: Partial<ClientOptions> = {}): Pro
   if (!info) {
     throw new ApiError(
       'NOT_RUNNING',
-      'Neon Video Studio is not running (no instance file). Start the desktop app, or pass --endpoint and --token, or use `render --headless`.',
+      'Neon Video Studio is not running (no instance file). Open the desktop app or run `neon-cli serve --detach` (no window); --endpoint/--token also work.',
     );
   }
   if (!isProcessAlive(info.pid)) {
-    throw new ApiError('STALE_INSTANCE', `Instance file points at pid ${info.pid} which is not alive. Start the desktop app.`);
+    throw new ApiError('STALE_INSTANCE', `Instance file points at pid ${info.pid} which is not alive. Open the desktop app or run \`neon-cli serve --detach\`.`);
   }
   return { endpoint: endpoint ?? `http://127.0.0.1:${info.port}`, token: token ?? info.token };
 }
@@ -40,6 +40,10 @@ export class NeonClient {
 
   constructor(opts: ClientOptions) {
     this.opts = opts;
+  }
+
+  get token(): string {
+    return this.opts.token;
   }
 
   get endpoint(): string {
@@ -90,6 +94,9 @@ export class NeonClient {
   render = (body: Record<string, unknown>) => this.call<RenderJob>('POST', API_ROUTES.render, body);
   renderJob = (id: string) => this.call<RenderJob>('GET', API_ROUTES.renderJob.replace(':id', encodeURIComponent(id)));
   renderCancel = (id: string) => this.call<RenderJob>('POST', API_ROUTES.renderCancel.replace(':id', encodeURIComponent(id)));
+  /** Render one frame / a contact sheet to PNG; resolves when the file exists. */
+  still = (body: StillRequestInput) => this.call<StillResult>('POST', API_ROUTES.renderStill, body);
+  sheet = (body: SheetRequestInput) => this.call<StillResult>('POST', API_ROUTES.renderSheet, body);
 
   roomHost = (password?: string) => this.call<RoomInfo>('POST', API_ROUTES.roomHost, { password });
   roomJoin = (body: Record<string, unknown>) => this.call<RoomInfo>('POST', API_ROUTES.roomJoin, body);
@@ -101,6 +108,8 @@ export class NeonClient {
   ui = (body: { panel?: string; select?: string[]; dialog?: string }) => this.call<typeof body>('POST', API_ROUTES.ui, body);
 
   cut = (body: Record<string, unknown>) => this.call<{ removedFrames: number; cuts: number }>('POST', API_ROUTES.timelineCut, body);
+  speed = (body: { id: string; speed: number; from?: string; to?: string }) => this.call<Clip>('POST', API_ROUTES.timelineSpeed, body);
+  zoom = (body: { id: string; from: string; to: string; cx?: number; cy?: number; zoom?: number; ramp?: string }) => this.call<Clip>('POST', API_ROUTES.timelineZoom, body);
   detach = (id: string) => this.call<Clip>('POST', API_ROUTES.timelineDetach, { id });
   aiStatus = () => this.call<AiCapabilities & { hints: Record<string, string> }>('GET', API_ROUTES.aiStatus);
   aiJobs = () => this.call<AiJob[]>('GET', API_ROUTES.aiJobs);
@@ -119,7 +128,14 @@ export class NeonClient {
   history = () => this.call<HistoryStatus>('GET', API_ROUTES.history);
   historyUndo = () => this.call<HistoryStatus>('POST', API_ROUTES.historyUndo, {});
   historyRedo = () => this.call<HistoryStatus>('POST', API_ROUTES.historyRedo, {});
+  shutdown = () => this.call<{ stopping: boolean; pid: number }>('POST', API_ROUTES.shutdown, {});
   historyCheckpoint = () => this.call<HistoryStatus>('POST', API_ROUTES.historyCheckpoint, {});
+  batch = (plan: BatchRequest) => this.call<BatchResult>('POST', API_ROUTES.batch, plan);
+  captureDevices = () => this.call<CaptureDevices>('GET', API_ROUTES.captureDevices);
+  captureState = () => this.call<CaptureState>('GET', API_ROUTES.captureState);
+  captureStart = (body: CaptureStartBody) => this.call<CaptureState>('POST', API_ROUTES.captureStart, body);
+  captureStop = (body: { at?: string; track?: string }) => this.call<ImportAssetResponse & { durationMs: number }>('POST', API_ROUTES.captureStop, body);
+  captureCancel = () => this.call<{ cancelled: boolean }>('POST', API_ROUTES.captureCancel, {});
 
   /** Waveform peaks (one byte per 10 ms, 0..255); empty array = no audio stream, null = unavailable. */
   async waveform(assetId: string): Promise<Uint8Array | null> {
@@ -163,7 +179,7 @@ export class NeonClient {
   }
 
   /** Resolve a clip by id, id prefix or (unique) name. */
-  async resolveClip(ref: string, clips?: Clip[]): Promise<Clip> {
+  async resolveClip(ref: string, clips?: Clip[], at?: string): Promise<Clip> {
     const list = clips ?? (await this.list()).clips;
     const exact = list.find((c) => c.id === ref);
     if (exact) return exact;
@@ -171,7 +187,16 @@ export class NeonClient {
     if (prefix.length === 1) return prefix[0]!;
     const byName = list.filter((c) => c.name.toLowerCase() === ref.toLowerCase());
     if (byName.length === 1) return byName[0]!;
-    if (prefix.length > 1 || byName.length > 1) throw new ApiError('AMBIGUOUS', `Clip reference "${ref}" is ambiguous`);
+    // After cuts one take is many clips with the same name: a time picks the piece under it.
+    if (byName.length > 1 && at !== undefined) {
+      const frame = parseTimecode(at, (await this.status()).project.fps);
+      const under = byName.find((c) => c.startFrame <= frame && frame < c.startFrame + c.durationFrames);
+      if (under) return under;
+    }
+    if (prefix.length > 1 || byName.length > 1) {
+      const hint = byName.length > 1 ? ` (${byName.length} clips are named that; use an id from \`neon-cli timeline\`${at === undefined ? ' or pass --from to pick the one under that time' : ''})` : '';
+      throw new ApiError('AMBIGUOUS', `Clip reference "${ref}" is ambiguous${hint}`);
+    }
     throw new ApiError('NOT_FOUND', `No clip matches "${ref}"`);
   }
 }

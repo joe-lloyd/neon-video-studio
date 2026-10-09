@@ -18,8 +18,8 @@ for (const file of ['package.json', 'apps/desktop/package.json', 'apps/cli/packa
 }
 const cfg = 'apps/desktop/electrobun.config.ts';
 fs.writeFileSync(cfg, fs.readFileSync(cfg, 'utf8').replace(/version: '[^']+'/, `version: '${version}'`));
-const main = 'apps/desktop/src/main/index.ts';
-fs.writeFileSync(main, fs.readFileSync(main, 'utf8').replace(/const VERSION = '[^']+'/, `const VERSION = '${version}'`));
+const main = 'apps/desktop/src/main/core.ts';
+fs.writeFileSync(main, fs.readFileSync(main, 'utf8').replace(/export const VERSION = '[^']+'/, `export const VERSION = '${version}'`));
 JS
 
 git add -A

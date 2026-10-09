@@ -1,5 +1,5 @@
 /** Install the local speech/denoise engines (package manager where one exists + direct downloads). */
-import { chmod, copyFile, mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run, runOrThrow } from './exec.ts';
@@ -20,17 +20,25 @@ const YTDLP_DOWNLOADS: Partial<Record<NodeJS.Platform, { url: string; file: stri
 };
 
 /**
- * Static ffmpeg + ffprobe builds per OS: BtbN GitHub builds (win x64 / linux x64, one archive with
- * bin/ffmpeg + bin/ffprobe) and Martin Riedl (macOS arm64, one single-binary zip per tool).
+ * Static ffmpeg + ffprobe builds per OS and CPU: BtbN GitHub builds (win x64 / linux, one archive
+ * with bin/ffmpeg + bin/ffprobe) and Martin Riedl (macOS arm64 + Intel, one single-binary zip per tool).
+ * BtbN is pinned to a release line, not master: master's NVENC needs bleeding-edge NVIDIA drivers
+ * (API 13.1, driver 610+), so screen capture fell back to the CPU on an RTX 3090 with driver 596.
  */
-const FFMPEG_DOWNLOADS: Partial<Record<NodeJS.Platform, { url: string; archive: string }[]>> = {
-  darwin: [
-    { url: 'https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip', archive: 'ffmpeg.zip' },
-    { url: 'https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffprobe.zip', archive: 'ffprobe.zip' },
-  ],
-  linux: [{ url: 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz', archive: 'ffmpeg.tar.xz' }],
-  win32: [{ url: 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip', archive: 'ffmpeg.zip' }],
+const BTBN = 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download';
+const martinRiedl = (arch: 'arm64' | 'amd64') => [
+  { url: `https://ffmpeg.martin-riedl.de/redirect/latest/macos/${arch}/release/ffmpeg.zip`, archive: 'ffmpeg.zip' },
+  { url: `https://ffmpeg.martin-riedl.de/redirect/latest/macos/${arch}/release/ffprobe.zip`, archive: 'ffprobe.zip' },
+];
+const FFMPEG_DOWNLOADS: Record<string, { url: string; archive: string }[]> = {
+  'darwin-arm64': martinRiedl('arm64'),
+  'darwin-x64': martinRiedl('amd64'),
+  'linux-x64': [{ url: `${BTBN}/ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz`, archive: 'ffmpeg.tar.xz' }],
+  'linux-arm64': [{ url: `${BTBN}/ffmpeg-n8.1-latest-linuxarm64-gpl-8.1.tar.xz`, archive: 'ffmpeg.tar.xz' }],
+  'win32-x64': [{ url: `${BTBN}/ffmpeg-n8.1-latest-win64-gpl-8.1.zip`, archive: 'ffmpeg.zip' }],
 };
+// Windows on ARM runs the x64 build under emulation (as it always has).
+FFMPEG_DOWNLOADS['win32-arm64'] = FFMPEG_DOWNLOADS['win32-x64']!;
 
 /** Find files named like the wanted binaries anywhere in an extracted tree. */
 async function findBinaries(dir: string, names: Set<string>, found: Map<string, string>): Promise<void> {
@@ -48,9 +56,25 @@ async function findBinaries(dir: string, names: Set<string>, found: Map<string, 
  * builds into ~/.neon-video/tools when missing; no package manager needed on any platform.
  * Returns a short description of how they got there, or null when this platform has no build.
  */
+const ffmpegMarker = () => join(toolsDir(), 'ffmpeg.build');
+
+/**
+ * Whether ffmpeg needs installing: missing, or ours (in the tools dir) but a different build than this
+ * version of the app downloads. The build we installed is recorded next to it. An ffmpeg found
+ * anywhere else (the system's own) is left alone.
+ */
+export async function ffmpegNeedsInstall(): Promise<boolean> {
+  const found = await which('ffmpeg');
+  if (!found || !(await which('ffprobe'))) return true;
+  const downloads = FFMPEG_DOWNLOADS[`${process.platform}-${process.arch}`];
+  if (!downloads || !found.startsWith(toolsDir())) return false;
+  const recorded = await readFile(ffmpegMarker(), 'utf8').catch(() => '');
+  return recorded.trim() !== downloads.map((d) => d.url).join(' ');
+}
+
 export async function ensureFfmpeg(opts: { onProgress?: (p: number, message: string) => void; onLog?: (line: string) => void } = {}): Promise<string | null> {
-  if ((await which('ffmpeg')) && (await which('ffprobe'))) return 'already installed';
-  const downloads = FFMPEG_DOWNLOADS[process.platform];
+  if (!(await ffmpegNeedsInstall())) return 'already installed';
+  const downloads = FFMPEG_DOWNLOADS[`${process.platform}-${process.arch}`];
   if (!downloads) return null;
   const wanted = process.platform === 'win32' ? new Set(['ffmpeg.exe', 'ffprobe.exe']) : new Set(['ffmpeg', 'ffprobe']);
   const curl = (await which('curl')) ?? 'curl';
@@ -74,7 +98,14 @@ export async function ensureFfmpeg(opts: { onProgress?: (p: number, message: str
       const target = join(toolsDir(), name);
       await copyFile(src, target);
       if (process.platform !== 'win32') await chmod(target, 0o755);
+      // A build for the wrong CPU or OS version installs fine and then fails on every call: prove it runs.
+      const check = await run(target, ['-version']);
+      if (check.code !== 0) {
+        await rm(target, { force: true });
+        throw new Error(`${name} was installed but does not run on this machine (${process.platform}-${process.arch}): ${(check.stderr || check.stdout).trim().split('\n')[0] ?? `exit ${check.code}`}`);
+      }
     }
+    await writeFile(ffmpegMarker(), downloads.map((d) => d.url).join(' '));
     return `→ ${toolsDir()}`;
   } finally {
     await rm(work, { recursive: true, force: true }).catch(() => undefined);

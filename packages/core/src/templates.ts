@@ -64,6 +64,18 @@ export const SOLID_COLOR_SCHEMA = z.object({
   opacity: z.number().min(0).max(1).default(1),
 });
 
+export const CAPTIONS_SCHEMA = z.object({
+  style: z.enum(['karaoke', 'block']).default('karaoke').describe('karaoke highlights the word being spoken; block shows the cue plainly'),
+  position: z.enum(['bottom', 'top', 'middle']).default('bottom').describe('Where the captions sit on the frame'),
+  fontSize: z.number().int().min(16).max(200).default(54).describe('Text size in pixels at 1080p (scaled for other outputs)'),
+  maxWords: z.number().int().min(1).max(16).default(6).describe('Most words on screen at once'),
+  color: cssColor.default('#FFFFFF').describe('Text colour'),
+  highlightColor: cssColor.default('#00F3FF').describe('Colour of the spoken word (karaoke)'),
+  background: z.boolean().default(true).describe('Draw a dark box behind the text'),
+  backgroundColor: cssColor.default('rgba(9,9,11,0.82)').describe('Box colour when background is on'),
+  tracks: z.string().default('').describe('Comma-separated track names to caption, e.g. "A1,V1" (empty = every audible audio/video track)'),
+});
+
 export type TextOverlayProps = z.infer<typeof TEXT_OVERLAY_SCHEMA>;
 export type LowerThirdProps = z.infer<typeof LOWER_THIRD_SCHEMA>;
 export type TitleCardProps = z.infer<typeof TITLE_CARD_SCHEMA>;
@@ -71,6 +83,7 @@ export type CountdownProps = z.infer<typeof COUNTDOWN_SCHEMA>;
 export type ProgressBarProps = z.infer<typeof PROGRESS_BAR_SCHEMA>;
 export type WatermarkProps = z.infer<typeof WATERMARK_SCHEMA>;
 export type SolidColorProps = z.infer<typeof SOLID_COLOR_SCHEMA>;
+export type CaptionsProps = z.infer<typeof CAPTIONS_SCHEMA>;
 
 export interface ComponentTemplate<S extends z.ZodObject = z.ZodObject> {
   name: string;
@@ -102,7 +115,7 @@ export type TemplateField =
   | { key: string; type: 'number'; label?: string; default: number; min?: number; max?: number; step?: number; description?: string }
   | { key: string; type: 'color'; label?: string; default: string; description?: string }
   | { key: string; type: 'boolean'; label?: string; default: boolean; description?: string }
-  | { key: string; type: 'select'; label?: string; default: string; options: string[]; description?: string };
+  | { key: string; type: 'select'; label?: string; default: string; options: readonly string[]; description?: string };
 
 export interface TemplatePackMeta {
   /** Unique template name (also the React component key), e.g. "NeonBadge". */
@@ -110,39 +123,63 @@ export interface TemplatePackMeta {
   label: string;
   description: string;
   defaultDurationSeconds: number;
-  fields: TemplateField[];
+  fields: readonly TemplateField[];
   category?: string;
   tags?: string[];
   icon?: string;
   previewProps?: Record<string, unknown>;
 }
 
-export function schemaFromFields(fields: TemplateField[]): z.ZodObject {
+export function schemaFromFields(fields: readonly TemplateField[]): z.ZodObject {
   const shape: Record<string, z.ZodType> = {};
   for (const f of fields) {
-    switch (f.type) {
-      case 'text':
-        shape[f.key] = z.string().default(f.default);
-        break;
-      case 'number': {
-        let n = z.number();
-        if (f.min !== undefined) n = n.min(f.min);
-        if (f.max !== undefined) n = n.max(f.max);
-        shape[f.key] = n.default(f.default);
-        break;
-      }
-      case 'color':
-        shape[f.key] = z.string().min(1).default(f.default);
-        break;
-      case 'boolean':
-        shape[f.key] = z.boolean().default(f.default);
-        break;
-      case 'select':
-        shape[f.key] = z.enum(f.options as [string, ...string[]]).default(f.default);
-        break;
-    }
+    const schema = fieldSchema(f);
+    shape[f.key] = f.description ? schema.describe(f.description) : schema;
   }
   return z.object(shape);
+}
+
+function fieldSchema(f: TemplateField): z.ZodType {
+  switch (f.type) {
+    case 'text':
+      return z.string().default(f.default);
+    case 'number': {
+      let n = z.number();
+      if (f.min !== undefined) n = n.min(f.min);
+      if (f.max !== undefined) n = n.max(f.max);
+      return n.default(f.default);
+    }
+    case 'color':
+      return z.string().min(1).default(f.default);
+    case 'boolean':
+      return z.boolean().default(f.default);
+    case 'select':
+      return z.enum(f.options as [string, ...string[]]).default(f.default);
+  }
+}
+
+/** The value a field's prop holds once validated: select fields narrow to their options. */
+type FieldValue<F extends TemplateField> = F extends { type: 'number' }
+  ? number
+  : F extends { type: 'boolean' }
+    ? boolean
+    : F extends { type: 'select'; options: readonly (infer O extends string)[] }
+      ? O
+      : string;
+
+/** Validated props of a template declared with defineTemplate(), derived from its fields. */
+export type TemplateProps<T extends { fields: readonly TemplateField[] }> = {
+  [F in T['fields'][number] as F['key']]: FieldValue<F>;
+};
+
+/**
+ * Declare a pack template with literal field types so a component can type its props as
+ * `TemplateProps<typeof MY_TEMPLATE>` instead of restating them by hand.
+ */
+export function defineTemplate<const F extends readonly TemplateField[]>(
+  template: Omit<TemplatePackMeta, 'fields'> & { fields: F },
+): TemplatePackMeta & { fields: F } {
+  return template;
 }
 
 const EXTRA_TEMPLATES = new Map<string, ComponentTemplate>();
@@ -215,7 +252,7 @@ export function listPacks(): PackRecord[] {
       name: CORE_PACK_NAME,
       label: 'Neon Core',
       version: '1',
-      description: 'The built-in overlay set: text, lower thirds, titles, countdown, progress, watermark, colour.',
+      description: 'The built-in overlay set: text, captions, lower thirds, titles, countdown, progress, watermark, colour.',
       templates: [],
     },
   };
@@ -294,6 +331,16 @@ export const COMPONENT_TEMPLATES = {
     schema: SOLID_COLOR_SCHEMA,
     icon: 'PaintBucket',
     category: 'Backgrounds',
+  },
+  Captions: {
+    name: 'Captions',
+    label: 'Captions',
+    description: 'Burned-in subtitles from the transcripts; they follow cuts and speed changes.',
+    defaultDurationSeconds: 10,
+    schema: CAPTIONS_SCHEMA,
+    icon: 'Captions',
+    category: 'Text',
+    tags: ['subtitles', 'transcript', 'karaoke'],
   },
 } as const satisfies Record<string, ComponentTemplate>;
 

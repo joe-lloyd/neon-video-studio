@@ -10,6 +10,7 @@ build/
 artifacts/
 *.tsbuildinfo
 .remotion-bundle/
+.claude/worktrees/
 apps/desktop/icons/preview/
 
 # local data

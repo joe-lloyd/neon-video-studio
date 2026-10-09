@@ -7,8 +7,9 @@ import type { SyncHub } from './sync-hub.ts';
 import type { EventHub } from './events.ts';
 import type { AiManager } from './ai-manager.ts';
 import type { VoiceRecorder } from './recorder.ts';
-import type { UpdateManager } from './updates.ts';
+import type { ScreenRecorder } from './screen-recorder.ts';
 import type { HistoryStore } from './history.ts';
+import type { ProxyCache } from './proxies.ts';
 import type { WaveformCache } from './waveforms.ts';
 import type { PackManager } from './packs.ts';
 import type { DesktopRPC } from '../shared/rpc.ts';
@@ -32,12 +33,17 @@ export interface MainContext {
   events: EventHub;
   ai: AiManager;
   recorder: VoiceRecorder;
-  updates: UpdateManager;
+  capture: ScreenRecorder;
   history: HistoryStore;
   waveforms: WaveformCache;
+  proxies: ProxyCache;
   packs: PackManager;
   localPort: number;
   startedAt: number;
   rpc: MainRpc | null;
   isDev: boolean;
+  /** True when running without a window (`neon-cli serve` / CI); there is no renderer to drive. */
+  headless: boolean;
+  /** Graceful exit (flush + quit) — set by the headless entry; null in the desktop app. */
+  requestExit: (() => void) | null;
 }

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
-import { sortClips, sortTracks, volumeAt, type Asset, type Clip, type MediaClip, type Project, type Track } from '@neon/core';
+import { sortClips, sortTracks, speedOf, volumeAt, zoomAt, type Asset, type Clip, type MediaClip, type Project, type Track } from '@neon/core';
+import { TimelineProjectContext, type TimelineContextValue } from '@neon/fx-kit';
 import { getTemplateComponent } from '../templates/index.ts';
 
 /** Kept as a type alias (not an interface) so it satisfies Remotion's Record<string, unknown> constraint. */
@@ -10,6 +11,8 @@ export type TimelineProps = {
   assetBaseUrl: string;
   /** Optional query string (without '?') appended to asset URLs, e.g. a room key. */
   assetQuery?: string;
+  /** Editor preview only: assets with a quick-seek proxy to play instead of the original. Renders leave it out. */
+  proxies?: string[];
   /** Output overrides; null = project settings. */
   render: { width: number; height: number; fps: number } | null;
 };
@@ -42,15 +45,21 @@ const MediaClipView: React.FC<{ clip: MediaClip; asset: Asset | undefined; track
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
   if (!asset) return <MissingBox label={`Missing asset ${clip.assetId.slice(0, 8)}…`} />;
-  const src = assetUrl(props.assetBaseUrl, asset, props.assetQuery);
+  const query = props.proxies?.includes(asset.id) ? ['proxy=1', props.assetQuery].filter(Boolean).join('&') : props.assetQuery;
+  const src = assetUrl(props.assetBaseUrl, asset, query);
   const fadeIn = Math.round(clip.fadeIn * scale);
   const fadeOut = Math.round(clip.fadeOut * scale);
   const envelope = fadeEnvelope(frame, durationInFrames, fadeIn, fadeOut);
-  const baseVolume = track.muted ? 0 : Math.max(0, Math.min(2, clip.volume));
+  const speed = speedOf(clip);
+  // Sped-up screen time should not chirp: audio is silent above 2×.
+  const baseVolume = track.muted || speed > 2 ? 0 : Math.max(0, Math.min(2, clip.volume));
   const keyframes = clip.volumeKeyframes;
+  // Cut joins ramp the sound only (no click); the picture stays at full opacity.
+  const declickIn = Math.round((clip.declick?.in ?? 0) * scale);
+  const declickOut = Math.round((clip.declick?.out ?? 0) * scale);
   // Volume automation (breath attenuation etc.). Keyframes are in project frames, `f` in output frames.
-  const volume = keyframes && keyframes.length
-    ? (f: number) => baseVolume * volumeAt(keyframes, f / scale) * fadeEnvelope(f, durationInFrames, fadeIn, fadeOut)
+  const volume = (keyframes && keyframes.length) || declickIn || declickOut
+    ? (f: number) => baseVolume * volumeAt(keyframes, f / scale) * fadeEnvelope(f, durationInFrames, fadeIn, fadeOut) * fadeEnvelope(f, durationInFrames, declickIn, declickOut)
     : baseVolume * envelope;
   const trimBefore = Math.round(clip.trimBefore * scale);
   const style: React.CSSProperties = { width: '100%', height: '100%', objectFit: clip.fit };
@@ -75,18 +84,24 @@ const MediaClipView: React.FC<{ clip: MediaClip; asset: Asset | undefined; track
   }
 
   if (clip.kind === 'audio') {
-    return <Audio src={src} trimBefore={trimBefore} volume={volume} />;
+    return <Audio src={src} trimBefore={trimBefore} volume={volume} playbackRate={speed} />;
   }
-  if (clip.kind === 'image') {
-    return (
-      <AbsoluteFill style={{ opacity: envelope }}>
-        <Img src={src} style={style} />
-      </AbsoluteFill>
+  // Zoom camera: zoomAt works in source frames, so regions follow the content through cuts and re-timing.
+  const camera = zoomAt(clip.zooms, clip.trimBefore + (frame / scale) * speed);
+  // Always wrapped (even at zoom 1) so the video element is never remounted when a zoom starts.
+  const cameraStyle: React.CSSProperties =
+    camera.zoom > 1.0001
+      ? { transform: `scale(${camera.zoom.toFixed(4)}) translate(${((0.5 - camera.cx) * 100).toFixed(3)}%, ${((0.5 - camera.cy) * 100).toFixed(3)}%)`, transformOrigin: '50% 50%' }
+      : {};
+  const media =
+    clip.kind === 'image' ? (
+      <Img src={src} style={style} />
+    ) : (
+      <OffthreadVideo src={src} trimBefore={trimBefore} volume={volume} playbackRate={speed} style={style} pauseWhenBuffering transparent={Boolean(asset.hasAlpha)} />
     );
-  }
   return (
-    <AbsoluteFill style={{ opacity: envelope }}>
-      <OffthreadVideo src={src} trimBefore={trimBefore} volume={volume} style={style} pauseWhenBuffering transparent={Boolean(asset.hasAlpha)} />
+    <AbsoluteFill style={{ opacity: envelope, overflow: 'hidden' }}>
+      <AbsoluteFill style={cameraStyle} data-camera>{media}</AbsoluteFill>
     </AbsoluteFill>
   );
 };
@@ -170,10 +185,15 @@ const MissingBox: React.FC<{ label: string }> = ({ label }) => (
   </AbsoluteFill>
 );
 
-const ComponentClipView: React.FC<{ clip: Extract<Clip, { kind: 'component' }> }> = ({ clip }) => {
+/** Templates read the project from context; `timeline.clipFrom` lets them map their frame back to the timeline. */
+const ComponentClipView: React.FC<{ clip: Extract<Clip, { kind: 'component' }>; timeline: TimelineContextValue }> = ({ clip, timeline }) => {
   const Template = getTemplateComponent(clip.componentName);
   if (!Template) return <MissingBox label={`Unknown component ${clip.componentName}`} />;
-  return <Template {...clip.props} />;
+  return (
+    <TimelineProjectContext.Provider value={timeline}>
+      <Template {...clip.props} />
+    </TimelineProjectContext.Provider>
+  );
 };
 
 export const TimelineComposition: React.FC<TimelineProps> = (props) => {
@@ -199,11 +219,13 @@ export const TimelineComposition: React.FC<TimelineProps> = (props) => {
           {(clipsByTrack.get(track.id) ?? []).map((clip) => {
             const from = Math.round(clip.startFrame * scale);
             const durationInFrames = Math.max(1, Math.round(clip.durationFrames * scale));
+            // Every cut piece is its own <video>/<audio>: mount it a second early, hidden and parked on its
+            // first frame, so the Player does not stop to load and seek at each join.
             return (
-              <Sequence key={clip.id} from={from} durationInFrames={durationInFrames} name={clip.name} layout="none">
+              <Sequence key={clip.id} from={from} durationInFrames={durationInFrames} name={clip.name} premountFor={clip.kind === 'component' ? 0 : fps}>
                 {clip.kind === 'component' ? (
                   <ElementWrapper clip={clip} scale={scale}>
-                    <ComponentClipView clip={clip} />
+                    <ComponentClipView clip={clip} timeline={{ project, scale, clipFrom: from }} />
                   </ElementWrapper>
                 ) : clip.kind === 'audio' ? (
                   <MediaClipView clip={clip} asset={assetsById.get(clip.assetId)} track={track} props={props} scale={scale} />

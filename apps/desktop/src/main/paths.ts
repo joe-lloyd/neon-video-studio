@@ -30,4 +30,5 @@ export const paths = {
   /** Where @remotion/renderer keeps its headless browser + compositor (cwd-independent). */
   remotionBin: () => join(neonHome(), 'remotion-bin'),
   renders: () => join(neonHome(), 'renders'),
+  stills: () => join(neonHome(), 'stills'),
 };

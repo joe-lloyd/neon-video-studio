@@ -1,7 +1,7 @@
-/** Sequential render queue driving @neon/render's Node worker. */
+/** Sequential render queue driving @neon/render's Node worker: videos, stills and contact sheets. */
 import { join, resolve } from 'node:path';
-import { newId, getPreset, projectPreset, type Project, type RenderJob, type RenderPreset } from '@neon/core';
-import { runRenderWorker, type RunningRender } from '@neon/render';
+import { newId, getPreset, projectPreset, stillFileName, type Project, type RenderJob, type StillResult } from '@neon/core';
+import { captureFrames, runRenderWorker, type RenderResult, type RenderTarget, type RunningRender, type StillTarget } from '@neon/render';
 import { paths } from './paths.ts';
 import type { RenderRuntime } from './render-runtime.ts';
 
@@ -24,11 +24,22 @@ export interface StartRenderOptions {
 
 const MAX_LOG = 40;
 
+type Outcome = { ok: true; result: RenderResult } | { ok: false; error: Error };
+
+interface Queued {
+  job: RenderJob;
+  target: RenderTarget;
+  project: Project;
+  /** Called once when the job ends, however it ends. */
+  settle(outcome: Outcome): void;
+}
+
 export class RenderManager {
   private readonly jobs = new Map<string, RenderJob>();
   private readonly running = new Map<string, RunningRender>();
-  private queue: { job: RenderJob; opts: Required<Pick<StartRenderOptions, 'frameRange'>> & { preset: RenderPreset; project: Project } }[] = [];
+  private queue: Queued[] = [];
   private active = false;
+  private readonly produced = new Set<string>();
 
   private readonly deps: RenderManagerDeps;
 
@@ -52,19 +63,40 @@ export class RenderManager {
     const outputPath = opts.outputPath
       ? resolve(this.deps.projectDir(), opts.outputPath)
       : join(paths.renders(), defaultName);
+    return this.enqueue({ kind: 'video', outputPath, preset, frameRange: opts.frameRange ?? null }, project, preset.id, () => undefined);
+  }
+
+  /**
+   * Render a still or contact sheet through the same queue and resolve when the PNG exists.
+   * `output` is relative to the project; the default is <NEON_HOME>/stills/<project>-<tc>.png.
+   */
+  capture(target: StillTarget, output?: string): Promise<StillResult> {
+    const project = this.deps.getProject();
+    if (project.clips.length === 0) throw new Error('Timeline is empty — nothing to capture');
+    const frames = captureFrames(target);
+    const outputPath = output ? resolve(this.deps.projectDir(), output) : join(paths.stills(), stillFileName(project.meta.name, project.meta.fps, frames));
+    return new Promise((settle, reject) => {
+      this.enqueue({ ...target, outputPath }, project, target.kind, (outcome) => {
+        if (outcome.ok) settle({ path: outcome.result.outputPath, frames, width: outcome.result.width, height: outcome.result.height });
+        else reject(outcome.error);
+      });
+    });
+  }
+
+  private enqueue(target: RenderTarget, project: Project, presetId: string, settle: Queued['settle']): RenderJob {
     const job: RenderJob = {
       id: newId('render'),
       status: 'queued',
       progress: 0,
       renderedFrames: 0,
       totalFrames: 0,
-      outputPath,
-      presetId: preset.id,
+      outputPath: target.outputPath,
+      presetId,
       startedAt: new Date().toISOString(),
       log: [],
     };
     this.jobs.set(job.id, job);
-    this.queue.push({ job, opts: { frameRange: opts.frameRange ?? null, preset, project } });
+    this.queue.push({ job, target, project, settle });
     this.deps.onUpdate(job);
     void this.pump();
     return job;
@@ -76,6 +108,7 @@ export class RenderManager {
     const running = this.running.get(id);
     if (running) running.cancel();
     else if (job.status === 'queued') {
+      this.queue.find((q) => q.job.id === id)?.settle({ ok: false, error: new Error('Render cancelled') });
       this.queue = this.queue.filter((q) => q.job.id !== id);
       this.update(job, { status: 'cancelled', finishedAt: new Date().toISOString() });
     }
@@ -84,12 +117,21 @@ export class RenderManager {
 
   cancelAll(): void {
     for (const id of [...this.running.keys()]) this.cancel(id);
-    for (const q of this.queue) this.update(q.job, { status: 'cancelled' });
+    for (const q of this.queue) {
+      q.settle({ ok: false, error: new Error('Render cancelled') });
+      this.update(q.job, { status: 'cancelled' });
+    }
     this.queue = [];
+  }
+
+  /** True for files this app rendered (videos, stills, sheets) — the only files GET /api/files serves. */
+  isProduced(path: string): boolean {
+    return this.produced.has(resolve(path));
   }
 
   private update(job: RenderJob, patch: Partial<RenderJob>): void {
     Object.assign(job, patch);
+    if (patch.status === 'done') this.produced.add(resolve(job.outputPath));
     this.deps.onUpdate({ ...job, log: [...job.log] });
   }
 
@@ -98,7 +140,7 @@ export class RenderManager {
     const next = this.queue.shift();
     if (!next) return;
     this.active = true;
-    const { job, opts } = next;
+    const { job, target, project } = next;
     try {
       this.update(job, { status: 'bundling' });
       const runtime = await this.deps.renderRuntime((line) => {
@@ -106,15 +148,13 @@ export class RenderManager {
         this.update(job, {});
       });
       const rp = runtime.paths;
-      const packs = this.deps.packsFor(opts.project);
+      const packs = this.deps.packsFor(project);
       if (packs.length) job.log.push(`FX packs: ${packs.map((p) => p.name).join(', ')}`);
       const run = runRenderWorker(
         {
-          project: opts.project,
-          outputPath: job.outputPath,
-          preset: opts.preset,
+          ...target,
+          project,
           assetBaseUrl: this.deps.assetBaseUrl(),
-          frameRange: opts.frameRange,
           bundleCacheDir: paths.bundleCache(),
           entryPoint: rp.entryPoint,
           watchDirs: [...rp.watchDirs, ...packs.map((p) => p.dir)],
@@ -155,13 +195,15 @@ export class RenderManager {
       this.running.set(job.id, run);
       const result = await run.promise;
       this.update(job, { status: 'done', progress: 1, finishedAt: new Date().toISOString(), outputPath: result.outputPath });
+      next.settle({ ok: true, result });
     } catch (err) {
-      const message = (err as Error).message;
+      const error = err instanceof Error ? err : new Error(String(err));
       this.update(job, {
-        status: message === 'Render cancelled' ? 'cancelled' : 'failed',
-        error: message,
+        status: error.message === 'Render cancelled' ? 'cancelled' : 'failed',
+        error: error.message,
         finishedAt: new Date().toISOString(),
       });
+      next.settle({ ok: false, error });
     } finally {
       this.running.delete(job.id);
       this.active = false;

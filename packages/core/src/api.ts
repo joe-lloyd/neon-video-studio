@@ -1,4 +1,5 @@
 import type { Asset, Clip, Project, Track } from './types.ts';
+import type { CaptureRect, CaptureSource } from './schemas.ts';
 
 /**
  * Control API shared by the desktop main process (server), the CLI and the renderer.
@@ -27,6 +28,7 @@ export interface RenderJob {
   renderedFrames: number;
   totalFrames: number;
   outputPath: string;
+  /** Render preset, or 'still' / 'sheet' for PNG captures. */
   presetId: string;
   startedAt: string;
   finishedAt?: string;
@@ -35,7 +37,16 @@ export interface RenderJob {
   log: string[];
 }
 
-export type AiOperation = 'transcribe' | 'fillers' | 'silence' | 'breaths' | 'denoise' | 'enhance' | 'matte' | 'reframe' | 'broll' | 'clean' | 'transcript-cut' | 'setup' | 'rip';
+/** Result of POST /api/render/still and /api/render/sheet. */
+export interface StillResult {
+  path: string;
+  /** Project frames captured, in order. */
+  frames: number[];
+  width: number;
+  height: number;
+}
+
+export type AiOperation = 'transcribe' | 'fillers' | 'silence' | 'breaths' | 'denoise' | 'enhance' | 'matte' | 'reframe' | 'broll' | 'clean' | 'pace' | 'transcript-cut' | 'setup' | 'rip';
 export type AiJobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface AiJob {
@@ -106,7 +117,11 @@ export interface AppStatus {
   };
   room: RoomInfo;
   renders: RenderJob[];
+  /** Running without a window (`neon-cli serve`): preview/ui commands have no effect. */
+  headless: boolean;
   capabilities: { ffprobe: boolean; node: boolean; renderRuntime: string };
+  /** Preview proxies: asset ids with a ready proxy, and how many are still being made. */
+  proxies: { ready: string[]; pending: number };
 }
 
 export interface TemplateInfo {
@@ -174,6 +189,8 @@ export interface InstanceInfo {
   startedAt: string;
   version: string;
   projectPath: string | null;
+  /** Started by `neon-cli serve` (no window). Absent in instance files from older versions. */
+  headless?: boolean;
 }
 
 export const API_ROUTES = {
@@ -195,6 +212,8 @@ export const API_ROUTES = {
   assetsImport: '/api/assets/import',
   assetsRemove: '/api/assets/remove',
   render: '/api/render',
+  renderStill: '/api/render/still',
+  renderSheet: '/api/render/sheet',
   renderJob: '/api/render/:id',
   renderCancel: '/api/render/:id/cancel',
   roomHost: '/api/room/host',
@@ -206,6 +225,8 @@ export const API_ROUTES = {
   timelineCut: '/api/timeline/cut',
   timelineNudge: '/api/timeline/nudge',
   timelineDetach: '/api/timeline/detach',
+  timelineSpeed: '/api/timeline/speed',
+  timelineZoom: '/api/timeline/zoom',
   assetsUpload: '/api/assets/upload',
   ai: '/api/ai',
   aiStatus: '/api/ai/status',
@@ -220,11 +241,78 @@ export const API_ROUTES = {
   historyUndo: '/api/history/undo',
   historyRedo: '/api/history/redo',
   historyCheckpoint: '/api/history/checkpoint',
+  shutdown: '/api/shutdown',
+  files: '/api/files',
+  captureDevices: '/api/capture/devices',
+  captureStart: '/api/capture/start',
+  captureStop: '/api/capture/stop',
+  captureCancel: '/api/capture/cancel',
+  captureState: '/api/capture/state',
   yjs: '/yjs',
   signaling: '/signaling',
   assets: '/assets',
   waveforms: '/waveforms',
+  // Concrete forms of the prefix routes above, so every route has its own entry in api-catalog.ts.
+  aiJob: '/api/ai/jobs/:id',
+  aiJobCancel: '/api/ai/jobs/:id/cancel',
+  aiTranscriptGet: '/api/ai/transcript/:assetId',
+  aiTranscriptCut: '/api/ai/transcript/cut',
+  aiTranscribe: '/api/ai/transcribe',
+  aiFillers: '/api/ai/fillers',
+  aiSilence: '/api/ai/silence',
+  aiBreaths: '/api/ai/breaths',
+  aiDenoise: '/api/ai/denoise',
+  aiEnhance: '/api/ai/enhance',
+  aiMatte: '/api/ai/matte',
+  aiReframe: '/api/ai/reframe',
+  aiBroll: '/api/ai/broll',
+  aiClean: '/api/ai/clean',
+  aiPace: '/api/ai/pace',
+  aiSetup: '/api/ai/setup',
+  aiRip: '/api/ai/rip',
+  recordStart: '/api/record/start',
+  recordStop: '/api/record/stop',
+  recordState: '/api/record/state',
+  batch: '/api/batch',
 } as const;
+
+export type ApiRouteKey = keyof typeof API_ROUTES;
+
+/** POST /api/batch on success: one result per op, and the history position (one undo reverts the batch). */
+export interface BatchResult {
+  results: unknown[];
+  history: HistoryStatus;
+}
+
+/** `error.details` of a failed POST /api/batch. */
+export interface BatchFailure {
+  /** Index of the op that failed (or was refused before anything ran). */
+  failedAt: number;
+  /** Results of the ops that ran before it. */
+  results: unknown[];
+  /** True when ops had started: the project was restored to its state before the batch. False when the plan was refused up front. */
+  rolledBack: boolean;
+  /** `details` of the failing op's own error, e.g. zod issues. */
+  cause?: unknown;
+}
+
+/** GET /api/capture/devices: what `capture start` can record on this machine. */
+export interface CaptureDevices {
+  platform: 'darwin' | 'win32' | 'linux';
+  /** Index 0 is the primary display. Bounds are known on Windows only. */
+  displays: { index: number; name: string; primary: boolean; bounds: CaptureRect | null }[];
+  mics: string[];
+  /** The microphone used when none is named. */
+  defaultMic: string | null;
+  /** `--window "Title"` works (Windows only). */
+  windowCapture: boolean;
+}
+
+/** GET /api/capture/state. */
+export type CaptureState =
+  | { status: 'idle' }
+  | { status: 'recording'; startedAt: string; source: CaptureSource; mic: string | null; encoder: string; fps: number }
+  | { status: 'finishing'; startedAt: string };
 
 /** Who caused an action. */
 export type ActivitySource = 'cli' | 'ui' | 'peer' | 'render' | 'room' | 'system' | 'ai';
