@@ -258,6 +258,9 @@ neon-cli ai breaths  <clip|asset> [--db 15]
 neon-cli ai denoise  <clip|asset> [--engine auto|rnnoise|afftdn|deepfilter] [--strength 0.7]
 neon-cli ai enhance  <clip|asset> [--lufs=-16] [--no-denoise]   # clarity + broadcast loudness
 neon-cli ai clean    <clip|asset> [--no-fillers] [--no-silences] [--no-breaths] [--denoise] [--screen]
+    # a talking-head video: fillers and pauses are cut from picture and sound together;
+    # a voiceover (an audio file, or a screen recording with --screen): fillers are muted in place and
+    # nothing is cut to match the voice
 neon-cli ai pace     <clip|asset> [--apply] [--min 1200] [--keep 300] [--rate 6]
     # screen recordings: pauses over a still screen are cut, pauses while it changes play at --rate;
     # `ai clean --screen` uses this instead of the plain silence trim

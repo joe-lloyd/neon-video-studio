@@ -249,7 +249,7 @@ export const AiCleanRequestSchema = AiTargetSchema.extend({
   silences: z.boolean().default(true),
   breaths: z.boolean().default(true),
   denoise: z.boolean().default(false),
-  /** Screen recording: pauses over a moving screen are sped up instead of cut (see AiPaceRequestSchema). */
+  /** Screen recording: the voice is a voiceover, so fillers are muted in place; pauses are paced (see AiPaceRequestSchema). */
   screen: z.boolean().default(false),
 });
 /** Screen-recording pacing: cut pauses over a frozen screen, speed up pauses while the screen changes. */
