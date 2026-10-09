@@ -37,7 +37,7 @@ export function runRenderWorker(spec: RenderJobSpec, opts: RunRenderOptions): Ru
         let done: { outputPath: string; durationMs: number } | null = null;
         let failure: Error | null = null;
         const runtime = opts.nodeBinary ?? 'node';
-        const isBun = /(^|\/)bun(\.exe)?$/.test(runtime);
+        const isBun = /(^|[\\/])bun(\.exe)?$/i.test(runtime);
         child = spawn(runtime, [...(isBun ? ['run'] : ['--no-warnings']), opts.workerPath, '--job', jobFile], {
           stdio: ['ignore', 'pipe', 'pipe'],
           cwd: opts.cwd,
