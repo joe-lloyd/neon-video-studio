@@ -129,6 +129,53 @@ curl -X POST "http://127.0.0.1:$PORT/api/assets/upload?name=take.m4a&at=120&trac
      -H "Authorization: Bearer $TOKEN" --data-binary @take.m4a
 ```
 
+## Screen recording
+
+```bash
+neon-cli capture devices                      # displays (--display N, 0 = main) and microphones
+neon-cli capture start [--display N] [--region x,y,w,h] [--window "Title"] [--fps 30]
+                       [--mic NAME | --no-mic] [--no-cursor] [--countdown 3] [--duration T]
+neon-cli capture stop [--at T] [--track REF]  # finish, import, place on the timeline
+neon-cli capture cancel                       # throw the take away
+neon-cli capture status
+# Agents and tests: record 30 s with narration, then stop by itself (Ctrl-C stops early, keeps the take)
+neon-cli capture start --duration 30s --countdown 3
+```
+
+The app records the screen, the pointer and the microphone into one file with ffmpeg. On macOS,
+clicks are highlighted too. With no `--mic`, it uses the default microphone. `--mic` matches a device
+name or part of one, as listed by `capture devices`. Each take goes to a `.mkv` in a temp folder
+while recording, so a crash still leaves a playable file. On stop the app converts it to `.mp4`
+without re-encoding, imports it and deletes the temp folder. The take goes to the end of V1, so
+successive takes line up. `--at` and `--track` override that. One capture runs at a time, and never
+alongside `record start`.
+
+`--region` is in screen pixels, measured from the top-left corner of the chosen display. On a
+Retina Mac, ffmpeg records physical pixels, which is twice the point size, so measure the region
+in those. `--window`
+works on Windows only and needs the exact title from the window's title bar.
+
+The encoder is picked once per ffmpeg binary by encoding a single test frame: VideoToolbox on
+macOS; NVENC, then Quick Sync, then AMF on Windows; otherwise libx264 (`veryfast`, CRF 20).
+`capture status` shows which one is in use.
+
+Per-OS permissions:
+
+- **macOS**: System Settings → Privacy & Security → **Screen Recording**: turn on Neon Video
+  Studio. For a headless app started with `neon-cli serve`, turn on the terminal app that runs it.
+  Then quit and reopen that app. The microphone also needs Privacy & Security → **Microphone**.
+  Without Screen Recording access, `capture devices` lists no displays and `capture start` says so.
+  The app must run in the logged-in desktop session, not over SSH.
+- **Windows**: screen capture (gdigrab) needs no permission. For the microphone, turn on Settings →
+  Privacy & security → Microphone → "Let desktop apps access your microphone". Protected (DRM)
+  video records as black.
+- **Linux**: X11 only (x11grab + PulseAudio/PipeWire). Wayland sessions are refused with a clear
+  error; log in with an X11 session ("Ubuntu on Xorg") to record.
+
+HTTP: `GET /api/capture/devices`, `GET /api/capture/state`,
+`POST /api/capture/start {display?, region?, window?, fps?, mic?: string|false, cursor?}`,
+`POST /api/capture/stop {at?, track?}`, `POST /api/capture/cancel`.
+
 ## Ripping media from the web
 
 ```bash
@@ -154,7 +201,7 @@ fresh machine works without any manual steps. The rest is opt-in.
 | Engine | Used for | macOS | Windows | Linux |
 |---|---|---|---|---|
 | render runtime | exporting video (Remotion worker + compositions) | auto (first render) | auto (first render) | auto (first render) |
-| ffmpeg + ffprobe | import probing, rips, denoise/enhance, VO recording | auto (static build) | auto (static build) | auto (static build) |
+| ffmpeg + ffprobe | import probing, rips, denoise/enhance, VO and screen recording | auto (static build) | auto (static build) | auto (static build) |
 | yt-dlp | ripping web video | auto (brew → static) | auto (winget → static) | auto (static) |
 | whisper.cpp + model | transcripts, fillers, text editing | `ai setup` (brew) | manual (hint shown) | manual (hint shown) |
 | RNNoise model | denoise | `ai setup` (download) | `ai setup` (download) | `ai setup` (download) |
