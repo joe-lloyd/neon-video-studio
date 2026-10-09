@@ -64,6 +64,32 @@ echo '{"kind":"audio"}' | neon-cli api POST tracks/add -
 Usage errors quote the exact usage line, and a mistyped command, subcommand, flag, route or
 template name gets the closest match: `Unknown subcommand "timeline inser". Did you mean "timeline insert"?`
 
+## Driving the app on another machine
+
+Run your agent on one machine and edit on another: add `--on <ssh-host>` to any command, or set
+`NEON_HOST=<ssh-host>` once. The CLI reads the remote app's port and token over SSH and forwards a
+local port to its control API with an SSH tunnel. The API stays loopback-only on the editing
+machine; your SSH keys are the only way in. The tunnel stays open between commands (about 0.4 s
+per command) and is rebuilt when the remote app restarts.
+
+```bash
+neon-cli --on jellybingus launch            # start the app in that machine's signed-in desktop session
+export NEON_HOST=jellybingus                # every command below now runs against that machine
+neon-cli status
+neon-cli assets import ./narration.m4a --at 0 --track A1   # a file that exists here is uploaded
+neon-cli assets import "C:\Users\joell\Videos\take.mp4"  # any other path is a path on that machine
+neon-cli capture start --display 0 --duration 2m           # records that machine's screen
+neon-cli sheet --count 12 --out sheet.png                 # rendered there, copied here
+neon-cli render --output renders/demo.mp4 --fetch --out demo.mp4   # rendered there, --fetch copies it here
+neon-cli disconnect jellybingus             # close the tunnel
+```
+
+Needs: the desktop app installed on the editing machine, an SSH server there (macOS: Remote
+Login; Windows: the OpenSSH Server optional feature) and key-based SSH from here. `launch` on
+Windows starts the app through a one-off scheduled task so it opens on the signed-in user's
+desktop (an app started straight from SSH has no desktop, and screen capture would see nothing).
+`GET /api/files` only serves files the app rendered in its current session.
+
 ## Connection & global flags
 
 The CLI finds the app through `~/.neon-video/instance.json` (loopback port + bearer token, written
@@ -72,6 +98,7 @@ on every launch, mode 0600). Overrides: `--endpoint http://127.0.0.1:PORT --toke
 
 | Flag | Meaning |
 |---|---|
+| `--on HOST` | Drive the app on another machine over SSH (also `NEON_HOST`); see above |
 | `--json` | Machine-readable output: `{ok: true, data}` on success, `{ok: false, error: {code, message}}` + exit 1 on failure |
 | `--no-wait` | Don't block on long jobs (renders, AI); poll later with `render status` / `ai job` |
 | `-h`, `--help` | Full usage text |

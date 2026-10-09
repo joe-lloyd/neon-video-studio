@@ -13,7 +13,10 @@ happens. Full guide: `docs/screen-demos.md`. Reference: `docs/cli.md`.
 
 - Run the CLI as `node apps/cli/src/main.ts` from the repo, or as `neon-cli` once
   `scripts/link-cli.sh` has run.
-- If the desktop app is open, the CLI uses it. Otherwise run `neon-cli serve --detach` (needs Bun)
+- If the app runs on another machine (the owner's editing PC), set `NEON_HOST=<ssh-host>` or add
+  `--on <ssh-host>`; `neon-cli --on <host> launch` starts it there. Local files you import are
+  uploaded, and `still`/`sheet` PNGs are copied back so you can open them here.
+- If the desktop app is open on this machine, the CLI uses it. Otherwise run `neon-cli serve --detach` (needs Bun)
   and `neon-cli stop` when done.
 - `neon-cli status` shows the project. Create one with `neon-cli project new --name "…" --width 1920 --height 1080 --fps 30`.
 - Read before you edit: `neon-cli timeline` lists every track and clip with times, speed, zooms and
