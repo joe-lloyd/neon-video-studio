@@ -2,8 +2,10 @@ import React from 'react';
 import { Composition, type CalculateMetadataFunction } from 'remotion';
 import { DEFAULT_PROJECT_META, projectDurationFrames } from '@neon/core';
 import { TimelineComposition, type TimelineProps } from './compositions/TimelineComposition.tsx';
+import { ContactSheet, calculateSheetMetadata } from './compositions/ContactSheet.tsx';
 
 export const TIMELINE_COMPOSITION_ID = 'Timeline';
+export const SHEET_COMPOSITION_ID = 'ContactSheet';
 
 export const calculateTimelineMetadata: CalculateMetadataFunction<TimelineProps> = ({ props }) => {
   const projectFps = props.project.meta.fps || DEFAULT_PROJECT_META.fps;
@@ -29,14 +31,26 @@ const EMPTY: TimelineProps = {
 };
 
 export const RemotionRoot: React.FC = () => (
-  <Composition
-    id={TIMELINE_COMPOSITION_ID}
-    component={TimelineComposition}
-    durationInFrames={30}
-    fps={30}
-    width={1920}
-    height={1080}
-    defaultProps={EMPTY}
-    calculateMetadata={calculateTimelineMetadata}
-  />
+  <>
+    <Composition
+      id={TIMELINE_COMPOSITION_ID}
+      component={TimelineComposition}
+      durationInFrames={30}
+      fps={30}
+      width={1920}
+      height={1080}
+      defaultProps={EMPTY}
+      calculateMetadata={calculateTimelineMetadata}
+    />
+    <Composition
+      id={SHEET_COMPOSITION_ID}
+      component={ContactSheet}
+      durationInFrames={30}
+      fps={30}
+      width={1920}
+      height={1080}
+      defaultProps={{ timeline: EMPTY, frames: [0], cols: 4, width: 1920 }}
+      calculateMetadata={calculateSheetMetadata}
+    />
+  </>
 );
