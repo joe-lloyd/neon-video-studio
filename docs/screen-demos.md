@@ -47,13 +47,16 @@ neon-cli ai enhance take.mp4      # clearer voice at broadcast loudness
 
 `ai clean --screen` does three things:
 
-- It cuts filler words (um, uh, you know) from the picture and the sound together.
+- It mutes filler words (um, uh, you know) where they are. The picture is never cut for a word, so
+  the voice stays in sync with the screen.
 - It handles pauses by what the screen does. A pause over a still screen is cut. A pause while the
   screen changes, such as an install or a page load, plays at 6× so the viewer sees it happen.
 - It softens breaths and mouth noise.
 
 Word timings come from whisper.cpp, aligned to the real pauses in your voice, so cuts land between
-words. Check the result with `neon-cli ai transcript take.mp4`. Remove anything else by word
+words. A narration recorded as its own audio file is treated the same way: `ai clean voice.wav`
+mutes its fillers, keeps its pauses and leaves the video alone. Only a talking-head video, where
+the viewer sees you speak, has its fillers cut from picture and sound together. Check the result with `neon-cli ai transcript take.mp4`. Remove anything else by word
 index with `neon-cli ai cut take.mp4 --words 12-15`.
 
 ## 3. Edit

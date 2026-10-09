@@ -30,6 +30,8 @@ happens. Full guide: `docs/screen-demos.md`. Reference: `docs/cli.md`.
 2. Clean the narration:
    - `neon-cli ai setup` once per machine.
    - `neon-cli ai clean <take> --screen` for screen recordings, without `--screen` for talking heads.
+   - A narration recorded as its own audio file: `neon-cli ai clean <voice-file>`. Voiceovers
+     (this and `--screen`) get their fillers muted in place, so the picture is never cut to match.
    - `neon-cli ai enhance <take>` for clearer voice at broadcast loudness.
 3. Read what was said with `neon-cli ai transcript <take>`. Remove anything else by word index:
    `neon-cli ai cut <asset> --words 12-15`.

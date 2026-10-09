@@ -214,6 +214,21 @@ export class AiManager {
   }
 
   /** Map source-second segments onto the timeline through the clips that show this asset. */
+  /** Silence source-time segments in each clip's volume envelope; nothing on the timeline moves. Returns the clips changed. */
+  private muteSegments(clips: MediaClip[], segments: Segment[]): number {
+    const doc = this.ctx.store.doc;
+    let updated = 0;
+    for (const clip of clips) {
+      const kfs = muteRangeKeyframes(clip.volumeKeyframes, segments, clip, doc.fps);
+      // Skip clips the segments never touch (their envelope is unchanged apart from a seed point).
+      if (kfs.some((k) => k.gain === 0)) {
+        doc.updateClip(clip.id, { volumeKeyframes: kfs }, ORIGIN_API);
+        updated += 1;
+      }
+    }
+    return updated;
+  }
+
   private timelineRanges(segments: Segment[], clips: MediaClip[]): FrameRange[] {
     const fps = this.ctx.store.doc.fps;
     const out: FrameRange[] = [];
@@ -318,6 +333,10 @@ export class AiManager {
     const flagged = markFillers(words, list);
     this.ctx.store.doc.setTranscript({ ...transcript, words }, ORIGIN_API);
     const segments = fillerRanges(words, Number(params.padMs ?? 40));
+    if (params.mute) {
+      const clipsUpdated = params.apply ? this.muteSegments(target.clips, segments) : 0;
+      return { fillers: flagged.length, words: flagged.map((i) => words[i]!.w), segments, muted: clipsUpdated > 0, clipsUpdated, removedFrames: 0, applied: Boolean(params.apply) };
+    }
     const ranges = this.timelineRanges(segments, target.clips);
     let removedFrames = 0;
     if (params.apply && ranges.length) {
@@ -648,16 +667,22 @@ export class AiManager {
     // so every step targets the take's asset: all the pieces (and derivatives) it became.
     const { asset } = await this.resolveTarget(params);
     params = { ...params, clipId: undefined, assetId: asset.id };
+    // A voiceover (a narration file, or the mic in a screen recording) plays over a picture with its
+    // own timing, so its fillers are muted in place and nothing is cut to match the voice. A talking
+    // head is cut, picture and sound together.
+    const voiceover = asset.kind === 'audio' || Boolean(params.screen);
+    out.voiceover = voiceover;
     if (params.fillers !== false) {
       this.progress(job, 0.05, 'Step 1/4 · fillers');
-      out.fillers = await this.opFillers(job, { ...params, apply: true });
-      steps.push('fillers');
+      out.fillers = await this.opFillers(job, { ...params, apply: true, mute: voiceover });
+      steps.push(voiceover ? 'fillers muted' : 'fillers');
     }
-    if (params.silences !== false && params.screen) {
+    if (params.silences !== false && params.screen && asset.kind === 'video') {
+      // Pacing only cuts where the voice is silent and the screen is still, so nothing said or shown is lost.
       this.progress(job, 0.35, 'Step 2/4 · pauses (screen pacing)');
       out.pace = await this.opPace(job, { ...params, apply: true });
       steps.push('pacing');
-    } else if (params.silences !== false) {
+    } else if (params.silences !== false && !voiceover) {
       this.progress(job, 0.35, 'Step 2/4 · silences');
       out.silence = await this.opSilence(job, { ...params, apply: true });
       steps.push('silences');
@@ -764,16 +789,7 @@ export class AiManager {
     if (mode === 'audio') {
       // Fix the audio in place: zero the volume across each word, nothing on the timeline moves.
       this.progress(job, 0.5, `Muting ${indexes.length} word(s) in the audio`);
-      const fps = this.ctx.store.doc.fps;
-      let clipsUpdated = 0;
-      for (const clip of target.clips) {
-        const kfs = muteRangeKeyframes(clip.volumeKeyframes, segments, clip, fps);
-        // Skip clips the segments never touch (their envelope is unchanged apart from a seed point).
-        if (kfs.some((k) => k.gain === 0)) {
-          this.ctx.store.doc.updateClip(clip.id, { volumeKeyframes: kfs }, ORIGIN_API);
-          clipsUpdated += 1;
-        }
-      }
+      const clipsUpdated = this.muteSegments(target.clips, segments);
       if (clipsUpdated === 0) throw new Error('Those words are not on the timeline (no clip covers them)');
       return { mode, words: text, segments, clipsUpdated, removedFrames: 0 };
     }
@@ -791,7 +807,7 @@ function summarize(op: AiOperation, result: unknown): string {
     case 'transcribe':
       return `Transcribed ${String(r.words)} words (${String(r.fillers)} fillers)`;
     case 'fillers':
-      return r.applied ? `Removed ${String(r.fillers)} filler word(s), ${String(r.removedFrames)} frames` : `Found ${String(r.fillers)} filler word(s) in ${(r.ranges as unknown[])?.length ?? 0} range(s)`;
+      return r.applied ? (r.muted !== undefined ? `Muted ${String(r.fillers)} filler word(s) in place` : `Removed ${String(r.fillers)} filler word(s), ${String(r.removedFrames)} frames`) : `Found ${String(r.fillers)} filler word(s) in ${(r.ranges as unknown[])?.length ?? 0} range(s)`;
     case 'silence':
       return r.applied ? `Trimmed ${(r.cuts as unknown[])?.length ?? 0} pause(s), ${String(r.removedFrames)} frames` : `Found ${(r.cuts as unknown[])?.length ?? 0} pause(s) to trim`;
     case 'breaths':

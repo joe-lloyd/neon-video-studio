@@ -99,7 +99,7 @@ AI (local engines: whisper.cpp, ffmpeg, Apple Vision; Claude optional for B-roll
   ai matte <clip> [--mode person|chroma] [--quality fast|balanced|accurate] [--color 0x00FF00]
   ai reframe <clip> [--aspect 9:16] [--resize]                     Face-tracked auto-reframe
   ai broll [<asset>] [--apply] [--no-claude] [--duration 3]        Suggest/place B-roll from the transcript
-  ai clean <clip> [--no-fillers] [--no-silences] [--no-breaths] [--denoise] [--screen]   One-shot voice clean-up (--screen: speed up pauses while the screen moves)
+  ai clean <clip> [--no-fillers] [--no-silences] [--no-breaths] [--denoise] [--screen]   One-shot voice clean-up (voiceovers and --screen: mute fillers in place, never cut the picture for a word)
   ai pace <clip> [--apply] [--min 1200] [--keep 300] [--rate 6]   Screen recordings: cut pauses over a still screen, speed up the rest
   ai cut <asset> <fromWord> <toWord>      Text-driven edit: delete words → cut the video
   ai cut <asset> --words 3,7,12-15 [--audio-only]   Non-contiguous words; --audio-only mutes them in place
