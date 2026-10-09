@@ -26,11 +26,11 @@ export async function discoverClient(explicit: Partial<ClientOptions> = {}): Pro
   if (!info) {
     throw new ApiError(
       'NOT_RUNNING',
-      'Neon Video Studio is not running (no instance file). Start the desktop app, or pass --endpoint and --token, or use `render --headless`.',
+      'Neon Video Studio is not running (no instance file). Open the desktop app or run `neon-cli serve --detach` (no window); --endpoint/--token also work.',
     );
   }
   if (!isProcessAlive(info.pid)) {
-    throw new ApiError('STALE_INSTANCE', `Instance file points at pid ${info.pid} which is not alive. Start the desktop app.`);
+    throw new ApiError('STALE_INSTANCE', `Instance file points at pid ${info.pid} which is not alive. Open the desktop app or run \`neon-cli serve --detach\`.`);
   }
   return { endpoint: endpoint ?? `http://127.0.0.1:${info.port}`, token: token ?? info.token };
 }
