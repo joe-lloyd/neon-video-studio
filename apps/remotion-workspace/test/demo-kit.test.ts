@@ -18,7 +18,7 @@ test('Demo Kit defaults validate and fill every prop', () => {
   assert.deepEqual(templateDefaults('Callout'), { text: 'Click here', x: 0.5, y: 0.5, side: 'auto', color: '#F5276C', size: 32, distance: 170 });
   assert.deepEqual(templateDefaults('Spotlight'), { x: 0.3, y: 0.3, w: 0.4, h: 0.3, radius: 16, dim: 0.65, feather: 8 });
   assert.deepEqual(templateDefaults('HighlightBox'), { x: 0.35, y: 0.4, w: 0.3, h: 0.12, color: '#F5276C', thickness: 4, radius: 12, padding: 8, label: '', pulse: true });
-  assert.deepEqual(templateDefaults('KeyCombo'), { combo: 'Ctrl+Shift+P', platform: 'pc', label: '', x: 0.5, y: 0.86, size: 30, color: '#F5276C' });
+  assert.deepEqual(templateDefaults('KeyCombo'), { combo: 'Ctrl+Shift+P', platform: 'pc', label: '', x: 0.5, y: 0.72, size: 30, color: '#F5276C' });
   assert.deepEqual(templateDefaults('StepBadge'), { step: 1, title: 'Open Settings', subtitle: '', total: 0, position: 'top-left', color: '#F5276C', size: 36 });
   assert.deepEqual(templateDefaults('ClickPulse'), { x: 0.5, y: 0.5, color: '#F5276C', size: 64, double: false });
 });
