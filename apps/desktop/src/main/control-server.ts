@@ -80,6 +80,7 @@ import { ffprobeAvailable } from './assets.ts';
 import type { MainContext } from './context.ts';
 import { sseFrame } from './events.ts';
 import { ProjectStore } from './project-store.ts';
+import { cancelCapture, startCapture, stopCapture } from './screen-recorder.ts';
 
 type Scope = 'local' | 'lan';
 interface WsData {
@@ -443,6 +444,11 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     return result;
   }
   if (key === 'GET /api/record/state') return ctx.recorder.state();
+  if (key === `GET ${API_ROUTES.captureDevices}`) return ctx.capture.devices();
+  if (key === `GET ${API_ROUTES.captureState}`) return ctx.capture.state();
+  if (key === `POST ${API_ROUTES.captureStart}`) return startCapture(ctx, body, 'cli');
+  if (key === `POST ${API_ROUTES.captureStop}`) return stopCapture(ctx, body, 'cli');
+  if (key === `POST ${API_ROUTES.captureCancel}`) return cancelCapture(ctx, 'cli');
   if (key === `POST ${API_ROUTES.shutdown}`) {
     const exit = ctx.requestExit;
     if (!exit) throw new HttpError(409, 'NOT_HEADLESS', 'Only a headless instance (neon-cli serve) stops from the CLI; quit the desktop app instead');
@@ -954,7 +960,7 @@ function recordActivity(ctx: MainContext, path: string, body: unknown, result: u
     default:
       if (/^\/api\/ai\//.test(path) && typeof r.op === 'string') {
         ctx.events.activity('cli', `ai.${String(r.op)}.requested`, `AI ${String(r.op)} requested${r.clipId ? ` for clip ${String(r.clipId).slice(-6)}` : ''}`, { jobId: String(r.id), clipIds: r.clipId ? [String(r.clipId)] : [] });
-      } else if (/\/cancel$/.test(path)) ctx.events.activity('cli', 'render.cancel', `Render ${String(r.id)} cancelled`, { jobId: String(r.id) });
+      } else if (/^\/api\/render\/[^/]+\/cancel$/.test(path)) ctx.events.activity('cli', 'render.cancel', `Render ${String(r.id)} cancelled`, { jobId: String(r.id) });
       break;
   }
 }

@@ -7,6 +7,7 @@ import type { SyncHub } from './sync-hub.ts';
 import type { EventHub } from './events.ts';
 import type { AiManager } from './ai-manager.ts';
 import type { VoiceRecorder } from './recorder.ts';
+import type { ScreenRecorder } from './screen-recorder.ts';
 import type { HistoryStore } from './history.ts';
 import type { WaveformCache } from './waveforms.ts';
 import type { PackManager } from './packs.ts';
@@ -31,6 +32,7 @@ export interface MainContext {
   events: EventHub;
   ai: AiManager;
   recorder: VoiceRecorder;
+  capture: ScreenRecorder;
   history: HistoryStore;
   waveforms: WaveformCache;
   packs: PackManager;

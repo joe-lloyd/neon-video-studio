@@ -7,7 +7,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { run, which } from '@neon/ai';
+import { parseAvfoundationDevices, parseDshowAudioDevices, pickMic, run, which } from '@neon/ai';
 
 export interface RecorderState {
   recording: boolean;
@@ -19,18 +19,6 @@ export interface RecorderState {
 interface CaptureCandidate {
   inputArgs: string[];
   name: string;
-}
-
-/**
- * Prefer an actual microphone by name. NOT /micro/i — that matches “Microsoft Teams Audio”
- * and “Microsoft Sound Mapper” (virtual devices) before the real mic.
- */
-function pickMic<T>(devices: T[], nameOf: (d: T) => string): T {
-  return (
-    devices.find((d) => /microphone/i.test(nameOf(d)) && !/^microsoft/i.test(nameOf(d).trim())) ??
-    devices.find((d) => /\bmic\b/i.test(nameOf(d))) ??
-    devices[0]!
-  );
 }
 
 function permissionHint(): string {
@@ -51,6 +39,12 @@ export class VoiceRecorder {
   private dir: string | null = null;
   private device: string | null = null;
   private startedAt = 0;
+  /** Why recording is not possible right now (a screen capture owns the mic), or null. */
+  private readonly blockedBy: () => string | null;
+
+  constructor(blockedBy: () => string | null = () => null) {
+    this.blockedBy = blockedBy;
+  }
 
   state(): RecorderState {
     return this.child ? { recording: true, device: this.device ?? undefined, startedAt: this.startedAt } : { recording: false };
@@ -60,27 +54,17 @@ export class VoiceRecorder {
   private async pickCandidates(ffmpeg: string): Promise<CaptureCandidate[]> {
     if (process.platform === 'darwin') {
       const r = await run(ffmpeg, ['-hide_banner', '-f', 'avfoundation', '-list_devices', 'true', '-i', '']);
-      const lines = r.stderr.split('\n');
-      const audioStart = lines.findIndex((l) => /audio devices/i.test(l));
-      const devices: { index: number; name: string }[] = [];
-      for (const line of lines.slice(Math.max(0, audioStart))) {
-        const m = /\[(\d+)\]\s+(.+)$/.exec(line);
-        if (m) devices.push({ index: Number(m[1]), name: m[2]!.trim() });
-      }
-      if (devices.length === 0) throw new Error(`No audio input devices found${permissionHint()}`);
+      const devices = parseAvfoundationDevices(r.stderr).audio;
       const pick = pickMic(devices, (d) => d.name);
+      if (pick === undefined) throw new Error(`No audio input devices found${permissionHint()}`);
       return [{ inputArgs: ['-f', 'avfoundation', '-i', `:${pick.index}`], name: pick.name }];
     }
     if (process.platform === 'win32') {
       // DirectShow: stderr lists lines like  [dshow @ …] "Microphone (Realtek…)" (audio)
       const r = await run(ffmpeg, ['-hide_banner', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy']);
-      const devices: string[] = [];
-      for (const line of r.stderr.split('\n')) {
-        const m = /"([^"]+)"\s*\((?:audio|audio, video)\)/i.exec(line);
-        if (m) devices.push(m[1]!);
-      }
-      if (devices.length === 0) throw new Error(`No audio input devices found${permissionHint()}`);
+      const devices = parseDshowAudioDevices(r.stderr);
       const pick = pickMic(devices, (d) => d);
+      if (pick === undefined) throw new Error(`No audio input devices found${permissionHint()}`);
       return [{ inputArgs: ['-f', 'dshow', '-i', `audio=${pick}`], name: pick }];
     }
     // Linux: PulseAudio/PipeWire first, raw ALSA as fallback (static ffmpeg builds may lack pulse).
@@ -92,6 +76,8 @@ export class VoiceRecorder {
 
   async start(): Promise<{ device: string }> {
     if (this.child) throw new Error('Already recording');
+    const blocked = this.blockedBy();
+    if (blocked) throw new Error(blocked);
     const ffmpeg = (await which('ffmpeg')) ?? 'ffmpeg';
     const candidates = await this.pickCandidates(ffmpeg);
     this.dir = await mkdtemp(join(tmpdir(), 'neon-vo-'));

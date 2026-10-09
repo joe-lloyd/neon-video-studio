@@ -10,6 +10,7 @@ import { SUPPORTED_EXTENSIONS } from '@neon/core/node';
 import { ORIGIN_LOCAL, type ImportAssetResponse } from '@neon/core';
 import { VERSION, bootCore } from './core.ts';
 import { buildStatus } from './control-server.ts';
+import { cancelCapture, startCapture, stopCapture } from './screen-recorder.ts';
 import { installMenu } from './menu.ts';
 import { paths } from './paths.ts';
 import { ProjectStore } from './project-store.ts';
@@ -198,6 +199,11 @@ async function main(): Promise<void> {
           await ctx.recorder.discard();
           return true;
         },
+        captureDevices: () => ctx.capture.devices(),
+        captureState: async () => ctx.capture.state(),
+        captureStart: (params) => startCapture(ctx, params, 'ui'),
+        captureStop: (params) => stopCapture(ctx, params, 'ui'),
+        captureCancel: () => cancelCapture(ctx, 'ui'),
         chooseFolder: async () => {
           const [dir] = await Utils.openFileDialog({ canChooseFiles: false, canChooseDirectory: true, allowsMultipleSelection: false });
           return dir ?? null;
