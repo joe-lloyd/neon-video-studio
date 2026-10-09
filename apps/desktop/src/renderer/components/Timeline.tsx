@@ -459,7 +459,7 @@ function ClipView({ clip, drag, pxPerFrame, fps, selected, flashing, onMove, onT
       title={`${clip.name} · ${framesToTimecode(start, fps)} → ${framesToTimecode(end, fps)}`}
     >
       {hasAudio && peaks && peaks.length > 0 ? (
-        <Waveform peaks={peaks} trimBefore={trimBefore} speed={clip.kind !== 'component' ? clip.speed : undefined} durationFrames={end - start} fps={fps} widthPx={widthPx} color={color} mode={clip.kind === 'audio' ? 'audio' : 'video'} />
+        <Waveform peaks={peaks} trimBefore={trimBefore} speed={clip.speed} durationFrames={end - start} fps={fps} widthPx={widthPx} color={color} mode={clip.kind === 'audio' ? 'audio' : 'video'} />
       ) : hasAudio && peaks === null ? (
         <div className="wave" />
       ) : null}
