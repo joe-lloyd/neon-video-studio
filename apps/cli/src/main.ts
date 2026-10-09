@@ -7,7 +7,7 @@
 import { parseArgs } from 'node:util';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { RENDER_PRESETS, framesToTimecode, timelineFrameAt, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type ImportAssetResponse, type RenderJob } from '@neon/core';
+import { RENDER_PRESETS, getPreset, projectPreset, framesToTimecode, timelineFrameAt, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type ImportAssetResponse, type RenderJob } from '@neon/core';
 import { renderHeadless } from '@neon/render';
 import { registerAllPacks } from '@neon/remotion-workspace/packs';
 import { registerInstalledPacks } from '@neon/core/node';
@@ -253,10 +253,11 @@ async function main(): Promise<void> {
   if (cmd === 'render' && flags.headless) {
     if (!flags.project || !flags.output) throw new ApiError('USAGE', 'render --headless requires --project <dir> and --output <file>');
     let last = '';
+    const outputPath = resolve(flags.output);
+    const presetId = flags.preset;
     const result = await renderHeadless({
       projectDir: flags.project,
-      outputPath: flags.output,
-      presetId: flags.preset,
+      target: (p) => ({ kind: 'video', outputPath, preset: !presetId || presetId === 'project' ? projectPreset(p.meta) : getPreset(presetId), frameRange: null }),
       onEvent: (e) => {
         if (json) return;
         if (e.type === 'stage') process.stderr.write(`${e.stage}: ${e.message ?? ''}\n`);

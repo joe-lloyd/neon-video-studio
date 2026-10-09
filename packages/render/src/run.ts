@@ -6,7 +6,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { RenderJobSpec, WorkerEvent } from './types.ts';
+import type { RenderJobSpec, RenderResult, WorkerEvent } from './types.ts';
 
 export interface RunRenderOptions {
   workerPath: string;
@@ -19,7 +19,7 @@ export interface RunRenderOptions {
 }
 
 export interface RunningRender {
-  promise: Promise<{ outputPath: string; durationMs: number }>;
+  promise: Promise<RenderResult>;
   cancel(): void;
   pid: number | undefined;
 }
@@ -33,8 +33,8 @@ export function runRenderWorker(spec: RenderJobSpec, opts: RunRenderOptions): Ru
     const jobFile = join(dir, 'job.json');
     await writeFile(jobFile, JSON.stringify(spec));
     try {
-      return await new Promise<{ outputPath: string; durationMs: number }>((resolve, reject) => {
-        let done: { outputPath: string; durationMs: number } | null = null;
+      return await new Promise<RenderResult>((resolve, reject) => {
+        let done: RenderResult | null = null;
         let failure: Error | null = null;
         const runtime = opts.nodeBinary ?? 'node';
         const isBun = /(^|[\\/])bun(\.exe)?$/i.test(runtime);
@@ -57,7 +57,7 @@ export function runRenderWorker(spec: RenderJobSpec, opts: RunRenderOptions): Ru
             if (line.startsWith('{"neon":1')) {
               try {
                 const event = JSON.parse(line) as WorkerEvent;
-                if (event.type === 'done') done = { outputPath: event.outputPath, durationMs: event.durationMs };
+                if (event.type === 'done') done = { outputPath: event.outputPath, durationMs: event.durationMs, width: event.width, height: event.height };
                 if (event.type === 'error') failure = new Error(event.message);
                 opts.onEvent?.(event);
                 continue;

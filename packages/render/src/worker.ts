@@ -6,14 +6,18 @@
  */
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, open, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { bundle } from '@remotion/bundler';
-import { makeCancelSignal, renderMedia, selectComposition } from '@remotion/renderer';
+import { makeCancelSignal, openBrowser, renderMedia, renderStill, selectComposition, type CancelSignal } from '@remotion/renderer';
 import { projectDurationFrames } from '@neon/core';
 import type { RenderJobSpec, WorkerEvent } from './types.ts';
 
+type Job<K extends RenderJobSpec['kind']> = Extract<RenderJobSpec, { kind: K }>;
+type Size = { width: number; height: number };
+
 const TIMELINE_COMPOSITION_ID = 'Timeline';
+const SHEET_COMPOSITION_ID = 'ContactSheet';
 
 type WorkerEventBody = { [K in WorkerEvent['type']]: Omit<Extract<WorkerEvent, { type: K }>, 'neon'> }[WorkerEvent['type']];
 
@@ -116,23 +120,7 @@ async function ensureBundle(spec: RenderJobSpec): Promise<string> {
   return location;
 }
 
-async function main(): Promise<void> {
-  const jobIndex = process.argv.indexOf('--job');
-  const jobPath = jobIndex >= 0 ? process.argv[jobIndex + 1] : undefined;
-  if (!jobPath) throw new Error('Usage: worker.ts --job <spec.json>');
-  const spec = JSON.parse(await readFile(jobPath, 'utf8')) as RenderJobSpec;
-
-  const started = Date.now();
-  const { cancelSignal, cancel } = makeCancelSignal();
-  const onTerminate = () => {
-    emit({ type: 'stage', stage: 'rendering', message: 'Cancelling…' });
-    cancel();
-  };
-  process.on('SIGTERM', onTerminate);
-  process.on('SIGINT', onTerminate);
-
-  const serveUrl = await ensureBundle(spec);
-
+async function renderVideo(spec: Job<'video'>, serveUrl: string, cancelSignal: CancelSignal): Promise<Size> {
   const projectFps = spec.project.meta.fps;
   const inputProps = {
     project: spec.project,
@@ -181,8 +169,100 @@ async function main(): Promise<void> {
       emit({ type: 'progress', progress, renderedFrames, encodedFrames });
     },
   });
+  return { width: composition.width, height: composition.height };
+}
 
-  emit({ type: 'done', outputPath: spec.outputPath, durationMs: Date.now() - started });
+/** Width and height from a PNG's IHDR chunk. */
+async function pngSize(path: string): Promise<Size> {
+  const file = await open(path, 'r');
+  try {
+    const { buffer } = await file.read(Buffer.alloc(24), 0, 24, 0);
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  } finally {
+    await file.close();
+  }
+}
+
+/**
+ * A still renders the Timeline at project size and lets Chrome scale the screenshot, so text and
+ * FX keep their proportions. A sheet renders the ContactSheet composition at frame 0.
+ */
+async function renderPng(spec: Job<'still' | 'sheet'>, serveUrl: string, cancelSignal: CancelSignal): Promise<Size> {
+  const timeline = { project: spec.project, assetBaseUrl: spec.assetBaseUrl, assetQuery: spec.assetQuery ?? '', render: null };
+  const shot =
+    spec.kind === 'still'
+      ? { id: TIMELINE_COMPOSITION_ID, inputProps: timeline, frame: spec.frame, scale: spec.width / spec.project.meta.width, cells: 1 }
+      : { id: SHEET_COMPOSITION_ID, inputProps: { timeline, frames: spec.frames, cols: spec.cols, width: spec.width }, frame: 0, scale: 1, cells: spec.frames.length };
+
+  // One browser for both calls instead of one each.
+  const browser = await openBrowser('chrome', { browserExecutable: spec.browserExecutable ?? null, logLevel: 'warn' });
+  try {
+    emit({ type: 'stage', stage: 'rendering', message: 'Resolving composition' });
+    const composition = await selectComposition({
+      serveUrl,
+      id: shot.id,
+      inputProps: shot.inputProps,
+      puppeteerInstance: browser,
+      logLevel: 'warn',
+      binariesDirectory: spec.binariesDirectory ?? null,
+    });
+    emit({ type: 'start', totalFrames: shot.cells, width: composition.width, height: composition.height, fps: composition.fps });
+    await mkdir(dirname(spec.outputPath), { recursive: true });
+    await renderStill({
+      composition,
+      serveUrl,
+      output: spec.outputPath,
+      frame: shot.frame,
+      inputProps: shot.inputProps,
+      imageFormat: 'png',
+      scale: shot.scale,
+      puppeteerInstance: browser,
+      cancelSignal,
+      overwrite: true,
+      logLevel: 'warn',
+      binariesDirectory: spec.binariesDirectory ?? null,
+      ...(spec.licenseKey ? { licenseKey: spec.licenseKey } : {}),
+    });
+    emit({ type: 'progress', progress: 1, renderedFrames: shot.cells, encodedFrames: shot.cells });
+  } finally {
+    await browser.close({ silent: true });
+  }
+  return pngSize(spec.outputPath);
+}
+
+async function main(): Promise<void> {
+  const jobIndex = process.argv.indexOf('--job');
+  const jobPath = jobIndex >= 0 ? process.argv[jobIndex + 1] : undefined;
+  if (!jobPath) throw new Error('Usage: worker.ts --job <spec.json>');
+  const spec = JSON.parse(await readFile(jobPath, 'utf8')) as RenderJobSpec;
+
+  const started = Date.now();
+  const { cancelSignal, cancel } = makeCancelSignal();
+  const onTerminate = () => {
+    emit({ type: 'stage', stage: 'rendering', message: 'Cancelling…' });
+    cancel();
+  };
+  process.on('SIGTERM', onTerminate);
+  process.on('SIGINT', onTerminate);
+
+  const serveUrl = await ensureBundle(spec);
+
+  let size: Size;
+  switch (spec.kind) {
+    case 'video':
+      size = await renderVideo(spec, serveUrl, cancelSignal);
+      break;
+    case 'still':
+    case 'sheet':
+      size = await renderPng(spec, serveUrl, cancelSignal);
+      break;
+    default: {
+      const unreachable: never = spec;
+      throw new Error(`Unknown job kind ${JSON.stringify(unreachable)}`);
+    }
+  }
+
+  emit({ type: 'done', outputPath: spec.outputPath, durationMs: Date.now() - started, ...size });
 }
 
 main().then(
