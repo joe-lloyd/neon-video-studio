@@ -20,16 +20,18 @@ const YTDLP_DOWNLOADS: Partial<Record<NodeJS.Platform, { url: string; file: stri
 };
 
 /**
- * Static ffmpeg + ffprobe builds per OS: BtbN GitHub builds (win x64 / linux x64, one archive with
- * bin/ffmpeg + bin/ffprobe) and Martin Riedl (macOS arm64, one single-binary zip per tool).
+ * Static ffmpeg + ffprobe builds per OS and CPU: BtbN GitHub builds (win x64 / linux x64, one archive
+ * with bin/ffmpeg + bin/ffprobe) and Martin Riedl (macOS arm64 + Intel, one single-binary zip per tool).
  */
-const FFMPEG_DOWNLOADS: Partial<Record<NodeJS.Platform, { url: string; archive: string }[]>> = {
-  darwin: [
-    { url: 'https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip', archive: 'ffmpeg.zip' },
-    { url: 'https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffprobe.zip', archive: 'ffprobe.zip' },
-  ],
-  linux: [{ url: 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz', archive: 'ffmpeg.tar.xz' }],
-  win32: [{ url: 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip', archive: 'ffmpeg.zip' }],
+const martinRiedl = (arch: 'arm64' | 'amd64') => [
+  { url: `https://ffmpeg.martin-riedl.de/redirect/latest/macos/${arch}/release/ffmpeg.zip`, archive: 'ffmpeg.zip' },
+  { url: `https://ffmpeg.martin-riedl.de/redirect/latest/macos/${arch}/release/ffprobe.zip`, archive: 'ffprobe.zip' },
+];
+const FFMPEG_DOWNLOADS: Record<string, { url: string; archive: string }[]> = {
+  'darwin-arm64': martinRiedl('arm64'),
+  'darwin-x64': martinRiedl('amd64'),
+  'linux-x64': [{ url: 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz', archive: 'ffmpeg.tar.xz' }],
+  'win32-x64': [{ url: 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip', archive: 'ffmpeg.zip' }],
 };
 
 /** Find files named like the wanted binaries anywhere in an extracted tree. */
@@ -50,7 +52,7 @@ async function findBinaries(dir: string, names: Set<string>, found: Map<string, 
  */
 export async function ensureFfmpeg(opts: { onProgress?: (p: number, message: string) => void; onLog?: (line: string) => void } = {}): Promise<string | null> {
   if ((await which('ffmpeg')) && (await which('ffprobe'))) return 'already installed';
-  const downloads = FFMPEG_DOWNLOADS[process.platform];
+  const downloads = FFMPEG_DOWNLOADS[`${process.platform}-${process.arch}`];
   if (!downloads) return null;
   const wanted = process.platform === 'win32' ? new Set(['ffmpeg.exe', 'ffprobe.exe']) : new Set(['ffmpeg', 'ffprobe']);
   const curl = (await which('curl')) ?? 'curl';
@@ -74,6 +76,12 @@ export async function ensureFfmpeg(opts: { onProgress?: (p: number, message: str
       const target = join(toolsDir(), name);
       await copyFile(src, target);
       if (process.platform !== 'win32') await chmod(target, 0o755);
+      // A build for the wrong CPU or OS version installs fine and then fails on every call: prove it runs.
+      const check = await run(target, ['-version']);
+      if (check.code !== 0) {
+        await rm(target, { force: true });
+        throw new Error(`${name} was installed but does not run on this machine (${process.platform}-${process.arch}): ${(check.stderr || check.stdout).trim().split('\n')[0] ?? `exit ${check.code}`}`);
+      }
     }
     return `→ ${toolsDir()}`;
   } finally {
