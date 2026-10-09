@@ -2,6 +2,17 @@
 
 Running list of user feedback. Newest first. Status: ☐ open · ◐ in progress · ☑ done (with commit).
 
+## 2026-10-09 · round 20
+
+- ☑ **"Audit the app, then make it work for screen demos I record on Mac and Windows, with my own voice-over, edited mostly by an agent through the CLI"** — done across one branch ([#1](https://github.com/joe-lloyd/neon-video-studio/pull/1)):
+  - **Headless app:** `neon-cli serve` / `stop` runs the main process without a window (`core.ts` + `headless.ts` on Bun). The CLI, renders and AI work without the GUI, and `scripts/e2e.ts` proves import → edit → export on macOS, Windows and Linux in CI.
+  - **Screen capture:** `neon-cli capture …` and a Record screen button. Screen and mic go into one file, and takes append to V1. Windows needs a check on the real machine (multi-monitor, DPI, NVENC).
+  - **Voice clean-up that actually lands:** `ai clean` used to stop after the first cut (later steps only saw the first piece), and whisper word times ran about 0.3 s early, so half of every "um" stayed. Word times are now aligned with whisper's DTW anchors and the real pauses. Verified on a narrated take: no fillers left in the export.
+  - **Screen pacing:** `ai pace` / `ai clean --screen` cut pauses over a still screen and speed up pauses while the screen changes.
+  - **Editing for demos:** clip speed (`timeline speed`), zooms anchored to the recording (`zoom add`, eased, chained), the Demo Kit pack (Callout, Spotlight, HighlightBox, KeyCombo, StepBadge, ClickPulse), and Captions that follow cuts and speed changes (+ SRT/VTT export).
+  - **Agent surface:** `still` / `sheet` PNGs so an agent can look at its edit, `timeline` text view, `schema`, `api`, `apply` (plans land as one undo step or roll back), closest-match suggestions on typos, PATH shims, and a project skill (`.claude/skills/edit-demo-video`). Guide: `docs/screen-demos.md`.
+  - **Bugs fixed on the way:** every cut flashed to black for a frame (cut crossfades faded the picture), volume/reframe automation drifted after a split, `timeline cut` didn't ripple by default and `ai enhance` didn't denoise by default (flag defaults), the ffmpeg installer fetched an arm64 build on Intel Macs, Bun detection failed on Windows paths.
+
 ## 2026-09-02 · round 19
 
 - ☑ **"In FX, scaling or rotating pivots on a weird origin — it should be the element's centre so it stays in place"** — the composition applies `translate·scale·rotate` to a full-frame wrapper, so the CSS pivot was the *frame* centre; any off-centre element drifted when scaled/rotated. The canvas handles and the inspector's scale/rotation fields now re-solve the position on every change so the element's painted centre stays fixed (`renderer/lib/transform-math.ts`, covered by tests; the canvas editor shares its measured content bounds with the inspector via `editor.canvasBounds`). Render semantics and saved projects are unchanged. Note: `neon-cli timeline update --scale/--rotation` still pivots on the frame centre (the main process has no measurement of the element's painted bounds) — pass `--pos` alongside when precise placement matters.
