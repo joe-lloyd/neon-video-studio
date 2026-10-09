@@ -64,6 +64,18 @@ export const SOLID_COLOR_SCHEMA = z.object({
   opacity: z.number().min(0).max(1).default(1),
 });
 
+export const CAPTIONS_SCHEMA = z.object({
+  style: z.enum(['karaoke', 'block']).default('karaoke').describe('karaoke highlights the word being spoken; block shows the cue plainly'),
+  position: z.enum(['bottom', 'top', 'middle']).default('bottom').describe('Where the captions sit on the frame'),
+  fontSize: z.number().int().min(16).max(200).default(54).describe('Text size in pixels at 1080p (scaled for other outputs)'),
+  maxWords: z.number().int().min(1).max(16).default(6).describe('Most words on screen at once'),
+  color: cssColor.default('#FFFFFF').describe('Text colour'),
+  highlightColor: cssColor.default('#00F3FF').describe('Colour of the spoken word (karaoke)'),
+  background: z.boolean().default(true).describe('Draw a dark box behind the text'),
+  backgroundColor: cssColor.default('rgba(9,9,11,0.82)').describe('Box colour when background is on'),
+  tracks: z.string().default('').describe('Comma-separated track names to caption, e.g. "A1,V1" (empty = every audible audio/video track)'),
+});
+
 export type TextOverlayProps = z.infer<typeof TEXT_OVERLAY_SCHEMA>;
 export type LowerThirdProps = z.infer<typeof LOWER_THIRD_SCHEMA>;
 export type TitleCardProps = z.infer<typeof TITLE_CARD_SCHEMA>;
@@ -71,6 +83,7 @@ export type CountdownProps = z.infer<typeof COUNTDOWN_SCHEMA>;
 export type ProgressBarProps = z.infer<typeof PROGRESS_BAR_SCHEMA>;
 export type WatermarkProps = z.infer<typeof WATERMARK_SCHEMA>;
 export type SolidColorProps = z.infer<typeof SOLID_COLOR_SCHEMA>;
+export type CaptionsProps = z.infer<typeof CAPTIONS_SCHEMA>;
 
 export interface ComponentTemplate<S extends z.ZodObject = z.ZodObject> {
   name: string;
@@ -215,7 +228,7 @@ export function listPacks(): PackRecord[] {
       name: CORE_PACK_NAME,
       label: 'Neon Core',
       version: '1',
-      description: 'The built-in overlay set: text, lower thirds, titles, countdown, progress, watermark, colour.',
+      description: 'The built-in overlay set: text, captions, lower thirds, titles, countdown, progress, watermark, colour.',
       templates: [],
     },
   };
@@ -294,6 +307,16 @@ export const COMPONENT_TEMPLATES = {
     schema: SOLID_COLOR_SCHEMA,
     icon: 'PaintBucket',
     category: 'Backgrounds',
+  },
+  Captions: {
+    name: 'Captions',
+    label: 'Captions',
+    description: 'Burned-in subtitles from the transcripts; they follow cuts and speed changes.',
+    defaultDurationSeconds: 10,
+    schema: CAPTIONS_SCHEMA,
+    icon: 'Captions',
+    category: 'Text',
+    tags: ['subtitles', 'transcript', 'karaoke'],
   },
 } as const satisfies Record<string, ComponentTemplate>;
 
