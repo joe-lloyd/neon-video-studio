@@ -54,6 +54,9 @@ import {
   type AiOperation,
   RENDER_PRESETS,
   RemoveClipRequestSchema,
+  ScriptRemoveRequestSchema,
+  ScriptSetRequestSchema,
+  ScriptUpdateRequestSchema,
   RenderRequestSchema,
   RoomHostRequestSchema,
   RoomJoinRequestSchema,
@@ -589,6 +592,28 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
       return { packs: next };
     }
 
+    // -- the script (prompter cues) -----------------------------------------------------
+    case `GET ${API_ROUTES.script}`:
+      return { cues: doc.toJSON().cues };
+    case `POST ${API_ROUTES.scriptSet}`: {
+      const { cues } = ScriptSetRequestSchema.parse(body);
+      const starts = cues.map((c) => T(c.at)!);
+      const placed = cues
+        .map((c, i) => ({ id: c.id, text: c.text, startFrame: starts[i]!, explicit: c.duration === undefined ? undefined : T(c.duration)! }))
+        .sort((a, b) => a.startFrame - b.startFrame)
+        .map((c, i, all) => ({ id: c.id, text: c.text, startFrame: c.startFrame, durationFrames: c.explicit ?? Math.max(1, (all[i + 1]?.startFrame ?? c.startFrame + 4 * fps) - c.startFrame) }));
+      return { cues: doc.setCues(placed, ORIGIN_API) };
+    }
+    case `POST ${API_ROUTES.scriptUpdate}`: {
+      const { id, patch } = ScriptUpdateRequestSchema.parse(body);
+      return doc.updateCue(id, { text: patch.text, startFrame: T(patch.at), durationFrames: T(patch.duration) }, ORIGIN_API);
+    }
+    case `POST ${API_ROUTES.scriptRemove}`: {
+      const { ids } = ScriptRemoveRequestSchema.parse(body);
+      doc.removeCues(ids, ORIGIN_API);
+      return { removed: ids.length };
+    }
+
     // -- persisted edit history ----------------------------------------------------------
     case `GET ${API_ROUTES.history}`:
       return ctx.history.status();
@@ -913,6 +938,15 @@ function recordActivity(ctx: MainContext, path: string, body: unknown, result: u
     }
     case API_ROUTES.timelineRemove:
       ctx.events.activity('cli', 'timeline.remove', `Removed ${(b.ids as string[] | undefined)?.length ?? 0} clip(s)`, { clipIds: (b.ids as string[]) ?? [] });
+      break;
+    case API_ROUTES.scriptSet:
+      ctx.events.activity('cli', 'script.set', `Wrote the script: ${(r.cues as unknown[] | undefined)?.length ?? 0} cue(s)`);
+      break;
+    case API_ROUTES.scriptUpdate:
+      ctx.events.activity('cli', 'script.update', `Edited cue at ${tc(Number(r.startFrame ?? 0))}`);
+      break;
+    case API_ROUTES.scriptRemove:
+      ctx.events.activity('cli', 'script.remove', `Removed ${(b.ids as string[] | undefined)?.length ?? 0} cue(s)`);
       break;
     case API_ROUTES.trackAdd:
       ctx.events.activity('cli', 'tracks.add', `Added ${String(r.kind)} track “${String(r.name)}”`, { trackIds: [String(r.id)] });

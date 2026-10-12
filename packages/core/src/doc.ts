@@ -18,6 +18,7 @@ import {
   type Reframe,
   type Track,
   type TrackKind,
+  type ScriptCue,
   type Transcript,
 } from './types.ts';
 
@@ -79,6 +80,7 @@ export class ProjectDoc {
   readonly clips: Y.Map<YMap>;
   readonly assets: Y.Map<YMap>;
   readonly transcripts: Y.Map<YMap>;
+  readonly cues: Y.Map<YMap>;
 
   private snapshot: Project | null = null;
   private txDepth = 0;
@@ -91,6 +93,7 @@ export class ProjectDoc {
     this.clips = doc.getMap('clips');
     this.assets = doc.getMap('assets');
     this.transcripts = doc.getMap('transcripts');
+    this.cues = doc.getMap('cues');
     doc.on('update', () => {
       this.snapshot = null;
       if (this.listeners.size === 0) return;
@@ -132,11 +135,13 @@ export class ProjectDoc {
       for (const key of [...this.clips.keys()]) this.clips.delete(key);
       for (const key of [...this.assets.keys()]) this.assets.delete(key);
       for (const key of [...this.transcripts.keys()]) this.transcripts.delete(key);
+      for (const key of [...this.cues.keys()]) this.cues.delete(key);
       for (const [k, v] of Object.entries(project.meta)) this.meta.set(k, v);
       for (const track of project.tracks) this.tracks.set(track.id, mapFrom(track));
       for (const asset of project.assets) this.assets.set(asset.id, mapFrom(asset));
       for (const clip of project.clips) this.clips.set(clip.id, clipToMap(clip));
       for (const t of project.transcripts ?? []) this.transcripts.set(t.assetId, mapFrom(t));
+      for (const c of project.cues ?? []) this.cues.set(c.id, mapFrom(c));
     }, ORIGIN_SYSTEM);
   }
 
@@ -152,6 +157,7 @@ export class ProjectDoc {
       syncCollection(this.assets, project.assets, (a) => a.id, mapFrom, (m) => m.toJSON());
       syncCollection(this.clips, project.clips, (c) => c.id, clipToMap, mapToClip);
       syncCollection(this.transcripts, project.transcripts ?? [], (t) => t.assetId, mapFrom, (m) => m.toJSON());
+      syncCollection(this.cues, project.cues ?? [], (c) => c.id, mapFrom, (m) => m.toJSON());
     }, origin);
   }
 
@@ -202,7 +208,8 @@ export class ProjectDoc {
       .map((m) => m.toJSON() as Asset)
       .sort((a, b) => a.importedAt.localeCompare(b.importedAt) || a.name.localeCompare(b.name));
     const transcripts = [...this.transcripts.values()].map((m) => m.toJSON() as Transcript);
-    const project: Project = { meta, tracks, clips, assets, transcripts };
+    const cues = [...this.cues.values()].map((m) => m.toJSON() as ScriptCue).sort((a, b) => a.startFrame - b.startFrame || a.id.localeCompare(b.id));
+    const project: Project = { meta, tracks, clips, assets, transcripts, cues };
     if (this.txDepth === 0) this.snapshot = project;
     return project;
   }
@@ -677,6 +684,8 @@ export class ProjectDoc {
             if (!trackIds.has(clip.trackId)) continue;
             if (clip.startFrame >= end) this.clips.get(clip.id)!.set('startFrame', clip.startFrame - length);
           }
+          // The script follows a cut through the whole timeline, not one limited to some tracks.
+          if (!opts.trackIds) this.cutCues(start, end);
         }
         removedFrames += length;
       }
@@ -731,6 +740,64 @@ export class ProjectDoc {
       }
       this.touch();
     }, origin);
+  }
+
+  // ---- script cues ---------------------------------------------------------------------
+
+  /** Replace the whole script. Cues without an id get one. */
+  setCues(cues: (Omit<ScriptCue, 'id'> & { id?: string })[], origin?: unknown): ScriptCue[] {
+    return this.transact(() => {
+      for (const key of [...this.cues.keys()]) this.cues.delete(key);
+      for (const cue of cues) {
+        const full: ScriptCue = { id: cue.id ?? newId('cue'), startFrame: Math.max(0, Math.round(cue.startFrame)), durationFrames: Math.max(1, Math.round(cue.durationFrames)), text: cue.text };
+        this.cues.set(full.id, mapFrom(full));
+      }
+      this.touch();
+      return this.toJSON().cues;
+    }, origin);
+  }
+
+  updateCue(id: string, patch: Partial<Omit<ScriptCue, 'id'>>, origin?: unknown): ScriptCue {
+    return this.transact(() => {
+      const m = this.cues.get(id);
+      if (!m) throw new Error(`Cue ${id} not found`);
+      if (patch.text !== undefined) m.set('text', patch.text);
+      if (patch.startFrame !== undefined) m.set('startFrame', Math.max(0, Math.round(patch.startFrame)));
+      if (patch.durationFrames !== undefined) m.set('durationFrames', Math.max(1, Math.round(patch.durationFrames)));
+      this.touch();
+      return m.toJSON() as ScriptCue;
+    }, origin);
+  }
+
+  removeCues(ids: string[], origin?: unknown): void {
+    this.transact(() => {
+      for (const id of ids) {
+        if (!this.cues.has(id)) throw new Error(`Cue ${id} not found`);
+        this.cues.delete(id);
+      }
+      this.touch();
+    }, origin);
+  }
+
+  /** Remove [start, end) from the script: drop cues inside it, trim cues across it, shift later ones left. */
+  private cutCues(start: number, end: number): void {
+    const length = end - start;
+    for (const [id, m] of [...this.cues.entries()]) {
+      const cue = m.toJSON() as ScriptCue;
+      const cueEnd = cue.startFrame + cue.durationFrames;
+      if (cueEnd <= start) continue;
+      if (cue.startFrame >= end) {
+        m.set('startFrame', cue.startFrame - length);
+        continue;
+      }
+      const kept = Math.max(0, start - cue.startFrame) + Math.max(0, cueEnd - end);
+      if (kept === 0) {
+        this.cues.delete(id);
+        continue;
+      }
+      m.set('startFrame', Math.min(cue.startFrame, start));
+      m.set('durationFrames', kept);
+    }
   }
 
   // ---- transcripts ---------------------------------------------------------------------
@@ -874,7 +941,7 @@ function mapToClip(m: YMap): Clip {
 
 /** UndoManager scoped to a single peer's own edits. */
 export function createUndoManager(project: ProjectDoc, trackedOrigins: unknown[] = [ORIGIN_LOCAL]): Y.UndoManager {
-  return new Y.UndoManager([project.tracks, project.clips, project.assets, project.meta, project.transcripts], {
+  return new Y.UndoManager([project.tracks, project.clips, project.assets, project.meta, project.transcripts, project.cues], {
     trackedOrigins: new Set(trackedOrigins),
     captureTimeout: 300,
   });

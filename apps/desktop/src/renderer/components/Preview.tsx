@@ -6,6 +6,7 @@ import { CanvasEditor } from './CanvasEditor.tsx';
 import { useElementSize } from '../lib/hooks.ts';
 import { kbdFor } from '../lib/kbd.ts';
 import { useStoreValue } from '../lib/store.ts';
+import { PrompterOverlay } from './Prompter.tsx';
 
 export function Preview() {
   const editor = useEditor();
@@ -96,6 +97,7 @@ export function Preview() {
         <span>f {frame}</span>
         <button className={safe ? 'on' : ''} onClick={() => setSafe((v) => !v)} title="Toggle title/action safe areas">safe</button>
       </div>
+      <PrompterOverlay />
       {ready && w > 0 ? (
         <div className="player-wrap" style={{ width: w, height: h, position: 'relative' }}>
           <CanvasEditor width={w} height={h} />

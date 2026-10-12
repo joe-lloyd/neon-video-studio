@@ -1,7 +1,7 @@
 /** Typed HTTP client for the desktop app's control API. */
 import { API_ROUTES, parseTimecode, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type CaptureDevices, type CaptureStartBody, type CaptureState, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary, type SheetRequestInput, type StillRequestInput, type StillResult } from '@neon/core';
 import { isProcessAlive, readInstanceInfo } from '@neon/core/node';
-import type { Asset, BatchRequest, BatchResult, Clip, Project, Track } from '@neon/core';
+import type { Asset, BatchRequest, BatchResult, Clip, Project, ScriptCue, Track } from '@neon/core';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -82,6 +82,11 @@ export class NeonClient {
   split = (id: string, at: string | number) => this.call<[Clip, Clip]>('POST', API_ROUTES.timelineSplit, { id, at });
   remove = (ids: string[]) => this.call<{ removed: number }>('POST', API_ROUTES.timelineRemove, { ids });
   nudge = (ids: string[], by: string) => this.call<Clip[]>('POST', API_ROUTES.timelineNudge, { ids, by });
+
+  script = () => this.call<{ cues: ScriptCue[] }>('GET', API_ROUTES.script);
+  scriptSet = (cues: { id?: string; at: string | number; duration?: string | number; text: string }[]) => this.call<{ cues: ScriptCue[] }>('POST', API_ROUTES.scriptSet, { cues });
+  scriptUpdate = (id: string, patch: { text?: string; at?: string | number; duration?: string | number }) => this.call<ScriptCue>('POST', API_ROUTES.scriptUpdate, { id, patch });
+  scriptRemove = (ids: string[]) => this.call<{ removed: number }>('POST', API_ROUTES.scriptRemove, { ids });
 
   trackAdd = (kind: string, name?: string) => this.call<Track>('POST', API_ROUTES.trackAdd, { kind, name });
   trackUpdate = (id: string, patch: Record<string, unknown>) => this.call<Track>('POST', API_ROUTES.trackUpdate, { id, patch });
