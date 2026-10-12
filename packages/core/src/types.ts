@@ -181,12 +181,26 @@ export interface Transcript {
   words: TranscriptWord[];
 }
 
+/**
+ * One line of the script, pinned to when it should be said. Times are timeline frames, so a cue
+ * stays over the footage it describes; ripple cuts across the whole timeline move it too.
+ */
+export interface ScriptCue {
+  id: string;
+  startFrame: number;
+  /** How long the line has on the timeline; the prompter warns when the text needs longer. */
+  durationFrames: number;
+  text: string;
+}
+
 export interface Project {
   meta: ProjectMeta;
   tracks: Track[];
   clips: Clip[];
   assets: Asset[];
   transcripts: Transcript[];
+  /** The script, for the prompter. Empty until someone writes one. */
+  cues: ScriptCue[];
 }
 
 /** Half-open frame range on the timeline [start, end). */

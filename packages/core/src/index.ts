@@ -4,6 +4,7 @@ export * from './timecode.ts';
 export * from './ops.ts';
 export * from './timing.ts';
 export * from './captions.ts';
+export * from './script.ts';
 export * from './doc.ts';
 export * from './templates.ts';
 export * from './packs.ts';
