@@ -371,6 +371,28 @@ neon-cli packs reload                # re-scan + recompile after editing a pack 
 neon-cli timeline insert --component [removed]Title --props '{"title":"Hello"}' --at 2s
 ```
 
+## Script and prompter
+
+The script is a list of **cues**: lines of narration pinned to when they should be said. It lives in
+the project, so cuts, undo, peers and agents all see the same script. A ripple cut through the whole
+timeline cuts the script too: cues inside the range go, cues across it are trimmed, later ones move.
+
+```bash
+neon-cli script                       # every cue: number, start, time it has, "tight" when the words need longer
+neon-cli script set cues.json         # replace the script (or - for stdin)
+neon-cli script edit 12 --text "New words"     # by number from `script`, or by cue id
+neon-cli script edit 12 --at 3:05 --duration 6s
+neon-cli script remove 4 5 · script clear
+```
+
+`cues.json` is an array of `{"at": T, "text": "…", "duration": T?}`. Without `duration` a cue runs to
+the next one (4 s for the last). "Tight" means the words take longer than the cue has, at about 180
+words a minute.
+
+In the app, **Script → Prompter** lists the cues, lights the one under the playhead and lets you edit
+the words in place. While a voice-over is recording, a large prompter covers the preview: the current
+line, the next one, a bar for how long the line has left, and a count-in before each line.
+
 ## Edit history
 
 The app keeps the last 30 whole-project checkpoints in `<project>.neon/history/`; they survive

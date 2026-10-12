@@ -130,12 +130,20 @@ export const TranscriptSchema = z.object({
   words: z.array(TranscriptWordSchema),
 });
 
+export const ScriptCueSchema = z.object({
+  id: z.string().min(1),
+  startFrame: z.number().int().min(0),
+  durationFrames: z.number().int().min(1),
+  text: z.string(),
+});
+
 export const ProjectSchema = z.object({
   meta: ProjectMetaSchema,
   tracks: z.array(TrackSchema),
   clips: z.array(ClipSchema),
   assets: z.array(AssetSchema),
   transcripts: z.array(TranscriptSchema).default([]),
+  cues: z.array(ScriptCueSchema).default([]),
 });
 
 // ---- Control API request bodies -------------------------------------------------------
@@ -309,6 +317,27 @@ export const MoveClipRequestSchema = z.object({
 export const SplitClipRequestSchema = z.object({
   id: z.string().min(1),
   at: TimeExpr,
+});
+
+/** A cue as written by a person or an agent: when to say it (timecode or frames), how long it has, the words. */
+const CueInputSchema = z.object({
+  id: z.string().min(1).optional(),
+  at: TimeExpr,
+  duration: TimeExpr.optional().describe('Time the line has; defaults to the gap until the next cue (or 4 s for the last).'),
+  text: z.string(),
+});
+
+export const ScriptSetRequestSchema = z.object({
+  cues: z.array(CueInputSchema),
+});
+
+export const ScriptUpdateRequestSchema = z.object({
+  id: z.string().min(1),
+  patch: z.object({ text: z.string().optional(), at: TimeExpr.optional(), duration: TimeExpr.optional() }),
+});
+
+export const ScriptRemoveRequestSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1),
 });
 
 export const RemoveClipRequestSchema = z.object({

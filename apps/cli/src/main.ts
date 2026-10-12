@@ -7,7 +7,7 @@
 import { parseArgs } from 'node:util';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { RENDER_PRESETS, bodyJsonSchema, catalogEntries, checkPlan, findRoute, getPreset, projectPreset, framesToTimecode, timelineFrameAt, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type CatalogEntry, type ImportAssetResponse, type RenderJob } from '@neon/core';
+import { RENDER_PRESETS, bodyJsonSchema, catalogEntries, checkPlan, findRoute, getPreset, projectPreset, framesToTimecode, cueIsTight, timelineFrameAt, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type CatalogEntry, type ImportAssetResponse, type RenderJob } from '@neon/core';
 import { renderHeadless } from '@neon/render';
 import { registerAllPacks } from '@neon/remotion-workspace/packs';
 import { registerInstalledPacks } from '@neon/core/node';
@@ -114,6 +114,10 @@ FX PACKS (folders with pack.json + index.tsx · installed to ~/.neon-video/packs
   packs uninstall <name> | packs reload   Delete from ~/.neon-video/packs · re-scan + recompile after editing
 
 EDIT HISTORY (checkpoints persisted in <project>.neon/history — survive restarts)
+  script [show]                           The script: timed cues for the prompter (tight = more words than time)
+  script set <cues.json|->                Replace the script: [{"at":"0:12","text":"…","duration":"5s"?}, …]
+  script edit <n|id> [--text T] [--at T] [--duration T]   Change one cue (n = its number in script show)
+  script remove <n|id...> | script clear  Delete cues
   history                                 Where you are: checkpoint N of M
   history undo | history redo             Step the project to the previous/next checkpoint
   history checkpoint                      Record the current state as a checkpoint (agents: do this before risky edits)
@@ -136,6 +140,7 @@ const { values: flags, positionals } = parseCli(() => parseArgs({
   strict: true,
   options: {
     json: { type: 'boolean', default: false },
+    text: { type: 'string' },
     endpoint: { type: 'string' },
     token: { type: 'string' },
     help: { type: 'boolean', short: 'h', default: false },
@@ -680,6 +685,47 @@ async function main(): Promise<void> {
         const r = await api.remove(ids);
         out(r, () => `Removed ${r.removed} clip(s)`);
       } else throw unknownSub('timeline', sub, ['show', 'insert', 'update', 'move', 'split', 'remove', 'cut', 'detach', 'speed']);
+      return;
+    }
+
+    case 'script': {
+      const resolveCue = async (ref: string) => {
+        const { cues } = await api.script();
+        const byNumber = /^\d+$/.test(ref) ? cues[Number(ref) - 1] : undefined;
+        const matches = byNumber ? [byNumber] : cues.filter((c) => c.id === ref || c.id.startsWith(ref));
+        if (matches.length !== 1) throw new ApiError('NOT_FOUND', matches.length ? `"${ref}" matches ${matches.length} cues` : `No cue "${ref}" (use its number from script show)`);
+        return matches[0]!;
+      };
+      if (sub === undefined || sub === 'show') {
+        const { cues } = await api.script();
+        const fps = (await api.status()).project.fps;
+        out({ cues }, () =>
+          cues.length
+            ? table(cues.map((c, i) => [String(i + 1), framesToTimecode(c.startFrame, fps), `${(c.durationFrames / fps).toFixed(1)}s`, cueIsTight(c, fps) ? 'tight' : '', c.text]), ['#', 'at', 'has', '', 'text'])
+            : 'No script yet. Write one with neon-cli script set cues.json',
+        );
+      } else if (sub === 'set') {
+        if (!rest[0]) throw usage('script', 'set');
+        const parsed = await readJsonArg(rest[0], true);
+        const list = Array.isArray(parsed) ? parsed : (parsed as { cues?: unknown }).cues;
+        if (!Array.isArray(list)) throw new ApiError('USAGE', 'script set wants a JSON array of cues, or {"cues": [...]}');
+        const { cues } = await api.scriptSet(list as { at: string | number; text: string }[]);
+        out({ cues }, () => `Wrote the script: ${cues.length} cue(s)`);
+      } else if (sub === 'edit') {
+        if (!rest[0] || (flags.text === undefined && flags.at === undefined && flags.duration === undefined)) throw usage('script', 'edit');
+        const cue = await resolveCue(rest[0]);
+        const updated = await api.scriptUpdate(cue.id, { text: flags.text, at: flags.at, duration: flags.duration });
+        out(updated, () => `Updated cue ${rest[0]}: ${updated.text}`);
+      } else if (sub === 'remove') {
+        if (!rest.length) throw usage('script', 'remove');
+        const ids = [];
+        for (const ref of rest) ids.push((await resolveCue(ref)).id);
+        const r = await api.scriptRemove(ids);
+        out(r, () => `Removed ${r.removed} cue(s)`);
+      } else if (sub === 'clear') {
+        const { cues } = await api.scriptSet([]);
+        out({ cues }, () => 'Cleared the script');
+      } else throw unknownSub('script', sub, ['show', 'set', 'edit', 'remove', 'clear']);
       return;
     }
 
