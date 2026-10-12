@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseRange, startAssetServer } from '../src/asset-server.ts';
@@ -31,5 +31,6 @@ test('asset server serves content-addressed files with ranges', async () => {
     assert.equal(missing.status, 404);
   } finally {
     await srv.close();
+    await rm(dir, { recursive: true, force: true });
   }
 });
