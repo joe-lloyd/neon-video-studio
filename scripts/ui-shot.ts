@@ -2,7 +2,8 @@
 /**
  * Screenshot the renderer UI on a machine without a desktop session (or for an agent): runs the
  * headless Chrome that Remotion already downloaded, opens a URL, runs optional steps, saves PNGs.
- * Talks the DevTools protocol over Node's built-in WebSocket — no dependencies.
+ * Talks the DevTools protocol over Node's built-in WebSocket — no dependencies. A fake microphone
+ * is granted, so voice-over recording (and the prompter it shows) can be shot too.
  *
  *   node scripts/ui-shot.ts <url> <out.png> [--size 1480x900] [--wait 4000]
  *        [--step "js expression"]... [--shot-after-each]
@@ -45,7 +46,7 @@ function findChrome(): string {
   throw new Error('No headless Chrome found: render once (Remotion downloads it) or set NEON_CHROME');
 }
 
-const chrome = spawn(findChrome(), ['--headless', '--remote-debugging-port=0', `--window-size=${width},${height}`, '--hide-scrollbars', '--autoplay-policy=no-user-gesture-required', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+const chrome = spawn(findChrome(), ['--headless', '--remote-debugging-port=0', `--window-size=${width},${height}`, '--hide-scrollbars', '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
 const wsUrl = await new Promise<string>((resolve, reject) => {
   let buf = '';
   chrome.stderr.on('data', (d: Buffer) => {

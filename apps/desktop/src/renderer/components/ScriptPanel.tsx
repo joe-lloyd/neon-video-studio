@@ -4,6 +4,7 @@ import { Captions, NeonIcon, Scissors, VolumeX } from '@neon/icon-kit';
 import { useEditor } from '../lib/context.ts';
 import { kbdFor } from '../lib/kbd.ts';
 import { useSelector, useStoreValue } from '../lib/store.ts';
+import { PrompterView } from './Prompter.tsx';
 
 /**
  * Text-driven editing: the transcript of the selected clip's asset (or the first transcript in
@@ -12,6 +13,23 @@ import { useSelector, useStoreValue } from '../lib/store.ts';
  * the audio in place — the fix-my-voice-over case, nothing on the timeline moves.
  */
 export function ScriptPanel() {
+  const editor = useEditor();
+  const mode = useSelector(editor.ui, (u) => u.scriptMode);
+  const cues = useStoreValue(editor.project).project.cues.length;
+  return (
+    <>
+      <div className="script-mode">
+        <button className={mode === 'transcript' ? 'on' : ''} onClick={() => editor.ui.set({ scriptMode: 'transcript' })}>Transcript</button>
+        <button className={mode === 'prompter' ? 'on' : ''} onClick={() => editor.ui.set({ scriptMode: 'prompter' })}>
+          Prompter{cues ? ` · ${cues}` : ''}
+        </button>
+      </div>
+      {mode === 'prompter' ? <PrompterView /> : <TranscriptView />}
+    </>
+  );
+}
+
+function TranscriptView() {
   const editor = useEditor();
   const { project } = useStoreValue(editor.project);
   const selection = useSelector(editor.ui, (u) => u.selection);

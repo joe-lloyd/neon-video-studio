@@ -93,6 +93,10 @@ export interface UiState {
   aiCaps: AiCapabilities | null;
   /** Words selected in the Script panel — possibly non-contiguous; anchor drives shift-range extension. */
   scriptSelection: { assetId: string; words: number[]; anchor: number } | null;
+  /** Script tab: word-level transcript editing, or the prompter for the planned script. */
+  scriptMode: 'transcript' | 'prompter';
+  /** The big recording prompter was dismissed for this take. */
+  prompterHidden: boolean;
   /** Right sidebar width in px (drag its left edge). */
   sidebarWidth: number;
   /** Project overview / start page. */
@@ -122,6 +126,7 @@ export const EMPTY_PROJECT: Project = {
   clips: [],
   assets: [],
   transcripts: [],
+  cues: [],
 };
 
 export class Editor {
@@ -151,6 +156,8 @@ export class Editor {
     aiJobs: [],
     aiCaps: null,
     scriptSelection: null,
+    scriptMode: 'transcript',
+    prompterHidden: false,
     sidebarWidth: 320,
     showStart: true,
     recentProjects: [],
@@ -397,7 +404,7 @@ export class Editor {
       const startFrame = this.playhead.get().frame;
       try {
         const { device } = await this.bridge.request('voStart', {});
-        this.ui.set({ recording: { startFrame, startedAt: Date.now() } });
+        this.ui.set({ recording: { startFrame, startedAt: Date.now() }, prompterHidden: false });
         this.noteUiAction('vo.record', `Recording voice-over (${device}) from frame ${startFrame}`);
         this.player?.play();
       } catch (err) {
@@ -423,7 +430,7 @@ export class Editor {
     };
     this.mediaRecorder = recorder;
     recorder.start(250);
-    this.ui.set({ recording: { startFrame, startedAt: Date.now() } });
+    this.ui.set({ recording: { startFrame, startedAt: Date.now() }, prompterHidden: false });
     this.noteUiAction('vo.record', `Recording voice-over from frame ${startFrame}`);
     // Roll the timeline so you can speak to the picture (wear headphones or mute the preview).
     this.player?.play();
