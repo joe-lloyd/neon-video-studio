@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { CLIP_COLORS, framesToTimecode, snapFrame, sortClips, sortTracks, trackKindForClip, type Clip, type Track, type TrackKind } from '@neon/core';
 import { Eye, EyeOff, Lock, NeonIcon, Plus, Trash2, Unlock, Volume2, VolumeX } from '@neon/icon-kit';
 import { useEditor } from '../lib/context.ts';
+import { followScroll } from '../lib/follow-playhead.ts';
 import { kbdFor } from '../lib/kbd.ts';
 import { useElementSize } from '../lib/hooks.ts';
 import { useSelector, useStoreValue } from '../lib/store.ts';
@@ -83,11 +84,14 @@ export function Timeline() {
   }, [project.clips, editor]);
 
   // ---- scrubbing ---------------------------------------------------------------------
+  const scrubbing = useRef(false); // the user is dragging the playhead; the view must not move under them
   const scrub = (e: ReactPointerEvent<HTMLElement>) => {
+    scrubbing.current = true;
     editor.player?.pause();
     editor.seek(frameAt(e.clientX));
     const move = (ev: PointerEvent) => editor.seek(frameAt(ev.clientX));
     const up = () => {
+      scrubbing.current = false;
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
@@ -252,13 +256,15 @@ export function Timeline() {
     }
   };
 
-  // ---- keep playhead in view while playing -------------------------------------------
+  // ---- keep the playhead in view: page while playing, recentre after a jump ----------------
   const playhead = useStoreValue(editor.playhead);
   useEffect(() => {
     const el = lanesRef.current;
-    if (!el || !playhead.playing) return;
-    const x = playhead.frame * pxPerFrame;
-    if (x < el.scrollLeft || x > el.scrollLeft + el.clientWidth - 40) el.scrollLeft = Math.max(0, x - 60);
+    if (!el || scrubbing.current) return;
+    const left = followScroll({ x: playhead.frame * pxPerFrame, scrollLeft: el.scrollLeft, width: el.clientWidth, playing: playhead.playing });
+    if (left === null) return;
+    if (playhead.playing) el.scrollLeft = left;
+    else el.scrollTo({ left, behavior: 'smooth' });
   }, [playhead, pxPerFrame, lanesRef]);
 
   const onWheel = (e: React.WheelEvent) => {
