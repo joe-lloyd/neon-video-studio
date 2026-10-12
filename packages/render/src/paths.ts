@@ -24,8 +24,8 @@ export function renderPaths(repoRoot: string): RenderPaths {
   return {
     repoRoot,
     workerPath: join(repoRoot, 'packages/render/src/worker.ts'),
-    entryPoint: join(repoRoot, 'apps/remotion-workspace/src/index.ts'),
-    watchDirs: [join(repoRoot, 'apps/remotion-workspace/src'), join(repoRoot, 'packages/core/src')],
+    entryPoint: join(repoRoot, 'apps/compositions/src/index.ts'),
+    watchDirs: [join(repoRoot, 'apps/compositions/src'), join(repoRoot, 'packages/core/src')],
   };
 }
 
@@ -39,8 +39,8 @@ export function runtimePaths(dir: string): RenderPaths {
   return {
     repoRoot: dir,
     workerPath: join(dir, 'src/worker.ts'),
-    entryPoint: join(dir, 'node_modules/@neon/remotion-workspace/src/index.ts'),
-    watchDirs: [join(dir, 'node_modules/@neon/remotion-workspace/src'), join(dir, 'node_modules/@neon/core/src')],
+    entryPoint: join(dir, 'node_modules/@neon/compositions/src/index.ts'),
+    watchDirs: [join(dir, 'node_modules/@neon/compositions/src'), join(dir, 'node_modules/@neon/core/src')],
   };
 }
 

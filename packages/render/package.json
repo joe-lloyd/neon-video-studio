@@ -17,7 +17,7 @@
     "@neon/core": "workspace:*",
     "@neon/fx-kit": "workspace:*",
     "@neon/motion": "workspace:*",
-    "@neon/remotion-workspace": "workspace:*"
+    "@neon/compositions": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

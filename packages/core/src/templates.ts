@@ -6,7 +6,7 @@ import type { PackManifest, PackRecord, PackSource } from './packs.ts';
  *
  * Only metadata lives here (name, prop schema, defaults) so that the CLI, the main process
  * and the UI can validate and describe templates without importing React. The React
- * implementations live in apps/remotion-workspace and are looked up by `name`.
+ * implementations live in apps/compositions and are looked up by `name`.
  */
 
 const cssColor = z.string().min(1).describe('CSS colour');

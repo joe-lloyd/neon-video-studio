@@ -48,7 +48,7 @@ export function ensureRenderRuntime(opts: { version: string; settings: Settings 
 async function resolveRuntime({ version, settings }: { version: string; settings: Settings }, onLog: (line: string) => void): Promise<RenderRuntime> {
   const fromEnv = process.env.NEON_RENDER_RUNTIME_DIR;
   if (fromEnv) {
-    if (!isRenderRuntime(fromEnv)) throw new Error(`NEON_RENDER_RUNTIME_DIR is set but ${fromEnv} is not a render runtime (expected src/worker.ts + node_modules/@neon/remotion-workspace)`);
+    if (!isRenderRuntime(fromEnv)) throw new Error(`NEON_RENDER_RUNTIME_DIR is set but ${fromEnv} is not a render runtime (expected src/worker.ts + node_modules/@neon/compositions)`);
     return { paths: runtimePaths(fromEnv), cwd: fromEnv, source: 'env' };
   }
   if (settings.renderRuntimeDir) {

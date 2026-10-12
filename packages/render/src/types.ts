@@ -27,7 +27,7 @@ export interface RenderEnv {
   assetQuery?: string;
   /** Directory for cached composition bundles (one sub-directory per fingerprint). */
   bundleCacheDir: string;
-  /** Absolute path of the composition entry (apps/remotion-workspace/src/index.ts). */
+  /** Absolute path of the composition entry (apps/compositions/src/index.ts). */
   entryPoint: string;
   /** Directories whose contents invalidate the bundle cache. */
   watchDirs: string[];

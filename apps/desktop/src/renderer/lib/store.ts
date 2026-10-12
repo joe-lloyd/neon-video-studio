@@ -26,12 +26,12 @@ import {
   unregisterPack,
 } from '@neon/core';
 import { PeerSession, type SessionSnapshot } from '@neon/p2p/browser';
-import { registerAllPacks } from '@neon/remotion-workspace/packs';
+import { registerAllPacks } from '@neon/compositions/packs';
 
 registerAllPacks();
 import type { Bridge } from './bridge.ts';
 import type { HistoryStatus, PackInfo, RoomState, UpdateState } from '../../shared/rpc.ts';
-import { registerRuntimeComponents, unregisterRuntimeComponents } from '@neon/remotion-workspace/templates';
+import { registerRuntimeComponents, unregisterRuntimeComponents } from '@neon/compositions/templates';
 import { importPackBundle } from './pack-host.ts';
 import { FULL_FRAME, anchoredTransform, type NaturalBox } from './transform-math.ts';
 

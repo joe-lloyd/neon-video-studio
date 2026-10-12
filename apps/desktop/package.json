@@ -23,7 +23,7 @@
     "@neon/icon-kit": "workspace:*",
     "@neon/motion": "workspace:*",
     "@neon/p2p": "workspace:*",
-    "@neon/remotion-workspace": "workspace:*",
+    "@neon/compositions": "workspace:*",
     "@neon/render": "workspace:*",
     "lucide-react": "^1.0.0",
     "react": "^19.1.0",

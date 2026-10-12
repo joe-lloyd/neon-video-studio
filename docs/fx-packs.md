@@ -189,7 +189,7 @@ Installed packs are compiled by the app, and the host provides exactly these mod
 **No other npm dependencies are available to installed packs.** There is no `node_modules` in
 `~/.neon-video/packs/<name>/`, so an `import 'd3'` fails at compile time. If you need a library,
 vendor the code you use into the pack folder as a relative file, or build the pack as a built-in
-inside `apps/remotion-workspace` where the workspace's dependencies are available.
+inside `apps/compositions` where the workspace's dependencies are available.
 
 ### `@neon/fx-kit` helpers
 
@@ -299,12 +299,12 @@ neon-cli timeline insert --component [removed]MorphLoader --props '{"color":"#de
 
 **neon-essentials** (built-in): `NeonBadge` (animated pill badge) and `KineticList` (staggered
 bullet points) — small, readable components that make good copy-paste starting points. Source:
-`apps/remotion-workspace/src/templates/packs/neon-essentials/`.
+`apps/compositions/src/templates/packs/neon-essentials/`.
 
 **demo-kit** (built-in): overlays for software demos. Positions are fractions of the frame (0..1,
 origin top-left), so read them off a screenshot as `pixel / width` and `pixel / height`; the same
 values work at any output size. Every component animates in and out by itself, so clips need no
-`animateIn`. Source: `apps/remotion-workspace/src/templates/packs/demo-kit/`.
+`animateIn`. Source: `apps/compositions/src/templates/packs/demo-kit/`.
 
 | Template | What it does | Key props |
 |---|---|---|
