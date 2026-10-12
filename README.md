@@ -122,10 +122,6 @@ commands in **AI → engines** / `ai status`). The Vision helper compiles itself
 |---|---|
 | ![ai](docs/screenshots/ai-panel.png) | ![script](docs/screenshots/script-panel.png) |
 
-| Background removal on real footage (Apple Vision person matte) |
-|---|
-| ![matte](docs/screenshots/ai-matte-frame.png) |
-
 ## Docs
 
 - **[Screen demos](docs/screen-demos.md)** — record, clean, edit and render a narrated demo, mostly by agent
