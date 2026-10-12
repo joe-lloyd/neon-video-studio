@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { clearInstanceInfo, isProcessAlive, readInstanceInfo, writeInstanceInfo } from '@neon/core/node';
-import { registerAllPacks } from '@neon/remotion-workspace/packs';
+import { registerAllPacks } from '@neon/compositions/packs';
 import { AssetManager } from './assets.ts';
 import type { MainContext } from './context.ts';
 import { startControlServer, type RunningServer } from './control-server.ts';

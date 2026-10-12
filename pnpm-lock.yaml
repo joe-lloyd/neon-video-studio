@@ -17,15 +17,15 @@ importers:
 
   apps/cli:
     dependencies:
+      '@neon/compositions':
+        specifier: workspace:*
+        version: link:../compositions
       '@neon/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@neon/fx-kit':
         specifier: workspace:*
         version: link:../../packages/fx-kit
-      '@neon/remotion-workspace':
-        specifier: workspace:*
-        version: link:../remotion-workspace
       '@neon/render':
         specifier: workspace:*
         version: link:../../packages/render
@@ -37,11 +37,42 @@ importers:
         specifier: ^5.9.0
         version: 5.9.3
 
+  apps/compositions:
+    dependencies:
+      '@neon/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@neon/fx-kit':
+        specifier: workspace:*
+        version: link:../../packages/fx-kit
+      '@neon/motion':
+        specifier: workspace:*
+        version: link:../../packages/motion
+      react:
+        specifier: ^19.1.0
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.1.0
+        version: 19.2.8(react@19.2.8)
+    devDependencies:
+      '@types/react':
+        specifier: ^19.1.0
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.1.0
+        version: 19.2.4(@types/react@19.2.18)
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+
   apps/desktop:
     dependencies:
       '@neon/ai':
         specifier: workspace:*
         version: link:../../packages/ai
+      '@neon/compositions':
+        specifier: workspace:*
+        version: link:../compositions
       '@neon/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -57,9 +88,6 @@ importers:
       '@neon/p2p':
         specifier: workspace:*
         version: link:../../packages/p2p
-      '@neon/remotion-workspace':
-        specifier: workspace:*
-        version: link:../remotion-workspace
       '@neon/render':
         specifier: workspace:*
         version: link:../../packages/render
@@ -109,34 +137,6 @@ importers:
       vite:
         specifier: ^7.1.0
         version: 7.3.6(@types/node@24.13.3)(terser@5.50.0)
-
-  apps/remotion-workspace:
-    dependencies:
-      '@neon/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@neon/fx-kit':
-        specifier: workspace:*
-        version: link:../../packages/fx-kit
-      '@neon/motion':
-        specifier: workspace:*
-        version: link:../../packages/motion
-      react:
-        specifier: ^19.1.0
-        version: 19.2.8
-      react-dom:
-        specifier: ^19.1.0
-        version: 19.2.8(react@19.2.8)
-    devDependencies:
-      '@types/react':
-        specifier: ^19.1.0
-        version: 19.2.18
-      '@types/react-dom':
-        specifier: ^19.1.0
-        version: 19.2.4(@types/react@19.2.18)
-      typescript:
-        specifier: ^5.9.0
-        version: 5.9.3
 
   examples/packs/boba-expressive:
     devDependencies:
@@ -284,6 +284,9 @@ importers:
 
   packages/render:
     dependencies:
+      '@neon/compositions':
+        specifier: workspace:*
+        version: link:../../apps/compositions
       '@neon/core':
         specifier: workspace:*
         version: link:../core
@@ -293,9 +296,6 @@ importers:
       '@neon/motion':
         specifier: workspace:*
         version: link:../motion
-      '@neon/remotion-workspace':
-        specifier: workspace:*
-        version: link:../../apps/remotion-workspace
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

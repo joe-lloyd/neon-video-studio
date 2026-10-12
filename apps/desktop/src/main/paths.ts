@@ -12,7 +12,7 @@ export function repoRoot(): string {
   for (const start of candidates) {
     let dir = resolve(start);
     for (let i = 0; i < 12; i++) {
-      if (existsSync(join(dir, 'pnpm-workspace.yaml')) && existsSync(join(dir, 'apps/remotion-workspace'))) return dir;
+      if (existsSync(join(dir, 'pnpm-workspace.yaml')) && existsSync(join(dir, 'apps/compositions'))) return dir;
       const parent = dirname(dir);
       if (parent === dir) break;
       dir = parent;

@@ -77,7 +77,7 @@ node scripts/e2e.ts                 # e2e through the CLI on a headless app: imp
 neon-video-editor/
 ├── apps/desktop/            Electrobun app · src/main (Bun) · src/renderer (React 19 + Vite)
 ├── apps/cli/                neon-cli
-├── apps/remotion-workspace/ Timeline composition + templates
+├── apps/compositions/ Timeline composition + templates
 ├── packages/core/           Domain model, Yjs ProjectDoc, timecode, schemas, API protocol
 ├── packages/p2p/            Sync + signaling servers, LAN discovery, browser PeerSession
 ├── packages/motion/         Frame engine: composition primitives, preview Player, headless renderer

@@ -4,14 +4,14 @@ import { generateEntry, scaleFrameRange } from '../src/worker.ts';
 
 test('generateEntry registers packs before handing the compositions to the render page', () => {
   const src = generateEntry({
-    entryPoint: '/repo/apps/remotion-workspace/src/index.ts',
+    entryPoint: '/repo/apps/compositions/src/index.ts',
     packs: [
       { name: 'boba-expressive', entry: '/home/u/.neon-video/packs/boba-expressive/index.tsx' },
       { name: 'other', entry: 'C:\\packs\\other\\index.tsx' },
     ],
   });
   assert.match(src, /import \{ registerRenderRoot \} from '@neon\/motion\/render-page';/);
-  assert.match(src, /import \{ TimelineComposition, ContactSheet, registerRuntimeComponents \} from "\/repo\/apps\/remotion-workspace\/src\/index.ts";/);
+  assert.match(src, /import \{ TimelineComposition, ContactSheet, registerRuntimeComponents \} from "\/repo\/apps\/compositions\/src\/index.ts";/);
   assert.match(src, /import \* as pack0 from "\/home\/u\/\.neon-video\/packs\/boba-expressive\/index\.tsx";/);
   // Windows paths are JSON-escaped, not mangled.
   assert.ok(src.includes('import * as pack1 from "C:\\\\packs\\\\other\\\\index.tsx";'));

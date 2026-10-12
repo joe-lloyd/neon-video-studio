@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Player, type PlayerRef } from '@neon/motion/player';
-import { TimelineComposition, type TimelineProps } from '@neon/remotion-workspace/composition';
+import { TimelineComposition, type TimelineProps } from '@neon/compositions/composition';
 import { useEditor } from '../lib/context.ts';
 import { CanvasEditor } from './CanvasEditor.tsx';
 import { useElementSize } from '../lib/hooks.ts';

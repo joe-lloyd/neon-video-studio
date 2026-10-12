@@ -10,7 +10,7 @@
 import { useMemo, useState, useSyncExternalStore, type ComponentType, type DragEvent } from 'react';
 import { Player, Thumbnail } from '@neon/motion/player';
 import { CORE_PACK_NAME, getTemplatesVersion, listTemplates, subscribeTemplates, templateDefaults, type ComponentTemplate } from '@neon/core';
-import { getTemplateComponent } from '@neon/remotion-workspace/templates';
+import { getTemplateComponent } from '@neon/compositions/templates';
 import {
   BarChart3,
   Brain,

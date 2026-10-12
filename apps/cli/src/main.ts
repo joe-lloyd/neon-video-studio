@@ -9,7 +9,7 @@ import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { RENDER_PRESETS, bodyJsonSchema, catalogEntries, checkPlan, findRoute, getPreset, projectPreset, framesToTimecode, cueIsTight, timelineFrameAt, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type CatalogEntry, type ImportAssetResponse, type RenderJob } from '@neon/core';
 import { renderHeadless } from '@neon/render';
-import { registerAllPacks } from '@neon/remotion-workspace/packs';
+import { registerAllPacks } from '@neon/compositions/packs';
 import { registerInstalledPacks } from '@neon/core/node';
 
 registerAllPacks();
