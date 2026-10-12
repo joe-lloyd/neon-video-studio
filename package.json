@@ -1,6 +1,6 @@
 {
   "name": "neon-video-editor",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "description": "Neon Video Studio — Electrobun desktop video editor with its own React frame engine (@neon/motion), with P2P (Yjs) sync and an agent-friendly CLI",
