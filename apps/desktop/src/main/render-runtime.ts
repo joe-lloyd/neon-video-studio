@@ -71,27 +71,7 @@ async function resolveRuntime({ version, settings }: { version: string; settings
       if (entry !== `v${version}`) await rm(join(base, entry), { recursive: true, force: true }).catch(() => undefined);
     }
   }
-  await shareRemotionCache(dir);
   return { paths: runtimePaths(dir), cwd: dir, source: 'downloaded' };
-}
-
-/**
- * Remotion downloads its headless browser into <cwd>/node_modules/.remotion. Point that at a
- * shared per-user dir so a new runtime version doesn't re-download ~150 MB of Chrome.
- */
-async function shareRemotionCache(dir: string): Promise<void> {
-  const shared = join(neonHome(), 'remotion-bin');
-  const local = join(dir, 'node_modules', '.remotion');
-  try {
-    await mkdir(shared, { recursive: true });
-    if (!existsSync(local)) {
-      const { symlink } = await import('node:fs/promises');
-      await symlink(shared, local, process.platform === 'win32' ? 'junction' : 'dir');
-    }
-  } catch (err) {
-    // Non-fatal: Remotion just downloads into the runtime dir instead.
-    console.warn('[render] could not share the Remotion browser cache:', (err as Error).message);
-  }
 }
 
 async function downloadRuntime(dir: string, version: string, onLog: (line: string) => void): Promise<void> {

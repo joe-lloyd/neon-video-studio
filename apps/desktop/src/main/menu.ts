@@ -51,7 +51,7 @@ export function installMenu(onAction: (action: string) => void): void {
     },
     {
       label: 'Help',
-      submenu: [{ label: 'CLI: neon-cli --help', action: 'help:cli' }, { label: 'Remotion licensing', action: 'help:remotion-license' }],
+      submenu: [{ label: 'CLI: neon-cli --help', action: 'help:cli' }],
     },
   ]);
 

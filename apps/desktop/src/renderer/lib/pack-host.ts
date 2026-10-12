@@ -1,14 +1,15 @@
 /**
- * Host modules for compiled FX packs. The main process bundles a pack with `react`, `remotion`,
+ * Host modules for compiled FX packs. The main process bundles a pack with `react`, `@neon/motion` (or `remotion`),
  * `@neon/core` and `@neon/fx-kit` rewritten to `globalThis.__neonPackHost[...]`; we fill that
  * object with THIS bundle's module instances so pack components share our React (hooks work) and
- * our Remotion (useCurrentFrame/useVideoConfig read the Player's context).
+ * our engine (useCurrentFrame/useVideoConfig read the Player's context). Packs written against
+ * Remotion's API import `remotion`; that name is served by the same @neon/motion instance.
  */
 import * as React from 'react';
 import * as JsxRuntime from 'react/jsx-runtime';
 import * as JsxDevRuntime from 'react/jsx-dev-runtime';
 import * as ReactDOM from 'react-dom';
-import * as Remotion from 'remotion';
+import * as Motion from '@neon/motion';
 import * as Core from '@neon/core';
 import * as FxKit from '@neon/fx-kit';
 
@@ -24,7 +25,8 @@ export function installPackHost(): void {
     'react/jsx-runtime': JsxRuntime,
     'react/jsx-dev-runtime': JsxDevRuntime,
     'react-dom': ReactDOM,
-    remotion: Remotion,
+    '@neon/motion': Motion,
+    remotion: Motion,
     '@neon/core': Core,
     '@neon/fx-kit': FxKit,
   };

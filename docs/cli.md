@@ -233,7 +233,7 @@ fresh machine works without any manual steps. The rest is opt-in.
 
 | Engine | Used for | macOS | Windows | Linux |
 |---|---|---|---|---|
-| render runtime | exporting video (Remotion worker + compositions) | auto (first render) | auto (first render) | auto (first render) |
+| render runtime | exporting video (render worker + compositions) | auto (first render) | auto (first render) | auto (first render) |
 | ffmpeg + ffprobe | import probing, rips, denoise/enhance, VO and screen recording | auto (static build) | auto (static build) | auto (static build) |
 | yt-dlp | ripping web video | auto (brew → static) | auto (winget → static) | auto (static) |
 | whisper.cpp + model | transcripts, fillers, text editing | `ai setup` (brew) | manual (hint shown) | manual (hint shown) |
@@ -318,7 +318,7 @@ neon-cli render --headless --project ./MyProject.neon --output out.mp4 [--preset
 ```
 
 Installed apps don't need the source repo: the first render downloads a self-contained **render
-runtime** (~150 MB: Remotion worker + compositions + toolchain, published with every release) to
+runtime** (render worker + compositions + bundler, published with every release) to
 `~/.neon-video/render-runtime/v<version>` and keeps using it. Override the location with
 `renderRuntimeDir` in `~/.neon-video/settings.json` or the `NEON_RENDER_RUNTIME_DIR` env var;
 running from a source checkout keeps using the repo directly.

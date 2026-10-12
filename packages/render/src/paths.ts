@@ -32,7 +32,8 @@ export function renderPaths(repoRoot: string): RenderPaths {
 /**
  * Paths inside a self-contained render runtime: the output of
  * `pnpm --filter @neon/render deploy --legacy --prod <dir>` — this package's sources at the root
- * plus a real node_modules with @neon/* (as TS source) and the Remotion toolchain.
+ * plus a real node_modules with @neon/* (as TS source), React and esbuild. Rendering also needs
+ * ffmpeg/ffprobe and a Chrome (an installed one, or chrome-headless-shell downloaded on first use).
  */
 export function runtimePaths(dir: string): RenderPaths {
   return {

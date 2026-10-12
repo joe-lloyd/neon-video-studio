@@ -13,14 +13,15 @@
     "build": "echo '@neon/fx-kit is consumed as TypeScript source'"
   },
   "peerDependencies": {
-    "react": "^19.0.0",
-    "remotion": "4.0.515"
+    "react": "^19.0.0"
+  },
+  "dependencies": {
+    "@neon/motion": "workspace:*"
   },
   "devDependencies": {
     "@neon/core": "workspace:*",
     "@types/react": "^19.1.0",
     "react": "^19.1.0",
-    "remotion": "4.0.515",
     "typescript": "^5.9.0"
   }
 }

@@ -88,8 +88,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Self-contained render runtime (worker + compositions + Remotion toolchain incl. the
-          # platform compositor). Installed apps download this on their first render.
+          # Self-contained render runtime (worker + compositions + @neon/motion + React + esbuild with
+          # its platform binary). Installed apps download this on their first render; Chrome and
+          # ffmpeg are not in the pack (system Chrome or a one-time chrome-headless-shell download).
           # node-linker=hoisted: a plain npm-style node_modules with REAL directories — pnpm's
           # default .pnpm layout is symlinks, which Windows cannot extract without admin rights
           # (v0.6.3's windows pack shipped 435 symlinks and broke every render).

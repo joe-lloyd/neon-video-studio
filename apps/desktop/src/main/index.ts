@@ -303,11 +303,8 @@ async function main(): Promise<void> {
           else if (state.phase === 'error' || state.phase === 'unsupported') rpc.send.toast({ kind: 'info', message: `Update check: ${state.error ?? 'unavailable'}` });
           break;
         }
-        case 'help:remotion-license':
-          Utils.openExternal('https://www.remotion.pro/license');
-          break;
         case 'about':
-          rpc.send.toast({ kind: 'info', message: `Neon Video Studio ${VERSION} · Electrobun + Bun ${Bun.version} · Remotion` });
+          rpc.send.toast({ kind: 'info', message: `Neon Video Studio ${VERSION} · Electrobun + Bun ${Bun.version} · Neon motion engine` });
           break;
         default:
           console.log('[menu] unhandled action', action);

@@ -29,7 +29,7 @@ export default defineConfig(async () => ({
   resolve: {
     alias: await electrobunAlias(),
     // One copy of these at runtime is essential (Yjs docs and React hooks break otherwise).
-    dedupe: ['react', 'react-dom', 'yjs', 'remotion', '@remotion/player'],
+    dedupe: ['react', 'react-dom', 'yjs', '@neon/motion'],
   },
   build: {
     outDir: '../../dist',
@@ -44,6 +44,6 @@ export default defineConfig(async () => ({
   },
   optimizeDeps: {
     // Workspace packages are consumed as TS source; let Vite pre-bundle their deps.
-    include: ['react', 'react-dom', 'yjs', 'y-websocket', 'y-webrtc', 'remotion', '@remotion/player', 'lucide-react', 'zod'],
+    include: ['react', 'react-dom', 'yjs', 'y-websocket', 'y-webrtc', 'lucide-react', 'zod'],
   },
 }));

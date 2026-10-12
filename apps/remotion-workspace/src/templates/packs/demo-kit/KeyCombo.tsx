@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import type { TemplateProps } from '@neon/core';
 import { SANS, useUiScale } from '../../shared.ts';
 import type { KEY_COMBO } from './meta.ts';

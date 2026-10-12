@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import { cueAt, parseTrackList, projectCaptions, type CaptionCue, type CaptionsProps } from '@neon/core';
 import { useTimelineFrame, useTimelineProject } from '@neon/fx-kit';
 import { SANS, useUiScale } from './shared.ts';

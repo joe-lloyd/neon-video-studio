@@ -1,4 +1,4 @@
-/** Cyber Neon design tokens — single source of truth for UI, icons and Remotion templates. */
+/** Cyber Neon design tokens — single source of truth for UI, icons and composition templates. */
 export const NEON = {
   magenta: '#FF007F',
   cyan: '#00F3FF',

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Screenshot the renderer UI on a machine without a desktop session (or for an agent): runs the
- * headless Chrome that Remotion already downloaded, opens a URL, runs optional steps, saves PNGs.
+ * same headless Chrome the renderer uses (@neon/motion/node), opens a URL, runs optional steps, saves PNGs.
  * Talks the DevTools protocol over Node's built-in WebSocket — no dependencies. A fake microphone
  * is granted, so voice-over recording (and the prompter it shows) can be shot too.
  *
@@ -13,10 +13,9 @@
  * app: http://localhost:5173/?port=<port>&token=<token> (both in $NEON_HOME/instance.json).
  */
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
+import { findDownloadedShell, resolveBrowserExecutable } from '../packages/motion/src/node/browser.ts';
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,
@@ -30,23 +29,13 @@ if (!url || !out) {
 const [width, height] = values.size.split('x').map(Number);
 const wait = Number(values.wait);
 
-function findChrome(): string {
+/** $NEON_CHROME, else the renderer's own choice: a downloaded Chrome Headless Shell, an installed Chrome, or a fresh download. */
+async function findChrome(): Promise<string> {
   if (process.env.NEON_CHROME) return process.env.NEON_CHROME;
-  const root = join(fileURLToPath(new URL('..', import.meta.url)), 'node_modules/.remotion/chrome-headless-shell');
-  if (existsSync(root)) {
-    for (const plat of readdirSync(root)) {
-      const dir = join(root, plat);
-      if (!existsSync(dir) || plat === 'VERSION') continue;
-      for (const sub of readdirSync(dir)) {
-        const bin = join(dir, sub, process.platform === 'win32' ? 'chrome-headless-shell.exe' : 'chrome-headless-shell');
-        if (existsSync(bin)) return bin;
-      }
-    }
-  }
-  throw new Error('No headless Chrome found: render once (Remotion downloads it) or set NEON_CHROME');
+  return (await findDownloadedShell()) ?? (await resolveBrowserExecutable());
 }
 
-const chrome = spawn(findChrome(), ['--headless', '--remote-debugging-port=0', `--window-size=${width},${height}`, '--hide-scrollbars', '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+const chrome = spawn(await findChrome(), ['--headless', '--remote-debugging-port=0', `--window-size=${width},${height}`, '--hide-scrollbars', '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
 const wsUrl = await new Promise<string>((resolve, reject) => {
   let buf = '';
   chrome.stderr.on('data', (d: Buffer) => {

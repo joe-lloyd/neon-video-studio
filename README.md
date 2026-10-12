@@ -4,7 +4,7 @@
 <h1 align="center">Neon Video Studio</h1>
 <p align="center">
   A desktop video editor you can drive by hand <em>or</em> by AI.<br>
-  <b>Electrobun</b> (Bun main process + system WebView) · <b>Remotion</b> (React compositions for preview <em>and</em> export) · <b>Yjs</b> (CRDT project state, peer‑to‑peer over WebRTC / LAN — no cloud)
+  <b>Electrobun</b> (Bun main process + system WebView) · <b>@neon/motion</b> (our own frame-based React engine for preview <em>and</em> export) · <b>Yjs</b> (CRDT project state, peer‑to‑peer over WebRTC / LAN — no cloud)
 </p>
 
 <p align="center">
@@ -22,7 +22,7 @@ watch an agent edit while you keep control of the timeline.
 
 - **Timeline editing** — video / audio / FX tracks, drag, trim, snap, ripple insert, split at playhead, undo/redo (only your own edits), keyboard shortcuts (`?`)
 - **React templates as clips** — TextOverlay, LowerThird, TitleCard, Countdown, ProgressBar, Watermark, SolidColor, plus installable FX packs (see [docs/fx-packs.md](docs/fx-packs.md)); props edited in the inspector, validated with zod, rendered identically in preview and export
-- **Export** — H.264 MP4 through `@remotion/renderer` on the app's own bundled Bun runtime (no Node required at runtime); presets from draft to 4K, vertical and square
+- **Export** — H.264 MP4 through Neon's own renderer (`@neon/motion/node`: headless Chrome over CDP + FFmpeg) on the app's bundled Bun runtime (no Node required at runtime); presets from draft to 4K, vertical and square
 - **Agent/CLI control** — `neon-cli` covers projects, media, timeline, tracks, FX packs, edit history, render, rooms, preview transport and a live event stream; `--json` everywhere
 - **P2P collaboration** — host a room, others on the LAN join by code (UDP discovery, no server); Yjs CRDT keeps everyone converged, peers' playheads are visible, assets replicate by SHA‑256
 - **Screen demos** — record screen + narration in the app, then let an agent clean the ums and pauses, zoom, speed up waiting, add callouts and captions, check frames and render, all through `neon-cli` ([docs/screen-demos.md](docs/screen-demos.md))
@@ -80,7 +80,8 @@ neon-video-editor/
 ├── apps/remotion-workspace/ Timeline composition + templates
 ├── packages/core/           Domain model, Yjs ProjectDoc, timecode, schemas, API protocol
 ├── packages/p2p/            Sync + signaling servers, LAN discovery, browser PeerSession
-├── packages/render/         Remotion render worker + headless renders
+├── packages/motion/         Frame engine: composition primitives, preview Player, headless renderer
+├── packages/render/         Render worker + headless renders
 ├── packages/icon-kit/       Neon icons + logo
 └── scripts/                 e2e test · release · install-mac · build-icons
 ```
@@ -174,12 +175,13 @@ to `<name>.neon/{project.json,doc.bin,assets/}`. It serves a loopback control AP
 token, SSE event stream), a y‑websocket‑compatible sync endpoint (`/yjs`) the React renderer
 connects to, a content‑addressed asset server (`/assets/<sha256>`, HTTP ranges) and — while hosting a
 room — a second LAN listener with the same sync/asset endpoints plus a y‑webrtc signaling relay,
-advertised over UDP multicast. The renderer previews with `@remotion/player`; exports spawn a worker
-on the app's bundled Bun that runs `@remotion/renderer` against the same `TimelineComposition`, so
+advertised over UDP multicast. The renderer previews with `@neon/motion/player`; exports spawn a worker
+on the app's bundled Bun that runs `@neon/motion/node` against the same `TimelineComposition`, so
 preview and export cannot diverge.
 
 ## Notes / known quirks
 
-- Remotion's licence terms apply to your use case; this repo is a personal tool.
+- The composition API mirrors familiar conventions (`AbsoluteFill`, `Sequence`, `interpolate`, `spring`…) but is Neon's own implementation; FX packs that import `remotion` are served `@neon/motion` under that name.
+- FFmpeg must be on PATH for exports. Chrome is used if installed; otherwise Chrome Headless Shell is downloaded once to `~/.neon-video/browser`.
 - WKWebView can take a couple of seconds to paint a **paused** video frame after a seek (it paints immediately during playback). Overlays are unaffected.
 - Not yet verified: WebRTC between two physical machines (LAN WebSocket fallback is), Windows/Linux builds beyond CI wiring.

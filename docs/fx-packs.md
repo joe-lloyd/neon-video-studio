@@ -1,6 +1,6 @@
 # FX packs — install, enable and author animated components
 
-Every overlay in Neon Video Studio is a React component rendered by Remotion. An **FX pack** is a
+Every overlay in Neon Video Studio is a React component rendered by `@neon/motion`, Neon's frame engine. An **FX pack** is a
 folder of such components plus a `pack.json` manifest that describes them as plain data. Because
 the manifest is data, every process (app, CLI, render worker) can register a pack's templates —
 inspector controls, prop validation, JSON Schema for agents — without executing its code.
@@ -180,7 +180,8 @@ Installed packs are compiled by the app, and the host provides exactly these mod
 | Import | What you get |
 |---|---|
 | `react` | React 19 |
-| `remotion` | `AbsoluteFill`, `useCurrentFrame`, `useVideoConfig`, `interpolate`, `spring`, `Easing`, `Sequence`, … |
+| `@neon/motion` | `AbsoluteFill`, `useCurrentFrame`, `useVideoConfig`, `interpolate`, `spring`, `Easing`, `Sequence`, `Series`, `Loop`, `Freeze`, `Img`, `Video`, `Audio`, `interpolateColors`, `random`, `delayRender`, … |
+| `remotion` | Compatibility name for `@neon/motion`, so packs written against that familiar API keep working unchanged |
 | `@neon/core` | Types such as `TemplatePackMeta`, `parseTimecode()` and other pure helpers |
 | `@neon/fx-kit` | The pack-author helper kit (below) |
 | relative files | anything inside the pack folder |
@@ -260,7 +261,7 @@ const cue = frame === null ? undefined : cueAt(cues, frame);
 5. Validate the manifest with the `node --experimental-strip-types …` one-liner above, or just
    watch the Library card: a broken `pack.json` is shown with its first validation errors.
 
-The example pack's `package.json` lists `react`, `remotion`, `@neon/core` and `@neon/fx-kit` as
+The example pack's `package.json` lists `react`, `@neon/motion`, `@neon/core` and `@neon/fx-kit` as
 dev dependencies purely for type-checking; the app never installs them for the pack. Do not add
 other dependencies — they would type-check in the repo but fail once the pack is installed.
 

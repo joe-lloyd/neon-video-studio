@@ -159,14 +159,12 @@ export class RenderManager {
           entryPoint: rp.entryPoint,
           watchDirs: [...rp.watchDirs, ...packs.map((p) => p.dir)],
           packs: packs.map((p) => ({ name: p.name, entry: p.entry })),
-          licenseKey: process.env.REMOTION_LICENSE_KEY,
         },
         {
           workerPath: rp.workerPath,
           cwd: runtime.cwd,
-          // Run the worker on the Bun runtime that ships inside the app bundle (verified with
-          // Electrobun 2.0.1 / Bun 1.4.0 + Remotion 4.0.515) so packaged builds do not need Node.
-          // NEON_RENDER_RUNTIME=node forces Node (useful when debugging Remotion issues).
+          // Run the worker on the Bun runtime that ships inside the app bundle so packaged
+          // builds do not need Node. NEON_RENDER_RUNTIME=node forces Node (useful when debugging the renderer).
           nodeBinary: process.env.NEON_RENDER_RUNTIME === 'node' ? 'node' : process.execPath,
           onEvent: (event) => {
             switch (event.type) {

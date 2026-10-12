@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, spring, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, spring, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import { MONO, glow, useUiScale } from '../../shared.ts';
 
 /** Props are validated against meta.ts — see docs/fx-packs.md. */

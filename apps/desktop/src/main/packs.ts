@@ -4,9 +4,9 @@
  *   ~/.neon-video/packs/<name>/        the pack folder (pack.json + index.tsx + …)
  *   ~/.neon-video/packs-build/<name>.<hash>.js   browser bundle for the renderer's previews/player
  *
- * The bundle is produced by Bun's bundler with the host modules (react, remotion, @neon/core,
+ * The bundle is produced by Bun's bundler with the host modules (react, @neon/motion — also under its compatibility name `remotion` — @neon/core,
  * @neon/fx-kit) redirected to `globalThis.__neonPackHost` — the renderer fills that object with its
- * own module instances before importing the bundle, so hooks and Remotion context are shared.
+ * own module instances before importing the bundle, so hooks and the engine's frame context are shared.
  * Exports use the render worker instead: it webpack-bundles the pack source straight from the
  * folder (see packages/render/src/worker.ts), so the compiled JS here is UI-only.
  */
@@ -19,7 +19,7 @@ import type { PackInfo } from '../shared/rpc.ts';
 import { isBareImport } from './pack-imports.ts';
 
 /** Bare specifiers a pack may import; everything else must be a relative file inside the pack. */
-export const HOST_MODULES = ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'remotion', '@neon/core', '@neon/fx-kit'] as const;
+export const HOST_MODULES = ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', '@neon/motion', 'remotion', '@neon/core', '@neon/fx-kit'] as const;
 
 export interface RenderPack {
   name: string;

@@ -1,12 +1,12 @@
 /**
  * @neon/fx-kit — the helpers FX pack components can rely on.
  *
- * Packs installed from outside the repo import ONLY `react`, `remotion`, `@neon/core` and this
+ * Packs installed from outside the repo import ONLY `react`, `@neon/motion` (or its compatibility name `remotion`), `@neon/core` and this
  * module; the app provides all four at runtime (see docs/fx-packs.md). Keep this surface small
  * and additive — external packs compiled against an older kit must keep working.
  */
 import { createContext, useContext } from 'react';
-import { useCurrentFrame, useVideoConfig } from 'remotion';
+import { useCurrentFrame, useVideoConfig } from '@neon/motion';
 import type { Project } from '@neon/core';
 
 /** Templates are authored for 1080p; scale everything by the actual output height. */

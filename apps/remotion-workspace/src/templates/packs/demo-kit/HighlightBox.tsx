@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import type { TemplateProps } from '@neon/core';
 import { SANS, useUiScale } from '../../shared.ts';
 import type { HIGHLIGHT_BOX } from './meta.ts';

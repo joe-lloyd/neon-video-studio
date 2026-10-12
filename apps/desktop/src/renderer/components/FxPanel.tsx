@@ -8,7 +8,7 @@
  *               uninstall, reload after editing a pack.
  */
 import { useMemo, useState, useSyncExternalStore, type ComponentType, type DragEvent } from 'react';
-import { Player, Thumbnail } from '@remotion/player';
+import { Player, Thumbnail } from '@neon/motion/player';
 import { CORE_PACK_NAME, getTemplatesVersion, listTemplates, subscribeTemplates, templateDefaults, type ComponentTemplate } from '@neon/core';
 import { getTemplateComponent } from '@neon/remotion-workspace/templates';
 import {
@@ -183,7 +183,7 @@ function TemplatePreview({ template, live }: { template: ComponentTemplate; live
   const durationInFrames = Math.max(1, Math.round(template.defaultDurationSeconds * PREVIEW_FPS));
   const common = { component: Component, inputProps, durationInFrames, fps: PREVIEW_FPS, compositionWidth: 1920, compositionHeight: 1080, style: { width: '100%', height: '100%' } };
   return live ? (
-    <Player {...common} autoPlay loop controls={false} clickToPlay={false} spaceKeyToPlayOrPause={false} acknowledgeRemotionLicense />
+    <Player {...common} autoPlay loop initiallyMuted clickToPlay={false} spaceKeyToPlayOrPause={false} />
   ) : (
     <Thumbnail {...common} frameToDisplay={Math.min(durationInFrames - 1, Math.round(durationInFrames * 0.45))} />
   );

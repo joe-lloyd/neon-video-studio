@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import type { TextOverlayProps } from '@neon/core';
 import { glow, useUiScale } from './shared.ts';
 

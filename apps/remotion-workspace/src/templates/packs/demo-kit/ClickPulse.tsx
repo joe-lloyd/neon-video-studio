@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, Easing, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Easing, interpolate, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import type { TemplateProps } from '@neon/core';
 import { useUiScale } from '../../shared.ts';
 import type { CLICK_PULSE } from './meta.ts';

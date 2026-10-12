@@ -1,0 +1,33 @@
+{
+  "name": "@neon/motion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Neon's own frame-based React video engine: composition primitives, the preview Player and the headless renderer (Chrome over CDP + FFmpeg)",
+  "exports": {
+    ".": "./src/index.ts",
+    "./player": "./src/player/index.ts",
+    "./render-page": "./src/render-page.tsx",
+    "./node": "./src/node/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.ts",
+    "build": "echo '@neon/motion is consumed as TypeScript source'"
+  },
+  "dependencies": {
+    "esbuild": "0.28.1"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "typescript": "^5.9.0"
+  }
+}

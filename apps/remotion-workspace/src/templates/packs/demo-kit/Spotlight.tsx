@@ -1,5 +1,5 @@
 import React, { useId } from 'react';
-import { AbsoluteFill, useVideoConfig } from 'remotion';
+import { AbsoluteFill, useVideoConfig } from '@neon/motion';
 import type { TemplateProps } from '@neon/core';
 import { useUiScale } from '../../shared.ts';
 import type { SPOTLIGHT } from './meta.ts';
