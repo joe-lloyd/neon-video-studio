@@ -10,6 +10,6 @@ export { CdpConnection, CdpSession, CdpError } from './cdp.ts';
 export { startRenderServer, mimeType, type RenderServer, type RenderServerOptions } from './server.ts';
 export { FrameServer, ImageStreamSplitter, selectFrame, parseShowinfoFrame, parseShowinfoTimebase, FRAME_EPSILON, type FrameServerOptions, type FrameResult, type FrameSelection } from './frames.ts';
 export { mixAudio, groupAudioSegments, segmentGainAt, atempoChain, softClip, MIX_SAMPLE_RATE, MIX_CHANNELS, type AudioSegment, type MixAudioOptions, type MixAudioResult } from './audio.ts';
-export { probeMedia, clearProbeCache, defaultBinaries, type MediaProbe, type FfmpegBinaries } from './probe.ts';
+export { probeMedia, clearProbeCache, defaultBinaries, localSource, ffmpegInput, type MediaProbe, type FfmpegBinaries } from './probe.ts';
 export type { AudioFrameEntry, RenderInit, RenderFrameResult } from './protocol.ts';
 export type { CompositionMetadata, CalculateMetadataFunction } from '../metadata.ts';
