@@ -16,6 +16,7 @@ import { basename, dirname, join, normalize, resolve } from 'node:path';
 import { listPacks as listRegisteredPacks, listTemplates, registerPack, unregisterPack, type PackManifest } from '@neon/core';
 import { discoverInstalledPacks, neonHome, packsDir, readPackDir, type DiscoveredPack } from '@neon/core/node';
 import type { PackInfo } from '../shared/rpc.ts';
+import { isBareImport } from './pack-imports.ts';
 
 /** Bare specifiers a pack may import; everything else must be a relative file inside the pack. */
 export const HOST_MODULES = ['react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom', 'remotion', '@neon/core', '@neon/fx-kit'] as const;
@@ -204,7 +205,7 @@ export class PackManager {
             }));
             // Any other bare specifier is a dependency we cannot provide — fail loudly at compile time.
             build.onResolve({ filter: /^[^./]/ }, (args) => {
-              if (host.test(args.path) || args.path.startsWith('data:')) return undefined;
+              if (host.test(args.path) || !isBareImport(args.path)) return undefined;
               throw new Error(`"${args.path}" is not available to FX packs (allowed: ${HOST_MODULES.join(', ')} and relative files)`);
             });
           },
