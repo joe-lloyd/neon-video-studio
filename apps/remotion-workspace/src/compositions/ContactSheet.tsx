@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, Freeze, Sequence, type CalculateMetadataFunction } from 'remotion';
+import { AbsoluteFill, Freeze, Sequence, type CalculateMetadataFunction } from '@neon/motion';
 import { framesToTimecode, projectDurationFrames, sheetLayout } from '@neon/core';
 import { TimelineComposition, type TimelineProps } from './TimelineComposition.tsx';
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill } from 'remotion';
+import { AbsoluteFill } from '@neon/motion';
 import type { SolidColorProps } from '@neon/core';
 
 type Props = SolidColorProps;

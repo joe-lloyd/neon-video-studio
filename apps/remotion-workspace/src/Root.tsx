@@ -1,12 +1,11 @@
-import React from 'react';
-import { Composition, type CalculateMetadataFunction } from 'remotion';
+import type { CalculateMetadataFunction } from '@neon/motion';
 import { DEFAULT_PROJECT_META, projectDurationFrames } from '@neon/core';
-import { TimelineComposition, type TimelineProps } from './compositions/TimelineComposition.tsx';
-import { ContactSheet, calculateSheetMetadata } from './compositions/ContactSheet.tsx';
+import type { TimelineProps } from './compositions/TimelineComposition.tsx';
 
 export const TIMELINE_COMPOSITION_ID = 'Timeline';
 export const SHEET_COMPOSITION_ID = 'ContactSheet';
 
+/** Output size, rate and length of the Timeline composition for a project (+ optional render overrides). */
 export const calculateTimelineMetadata: CalculateMetadataFunction<TimelineProps> = ({ props }) => {
   const projectFps = props.project.meta.fps || DEFAULT_PROJECT_META.fps;
   const fps = props.render?.fps ?? projectFps;
@@ -14,44 +13,5 @@ export const calculateTimelineMetadata: CalculateMetadataFunction<TimelineProps>
   const height = props.render?.height ?? props.project.meta.height;
   const scale = fps / projectFps;
   const durationInFrames = Math.max(1, Math.round(projectDurationFrames(props.project) * scale));
-  return { durationInFrames, fps, width, height, props, defaultCodec: 'h264' };
+  return { durationInFrames, fps, width, height };
 };
-
-const EMPTY: TimelineProps = {
-  project: {
-    meta: { ...DEFAULT_PROJECT_META, id: 'empty', createdAt: '', updatedAt: '' },
-    tracks: [],
-    clips: [],
-    assets: [],
-    transcripts: [],
-    cues: [],
-  },
-  assetBaseUrl: '',
-  assetQuery: '',
-  render: null,
-};
-
-export const RemotionRoot: React.FC = () => (
-  <>
-    <Composition
-      id={TIMELINE_COMPOSITION_ID}
-      component={TimelineComposition}
-      durationInFrames={30}
-      fps={30}
-      width={1920}
-      height={1080}
-      defaultProps={EMPTY}
-      calculateMetadata={calculateTimelineMetadata}
-    />
-    <Composition
-      id={SHEET_COMPOSITION_ID}
-      component={ContactSheet}
-      durationInFrames={30}
-      fps={30}
-      width={1920}
-      height={1080}
-      defaultProps={{ timeline: EMPTY, frames: [0], cols: 4, width: 1920 }}
-      calculateMetadata={calculateSheetMetadata}
-    />
-  </>
-);

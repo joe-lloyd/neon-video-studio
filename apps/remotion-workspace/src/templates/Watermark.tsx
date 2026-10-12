@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill } from 'remotion';
+import { AbsoluteFill } from '@neon/motion';
 import type { WatermarkProps } from '@neon/core';
 import { MONO, useUiScale } from './shared.ts';
 

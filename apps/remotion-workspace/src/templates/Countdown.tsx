@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import type { CountdownProps } from '@neon/core';
 import { MONO, glow, useUiScale } from './shared.ts';
 

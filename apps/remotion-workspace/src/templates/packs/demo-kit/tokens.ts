@@ -2,7 +2,7 @@
  * Demo Kit design tokens and motion helpers. Overlays sit on top of busy screen recordings, so
  * every surface is solid, every stroke has a dark shadow and text picks its own contrast.
  */
-import { interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
+import { interpolate, spring, useCurrentFrame, useVideoConfig } from '@neon/motion';
 
 /** Dark surface for cards and trays. */
 export const SURFACE = 'rgba(17, 19, 24, 0.94)';

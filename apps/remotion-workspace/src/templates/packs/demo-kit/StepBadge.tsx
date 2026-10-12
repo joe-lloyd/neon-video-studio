@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill } from 'remotion';
+import { AbsoluteFill } from '@neon/motion';
 import type { TemplateProps } from '@neon/core';
 import { SANS, useUiScale } from '../../shared.ts';
 import type { STEP_BADGE } from './meta.ts';

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Remotion render pipeline: Node worker (bundle \u2192 selectComposition \u2192 renderMedia), spawn helper, headless asset server",
+  "description": "Render pipeline: Node worker (bundle → metadata → @neon/motion renderMedia), spawn helper, headless asset server",
   "exports": {
     ".": "./src/index.ts",
     "./worker": "./src/worker.ts"
@@ -16,10 +16,8 @@
   "dependencies": {
     "@neon/core": "workspace:*",
     "@neon/fx-kit": "workspace:*",
-    "@neon/remotion-workspace": "workspace:*",
-    "@remotion/bundler": "4.0.515",
-    "@remotion/renderer": "4.0.515",
-    "remotion": "4.0.515"
+    "@neon/motion": "workspace:*",
+    "@neon/remotion-workspace": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

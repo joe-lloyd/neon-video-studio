@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import type { LowerThirdProps } from '@neon/core';
 import { MONO, SANS, glow, useUiScale } from './shared.ts';
 

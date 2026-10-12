@@ -573,7 +573,7 @@ export function RenderControls({ compact = false }: { compact?: boolean }) {
       <button className="btn magenta" style={{ width: '100%', justifyContent: 'center' }} disabled={durationFrames === 0} onClick={() => void editor.startRender(preset, output.trim() || undefined)}>
         <NeonIcon icon={Download} size={14} tone="magenta" /> Render {formatDuration(durationFrames, project.meta.fps)} · H.264 MP4
       </button>
-      {!compact ? <p className="hint" style={{ marginTop: 8 }}>Rendering runs in a separate Node worker via @remotion/renderer (headless Chrome + FFmpeg). The first render bundles the Remotion project and downloads Chrome Headless Shell — expect a minute.</p> : null}
+      {!compact ? <p className="hint" style={{ marginTop: 8 }}>Rendering runs in a separate worker with Neon's own engine (headless Chrome + FFmpeg). The first render bundles the compositions and, if no Chrome is installed, downloads Chrome Headless Shell — expect a minute.</p> : null}
     </>
   );
 }

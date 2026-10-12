@@ -4,7 +4,7 @@
  * overshoot-and-settle easing curves, organic blob geometry, and matte flatness
  * (no glows, no shadows, no gradients — depth comes from tonal surface steps).
  */
-import { Easing } from 'remotion';
+import { Easing } from '@neon/motion';
 
 export const BOBA = {
   lavender: '#deb8f7', // hero accent (inverse-primary / dark-mode primary)

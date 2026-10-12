@@ -26,9 +26,7 @@ export const paths = {
   scratchProjects: () => join(neonHome(), 'projects'),
   recentFile: () => join(neonHome(), 'recent.json'),
   settingsFile: () => join(neonHome(), 'settings.json'),
-  bundleCache: () => join(neonHome(), 'remotion-bundle'),
-  /** Where @remotion/renderer keeps its headless browser + compositor (cwd-independent). */
-  remotionBin: () => join(neonHome(), 'remotion-bin'),
+  bundleCache: () => join(neonHome(), 'render-bundle'),
   renders: () => join(neonHome(), 'renders'),
   stills: () => join(neonHome(), 'stills'),
 };

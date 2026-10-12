@@ -172,7 +172,7 @@ export class Editor {
   readonly playhead = createStore<PlayheadState>({ frame: 0, playing: false });
   /** Assets whose preview proxy is ready; the preview plays those instead of the originals. */
   readonly proxies = createStore<{ ready: string[] }>({ ready: [] });
-  /** Set by the Preview component so the editor can drive the Remotion Player. */
+  /** Set by the Preview component so the editor can drive the preview Player. */
   player: { seekTo(frame: number): void; play(): void; pause(): void; toggle(): void; getCurrentFrame(): number } | null = null;
   private teardown: (() => void)[] = [];
   private projectId: string;

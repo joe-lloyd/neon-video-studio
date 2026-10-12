@@ -3,7 +3,7 @@
   "version": "0.10.0",
   "private": true,
   "type": "module",
-  "description": "Neon Video Studio — Electrobun + Remotion desktop video editor with P2P (Yjs) sync and an agent-friendly CLI",
+  "description": "Neon Video Studio — Electrobun desktop video editor with its own React frame engine (@neon/motion), with P2P (Yjs) sync and an agent-friendly CLI",
   "license": "UNLICENSED",
   "packageManager": "pnpm@10.32.1",
   "engines": {

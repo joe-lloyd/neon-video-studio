@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Remotion project: the Timeline composition that renders a Neon project, plus React overlay templates",
+  "description": "Neon motion project: the Timeline composition that renders a Neon project, plus React overlay templates",
   "exports": {
     ".": "./src/index.ts",
     "./composition": "./src/compositions/TimelineComposition.tsx",
@@ -13,14 +13,14 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test test/*.test.ts",
-    "build": "echo 'bundled on demand by @remotion/bundler'"
+    "build": "echo 'bundled on demand by @neon/motion/node'"
   },
   "dependencies": {
     "@neon/core": "workspace:*",
     "@neon/fx-kit": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "remotion": "4.0.515"
+    "@neon/motion": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",

@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import { SANS, useUiScale } from '@neon/fx-kit';
 import { RADIUS_ACTIVE, RADIUS_PILL, easeExit, easeExpressiveFast } from './tokens.ts';
 

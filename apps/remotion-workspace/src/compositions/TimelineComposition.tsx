@@ -1,10 +1,10 @@
 import React, { useMemo } from 'react';
-import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import { sortClips, sortTracks, speedOf, volumeAt, zoomAt, type Asset, type Clip, type MediaClip, type Project, type Track } from '@neon/core';
 import { TimelineProjectContext, type TimelineContextValue } from '@neon/fx-kit';
 import { getTemplateComponent } from '../templates/index.ts';
 
-/** Kept as a type alias (not an interface) so it satisfies Remotion's Record<string, unknown> constraint. */
+/** Kept as a type alias (not an interface) so it satisfies the engine's Record<string, unknown> props constraint. */
 export type TimelineProps = {
   project: Project;
   /** http://host:port/assets */

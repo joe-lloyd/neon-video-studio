@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Player, type PlayerRef } from '@remotion/player';
+import { Player, type PlayerRef } from '@neon/motion/player';
 import { TimelineComposition, type TimelineProps } from '@neon/remotion-workspace/composition';
 import { useEditor } from '../lib/context.ts';
 import { CanvasEditor } from './CanvasEditor.tsx';
@@ -110,13 +110,9 @@ export function Preview() {
             compositionWidth={project.meta.width}
             compositionHeight={project.meta.height}
             style={{ width: '100%', height: '100%' }}
-            controls={false}
             clickToPlay={false}
             doubleClickToFullscreen
-            showVolumeControls={false}
             spaceKeyToPlayOrPause={false}
-            numberOfSharedAudioTags={6}
-            acknowledgeRemotionLicense
           />
         </div>
       ) : null}

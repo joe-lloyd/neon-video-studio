@@ -2,8 +2,8 @@
  * Domain model for a Neon Video Studio project.
  *
  * All time values are integer frame counts at the project's fps. The project is the single
- * source of truth for both the live preview (@remotion/player) and the export (@remotion/renderer):
- * the Remotion composition receives the JSON form of this model as input props.
+ * source of truth for both the live preview (@neon/motion/player) and the export (@neon/motion/node):
+ * the Timeline composition receives the JSON form of this model as input props.
  */
 
 export type TrackKind = 'video' | 'audio' | 'overlay';

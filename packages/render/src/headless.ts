@@ -39,11 +39,10 @@ export async function renderHeadless(opts: HeadlessRenderOptions): Promise<Rende
       outputPath: resolve(target.outputPath),
       project,
       assetBaseUrl: assets.baseUrl,
-      bundleCacheDir: opts.bundleCacheDir ?? join(repoRoot, '.remotion-bundle'),
+      bundleCacheDir: opts.bundleCacheDir ?? join(repoRoot, '.neon-bundle'),
       entryPoint: paths.entryPoint,
       watchDirs: [...paths.watchDirs, ...packs.map((p) => p.dir)],
       packs: packs.map((p) => ({ name: p.name, entry: p.entry })),
-      licenseKey: process.env.REMOTION_LICENSE_KEY,
     };
     const run = runRenderWorker(spec, { workerPath: paths.workerPath, onEvent: opts.onEvent, onLog: opts.onLog });
     return await run.promise;

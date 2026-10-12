@@ -25,8 +25,9 @@ export interface RenderEnv {
   /** http://host:port/assets — the composition appends /<sha256> */
   assetBaseUrl: string;
   assetQuery?: string;
+  /** Directory for cached composition bundles (one sub-directory per fingerprint). */
   bundleCacheDir: string;
-  /** Absolute path of the Remotion entry (apps/remotion-workspace/src/index.ts). */
+  /** Absolute path of the composition entry (apps/remotion-workspace/src/index.ts). */
   entryPoint: string;
   /** Directories whose contents invalidate the bundle cache. */
   watchDirs: string[];
@@ -35,14 +36,11 @@ export interface RenderEnv {
    * component module and registers it before the composition mounts.
    */
   packs?: { name: string; entry: string }[];
+  /** @deprecated Ignored (was the Remotion licence key); kept so older callers still type-check. */
   licenseKey?: string;
-  /** Existing Chrome/Chromium binary to use instead of Remotion's downloaded headless shell. */
+  /** Chrome/Chromium to render with; default: $NEON_CHROME_PATH, an installed Chrome, else Chrome Headless Shell (downloaded once). */
   browserExecutable?: string | null;
-  /**
-   * Directory that already CONTAINS Remotion's binaries (compositor + browser) — Remotion does
-   * not populate it. Leave unset to let Remotion manage node_modules/.remotion relative to the
-   * worker cwd (the render runtime root, which is writable).
-   */
+  /** @deprecated Ignored (Remotion's compositor directory); the renderer only needs ffmpeg on PATH or $NEON_FFMPEG_PATH. */
   binariesDirectory?: string | null;
 }
 

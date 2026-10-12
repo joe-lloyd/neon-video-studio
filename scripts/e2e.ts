@@ -7,7 +7,7 @@
  *   node scripts/e2e.ts [--keep] [--no-render]
  *
  * --keep       leave the temp home + outputs in place and print where they are
- * --no-render  skip the export step (for machines where Remotion's compositor cannot run)
+ * --no-render  skip the export step (e.g. machines without Chrome)
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

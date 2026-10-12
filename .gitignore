@@ -11,6 +11,7 @@ artifacts/
 *.tsbuildinfo
 .remotion-bundle/
 .claude/worktrees/
+.neon-bundle/
 apps/desktop/icons/preview/
 
 # local data

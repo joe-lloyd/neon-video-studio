@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import type { ProgressBarProps } from '@neon/core';
 import { glow, useUiScale } from './shared.ts';
 
