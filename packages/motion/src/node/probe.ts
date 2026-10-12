@@ -1,5 +1,12 @@
 /** ffprobe wrapper with a per-process cache, plus helpers shared by the frame server and the audio mixer. */
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { createWriteStream, mkdtempSync, rmSync } from 'node:fs';
+import { rename } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { extname, join } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 
 export interface MediaProbe {
@@ -22,10 +29,59 @@ export function defaultBinaries(): FfmpegBinaries {
   };
 }
 
-/** What ffmpeg should open for a source URL: file:// URLs become paths, everything else is passed through. */
+// ---- local copies of remote sources --------------------------------------------------------
+
+const copies = new Map<string, Promise<string>>();
+const resolved = new Map<string, string>();
+let copiesDir: string | null = null;
+
+function copiesRoot(): string {
+  if (!copiesDir) {
+    copiesDir = mkdtempSync(join(tmpdir(), 'neon-sources-'));
+    const dir = copiesDir;
+    process.once('exit', () => rmSync(dir, { recursive: true, force: true }));
+  }
+  return copiesDir;
+}
+
+async function download(src: string): Promise<string> {
+  const res = await fetch(src);
+  if (!res.ok || !res.body) throw new Error(`Could not fetch ${src}: HTTP ${res.status}`);
+  const ext = extname(new URL(src).pathname).slice(0, 8);
+  const file = join(copiesRoot(), `${createHash('sha1').update(src).digest('hex')}${ext}`);
+  const partial = `${file}.partial`;
+  await pipeline(Readable.fromWeb(res.body as import('node:stream/web').ReadableStream<Uint8Array>), createWriteStream(partial));
+  await rename(partial, file);
+  return file;
+}
+
+/**
+ * A local file for a source. http(s) sources are downloaded once per process and decoded from
+ * disk: ffmpeg's own HTTP client seeks with many range requests, which is slow and has proved
+ * unreliable against some servers. file:// URLs map to their path; anything else passes through.
+ */
+export function localSource(src: string): Promise<string> {
+  if (src.startsWith('file://')) return Promise.resolve(fileURLToPath(src));
+  if (!/^https?:\/\//i.test(src)) return Promise.resolve(src);
+  let hit = copies.get(src);
+  if (!hit) {
+    hit = download(src).then((file) => {
+      resolved.set(src, file);
+      return file;
+    });
+    copies.set(src, hit);
+    hit.catch(() => copies.delete(src));
+  }
+  return hit;
+}
+
+/**
+ * What ffmpeg should open for a source: its local copy once `localSource()` has fetched it
+ * (probeMedia() always does, and every decode probes first), else the path or URL itself.
+ */
 export function ffmpegInput(src: string): string {
   if (src.startsWith('file://')) return fileURLToPath(src);
-  return src;
+  return resolved.get(src) ?? src;
 }
 
 function parseRate(rate: string | undefined): number | null {
@@ -72,6 +128,7 @@ export function probeMedia(src: string, bins: FfmpegBinaries = defaultBinaries()
 }
 
 async function probeUncached(src: string, bins: FfmpegBinaries): Promise<MediaProbe> {
+  await localSource(src);
   const { code, stdout, stderr } = await runCapture(bins.ffprobe, [
     '-v', 'error',
     '-show_entries', 'stream=codec_type,width,height,avg_frame_rate,r_frame_rate,pix_fmt,sample_rate,channels:stream_disposition=attached_pic:format=start_time,duration',
