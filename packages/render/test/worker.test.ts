@@ -6,16 +6,16 @@ test('generateEntry registers packs before handing the compositions to the rende
   const src = generateEntry({
     entryPoint: '/repo/apps/compositions/src/index.ts',
     packs: [
-      { name: '[removed]-expressive', entry: '/home/u/.neon-video/packs/[removed]-expressive/index.tsx' },
+      { name: '[removed]', entry: '/home/u/.neon-video/packs/[removed]/index.tsx' },
       { name: 'other', entry: 'C:\\packs\\other\\index.tsx' },
     ],
   });
   assert.match(src, /import \{ registerRenderRoot \} from '@neon\/motion\/render-page';/);
   assert.match(src, /import \{ TimelineComposition, ContactSheet, registerRuntimeComponents \} from "\/repo\/apps\/compositions\/src\/index.ts";/);
-  assert.match(src, /import \* as pack0 from "\/home\/u\/\.neon-video\/packs\/[removed]-expressive\/index\.tsx";/);
+  assert.match(src, /import \* as pack0 from "\/home\/u\/\.neon-video\/packs\/[removed]\/index\.tsx";/);
   // Windows paths are JSON-escaped, not mangled.
   assert.ok(src.includes('import * as pack1 from "C:\\\\packs\\\\other\\\\index.tsx";'));
-  const register = src.indexOf('registerRuntimeComponents("[removed]-expressive"');
+  const register = src.indexOf('registerRuntimeComponents("[removed]"');
   const root = src.indexOf('registerRenderRoot({ "Timeline": TimelineComposition, "ContactSheet": ContactSheet })');
   assert.ok(register > 0 && root > register, 'packs register before the root mounts');
   assert.doesNotMatch(generateEntry({ entryPoint: '/x/index.ts' }), /pack0/);

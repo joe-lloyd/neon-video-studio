@@ -98,43 +98,43 @@ say what the value means and its units:
 | `boolean` | boolean | — | toggle |
 | `select` | string | `options: string[]` (≥ 1; `default` must be one of them) | dropdown |
 
-A complete example, excerpted from the shipped `examples/packs/[removed]-expressive/pack.json`:
+A complete example, excerpted from the shipped `examples/packs/[removed]/pack.json`:
 
 ```json
 {
-  "name": "[removed]-expressive",
-  "label": "[removed] Expressive",
+  "name": "[removed]",
+  "label": "[removed]",
   "version": "1.0.0",
-  "description": "An M3-Expressive-inspired FX set: violet/lavender tonal palette, pills that square up on exit, organic blobs, overshoot easings, and matte flatness (no glows or shadows).",
+  "description": "Example FX set: mint/teal tonal palette, pills that square up on exit, procedural blobs, springy overshoot easings, and matte flatness (no glows or shadows).",
   "author": "Joe Lloyd",
   "category": "Expressive",
-  "tags": ["m3", "expressive", "blob", "pill"],
+  "tags": ["expressive", "blob", "pill", "spring"],
   "entry": "index.tsx",
   "templates": [
     {
-      "name": "[removed]Tag",
-      "label": "[removed] Tag",
+      "name": "RemovedComponent",
+      "label": "Soft Tag",
       "description": "Matte pill tag with the circle-to-pill clip reveal. Flat by design — no glow.",
       "defaultDurationSeconds": 4,
       "category": "Badges",
       "icon": "Tag",
       "fields": [
         { "key": "text", "type": "text", "default": "New" },
-        { "key": "color", "type": "color", "default": "#deb8f7" },
-        { "key": "textColor", "type": "color", "default": "#402357" },
+        { "key": "color", "type": "color", "default": "#7fd1c7" },
+        { "key": "textColor", "type": "color", "default": "#0f3b37" },
         { "key": "size", "type": "number", "default": 40, "min": 12, "max": 160 },
         { "key": "corner", "type": "select", "default": "top-right", "options": ["top-left", "top-right", "bottom-left", "bottom-right"] }
       ]
     },
     {
-      "name": "[removed]MorphLoader",
-      "label": "[removed] Morph Loader",
-      "description": "Brand-mark loader: a blob morphing through a shape sequence with rotation snaps.",
+      "name": "RemovedComponent",
+      "label": "Soft Morph Loader",
+      "description": "Logo-mark loader: a blob morphing through a shape sequence with rotation snaps.",
       "defaultDurationSeconds": 5,
       "category": "Loaders",
       "icon": "Loader2",
       "fields": [
-        { "key": "color", "type": "color", "default": "#deb8f7" },
+        { "key": "color", "type": "color", "default": "#7fd1c7" },
         { "key": "size", "type": "number", "default": 220, "min": 40, "max": 800 },
         { "key": "stepSeconds", "type": "number", "default": 1, "min": 0.5, "max": 3, "step": 0.1 }
       ]
@@ -148,7 +148,7 @@ manifest from the repo root without starting the app:
 
 ```bash
 node --experimental-strip-types --no-warnings -e \
-  "import('./packages/core/src/packs.ts').then(m => { m.parsePackManifest(JSON.parse(require('fs').readFileSync('examples/packs/[removed]-expressive/pack.json','utf8'))); console.log('manifest ok') })"
+  "import('./packages/core/src/packs.ts').then(m => { m.parsePackManifest(JSON.parse(require('fs').readFileSync('examples/packs/[removed]/pack.json','utf8'))); console.log('manifest ok') })"
 ```
 
 ### `index.tsx` — the export contract
@@ -158,19 +158,19 @@ name must equal the template name exactly:
 
 ```tsx
 // index.tsx
-export { [removed]Title } from './[removed]Title.tsx';
-export { [removed]LowerThird } from './[removed]LowerThird.tsx';
-export { [removed]Tag } from './[removed]Tag.tsx';
-export { [removed]Blob } from './[removed]Blob.tsx';
-export { [removed]MorphLoader } from './[removed]MorphLoader.tsx';
+export { RemovedComponent } from './RemovedComponent.tsx';
+export { RemovedComponent } from './RemovedComponent.tsx';
+export { RemovedComponent } from './RemovedComponent.tsx';
+export { RemovedComponent } from './RemovedComponent.tsx';
+export { RemovedComponent } from './RemovedComponent.tsx';
 ```
 
 Each component receives the template's fields as props, already validated and filled with defaults
-(`{ text: string; color: string; size: number; corner: string; … }` for the `[removed]Tag` above).
+(`{ text: string; color: string; size: number; corner: string; … }` for the `RemovedComponent` above).
 `select` fields arrive as `string`; narrow them yourself if you need a union. A template listed in
 `pack.json` but missing from the entry module is reported in the Library and renders a placeholder.
 
-Relative imports inside a pack carry their extension (`./tokens.ts`, `./[removed]Tag.tsx`), matching the
+Relative imports inside a pack carry their extension (`./tokens.ts`, `./RemovedComponent.tsx`), matching the
 rest of the repo.
 
 ### Allowed imports
@@ -246,9 +246,9 @@ const cue = frame === null ? undefined : cueAt(cues, frame);
 
 ## Developing a pack inside this repo
 
-`examples/packs/[removed]-expressive` is a complete, working pack and the intended starting point:
+`examples/packs/[removed]` is a complete, working pack and the intended starting point:
 
-1. Copy it: `cp -r examples/packs/[removed]-expressive examples/packs/my-pack`, then edit `pack.json`
+1. Copy it: `cp -r examples/packs/[removed] examples/packs/my-pack`, then edit `pack.json`
    (`name` must be `my-pack`) and `package.json` (`"name": "@neon-packs/my-pack"`).
 2. It is a **workspace package** (`pnpm-workspace.yaml` includes `examples/packs/*`), so after
    `pnpm install --ignore-scripts` the repo-wide `pnpm typecheck` covers it, and
@@ -272,7 +272,7 @@ Template names from every registered pack are ordinary `--component` values:
 ```bash
 neon-cli list templates                 # name, label, default duration, description; pack/category included
 neon-cli list templates --json          # includes the JSON Schema of every template's props (for agents)
-neon-cli templates [removed]Title            # defaults + JSON Schema for one template
+neon-cli templates RemovedComponent            # defaults + JSON Schema for one template
 ```
 
 Installed packs are discovered from `~/.neon-video/packs` by the CLI as well, so it can validate
@@ -287,9 +287,9 @@ neon-cli timeline insert --component Callout --props '{"text":"Click Save","x":0
 neon-cli timeline insert --component NeonBadge --props '{"text":"50% OFF","corner":"top-left"}' --at 2s
 neon-cli timeline insert --component KineticList --props '{"title":"Agenda","items":"One\nTwo\nThree"}' --at 4s --duration 8s
 
-# installed example pack: [removed]-expressive (enable it in the project first)
-neon-cli timeline insert --component [removed]Title --props '{"title":"Make it expressive"}' --at 0s
-neon-cli timeline insert --component [removed]MorphLoader --props '{"color":"#deb8f7"}' --at 5s
+# installed example pack: [removed] (enable it in the project first)
+neon-cli timeline insert --component RemovedComponent --props '{"title":"Make it expressive"}' --at 0s
+neon-cli timeline insert --component RemovedComponent --props '{"color":"#7fd1c7"}' --at 5s
 ```
 
 ## Ships with
@@ -324,10 +324,10 @@ neon-cli timeline insert --component StepBadge --props '{"step":2,"total":5,"tit
 neon-cli timeline insert --component ClickPulse --props '{"x":0.87,"y":0.57}' --at 17s
 ```
 
-**[removed]-expressive** (example pack, `examples/packs/[removed]-expressive/`): an M3-Expressive-inspired
-set — violet/lavender tonal palette, matte flatness (no glows), pills that square to 12px on exit,
-organic blob shapes and overshoot-and-settle easings. `[removed]Title` (word-stagger display title),
-`[removed]LowerThird` (frosted pill with center-out reveal), `[removed]Tag` (circle-to-pill clip reveal),
-`[removed]Blob` (spinning organic shape), `[removed]MorphLoader` (blob morphing through a shape sequence with
+**[removed]** (example pack, `examples/packs/[removed]/`): a soft, rounded
+set — mint/teal tonal palette, matte flatness (no glows), pills that square to 12px on exit,
+procedural blob shapes and springy overshoot-and-settle easings. `RemovedComponent` (word-stagger display title),
+`RemovedComponent` (frosted pill with center-out reveal), `RemovedComponent` (circle-to-pill clip reveal),
+`RemovedComponent` (spinning organic shape), `RemovedComponent` (blob morphing through a shape sequence with
 60° rotation snaps). Shared tokens — palette, easings, blob geometry — live in `tokens.ts` and show
 how a pack keeps its own design system in a relative file.

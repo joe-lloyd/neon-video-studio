@@ -18,7 +18,7 @@ export const PACK_DEFAULT_ENTRY = 'index.tsx';
 export type PackSource = 'builtin' | 'installed';
 
 export interface PackManifest {
-  /** Unique id, kebab-case (also the folder name), e.g. "[removed]-expressive". */
+  /** Unique id, kebab-case (also the folder name), e.g. "[removed]". */
   name: string;
   label: string;
   version: string;

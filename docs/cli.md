@@ -73,15 +73,15 @@ machine; your SSH keys are the only way in. The tunnel stays open between comman
 per command) and is rebuilt when the remote app restarts.
 
 ```bash
-neon-cli --on jellybingus launch            # start the app in that machine's signed-in desktop session
-export NEON_HOST=jellybingus                # every command below now runs against that machine
+neon-cli --on studio-pc launch            # start the app in that machine's signed-in desktop session
+export NEON_HOST=studio-pc                # every command below now runs against that machine
 neon-cli status
 neon-cli assets import ./narration.m4a --at 0 --track A1   # a file that exists here is uploaded
 neon-cli assets import "C:\Users\joell\Videos\take.mp4"  # any other path is a path on that machine
 neon-cli capture start --display 0 --duration 2m           # records that machine's screen
 neon-cli sheet --count 12 --out sheet.png                 # rendered there, copied here
 neon-cli render --output renders/demo.mp4 --fetch --out demo.mp4   # rendered there, --fetch copies it here
-neon-cli disconnect jellybingus             # close the tunnel
+neon-cli disconnect studio-pc             # close the tunnel
 ```
 
 Needs: the desktop app installed on the editing machine, an SSH server there (macOS: Remote
@@ -364,11 +364,11 @@ to bundle. Inserting a component from an installed pack enables the pack automat
 ```bash
 neon-cli packs                       # built-in, installed and example packs + whether they're in this project
 neon-cli packs install ./my-pack     # validate, copy to ~/.neon-video/packs, compile, add to the project
-neon-cli packs install examples/packs/[removed]-expressive   # the shipped example (from a source checkout)
-neon-cli packs add [removed]-expressive   # enable an installed pack for this project · packs remove … disables it
-neon-cli packs uninstall [removed]-expressive
+neon-cli packs install examples/packs/[removed]   # the shipped example (from a source checkout)
+neon-cli packs add [removed]   # enable an installed pack for this project · packs remove … disables it
+neon-cli packs uninstall [removed]
 neon-cli packs reload                # re-scan + recompile after editing a pack in place
-neon-cli timeline insert --component [removed]Title --props '{"title":"Hello"}' --at 2s
+neon-cli timeline insert --component RemovedComponent --props '{"title":"Hello"}' --at 2s
 ```
 
 ## Script and prompter
