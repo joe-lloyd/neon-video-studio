@@ -54,9 +54,11 @@ import {
   type AiOperation,
   RENDER_PRESETS,
   RemoveClipRequestSchema,
-  ScriptRemoveRequestSchema,
+  ScriptEditRequestSchema,
   ScriptSetRequestSchema,
-  ScriptUpdateRequestSchema,
+  speakingSeconds,
+  type ScriptOp,
+  type ProjectDoc,
   RenderRequestSchema,
   RoomHostRequestSchema,
   RoomJoinRequestSchema,
@@ -592,26 +594,26 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
       return { packs: next };
     }
 
-    // -- the script (prompter cues) -----------------------------------------------------
+    // -- the script and its review notes ------------------------------------------------
     case `GET ${API_ROUTES.script}`:
-      return { cues: doc.toJSON().cues };
+      return doc.getScript();
     case `POST ${API_ROUTES.scriptSet}`: {
-      const { cues } = ScriptSetRequestSchema.parse(body);
-      const starts = cues.map((c) => T(c.at)!);
-      const placed = cues
-        .map((c, i) => ({ id: c.id, text: c.text, startFrame: starts[i]!, explicit: c.duration === undefined ? undefined : T(c.duration)! }))
-        .sort((a, b) => a.startFrame - b.startFrame)
-        .map((c, i, all) => ({ id: c.id, text: c.text, startFrame: c.startFrame, durationFrames: c.explicit ?? Math.max(1, (all[i + 1]?.startFrame ?? c.startFrame + 4 * fps) - c.startFrame) }));
-      return { cues: doc.setCues(placed, ORIGIN_API) };
+      const { sections } = ScriptSetRequestSchema.parse(body);
+      // A placed line without a duration runs to the next placed line (or 4 s for the last).
+      const starts = sections.flatMap((s) => s.lines.map((l) => T(l.at))).filter((f) => f !== undefined).sort((a, b) => a - b);
+      const placement = (at: number | undefined, duration: number | undefined) =>
+        at === undefined ? undefined : { startFrame: at, durationFrames: Math.max(1, duration ?? (starts.find((f) => f > at) ?? at + 4 * fps) - at) };
+      return doc.setScript(
+        sections.map((s) => ({ ...s, lines: s.lines.map(({ still, at, duration, ...l }) => ({ ...l, stillAssetId: still, placed: placement(T(at), T(duration)) })) })),
+        ORIGIN_API,
+      );
     }
-    case `POST ${API_ROUTES.scriptUpdate}`: {
-      const { id, patch } = ScriptUpdateRequestSchema.parse(body);
-      return doc.updateCue(id, { text: patch.text, startFrame: T(patch.at), durationFrames: T(patch.duration) }, ORIGIN_API);
-    }
-    case `POST ${API_ROUTES.scriptRemove}`: {
-      const { ids } = ScriptRemoveRequestSchema.parse(body);
-      doc.removeCues(ids, ORIGIN_API);
-      return { removed: ids.length };
+    case `POST ${API_ROUTES.scriptEdit}`: {
+      const { ops } = ScriptEditRequestSchema.parse(body);
+      doc.transact(() => {
+        for (const op of ops) applyScriptOp(doc, op, T);
+      }, ORIGIN_API);
+      return doc.getScript();
     }
 
     // -- persisted edit history ----------------------------------------------------------
@@ -940,13 +942,10 @@ function recordActivity(ctx: MainContext, path: string, body: unknown, result: u
       ctx.events.activity('cli', 'timeline.remove', `Removed ${(b.ids as string[] | undefined)?.length ?? 0} clip(s)`, { clipIds: (b.ids as string[]) ?? [] });
       break;
     case API_ROUTES.scriptSet:
-      ctx.events.activity('cli', 'script.set', `Wrote the script: ${(r.cues as unknown[] | undefined)?.length ?? 0} cue(s)`);
+      ctx.events.activity('cli', 'script.set', `Wrote the script: ${(b.sections as unknown[] | undefined)?.length ?? 0} section(s)`);
       break;
-    case API_ROUTES.scriptUpdate:
-      ctx.events.activity('cli', 'script.update', `Edited cue at ${tc(Number(r.startFrame ?? 0))}`);
-      break;
-    case API_ROUTES.scriptRemove:
-      ctx.events.activity('cli', 'script.remove', `Removed ${(b.ids as string[] | undefined)?.length ?? 0} cue(s)`);
+    case API_ROUTES.scriptEdit:
+      ctx.events.activity('cli', 'script.edit', `Script: ${((b.ops as { op?: string }[] | undefined) ?? []).map((o) => o.op).join(', ')}`);
       break;
     case API_ROUTES.trackAdd:
       ctx.events.activity('cli', 'tracks.add', `Added ${String(r.kind)} track “${String(r.name)}”`, { trackIds: [String(r.id)] });
@@ -1017,5 +1016,58 @@ function recordActivity(ctx: MainContext, path: string, body: unknown, result: u
         ctx.events.activity('cli', `ai.${String(r.op)}.requested`, `AI ${String(r.op)} requested${r.clipId ? ` for clip ${String(r.clipId).slice(-6)}` : ''}`, { jobId: String(r.id), clipIds: r.clipId ? [String(r.clipId)] : [] });
       } else if (/^\/api\/render\/[^/]+\/cancel$/.test(path)) ctx.events.activity('cli', 'render.cancel', `Render ${String(r.id)} cancelled`, { jobId: String(r.id) });
       break;
+  }
+}
+
+/** One script or note change from the control API. Notes written here are the agent's unless the op says otherwise. */
+function applyScriptOp(doc: ProjectDoc, op: ScriptOp, T: (v: string | number | undefined) => number | undefined): void {
+  switch (op.op) {
+    case 'section.add':
+      doc.addSection(op, ORIGIN_API);
+      return;
+    case 'section.update':
+      doc.updateSection(op.id, { title: op.title, intent: op.intent, status: op.status }, ORIGIN_API);
+      return;
+    case 'section.remove':
+      doc.removeSection(op.id, ORIGIN_API);
+      return;
+    case 'line.add':
+      doc.addLine(op, ORIGIN_API);
+      return;
+    case 'line.update': {
+      const line = doc.getScript().sections.flatMap((s) => s.lines).find((l) => l.id === op.id);
+      if (!line) throw new Error(`Line ${op.id} not found`);
+      const at = op.at === null ? null : T(op.at);
+      const duration = T(op.duration);
+      const fallback = line.placed?.durationFrames ?? Math.max(doc.fps, Math.round(speakingSeconds(op.say ?? line.say) * doc.fps));
+      const placed =
+        at === null ? null : at !== undefined ? { startFrame: at, durationFrames: duration ?? fallback } : duration !== undefined && line.placed ? { ...line.placed, durationFrames: duration } : undefined;
+      doc.updateLine(op.id, { say: op.say, show: op.show, stillAssetId: op.still, placed }, ORIGIN_API);
+      return;
+    }
+    case 'line.move':
+      doc.moveLine(op.id, op, ORIGIN_API);
+      return;
+    case 'line.remove':
+      doc.removeLine(op.id, ORIGIN_API);
+      return;
+    case 'note.add': {
+      const on = op.on.kind === 'frame' ? { kind: 'frame' as const, frame: T(op.on.at) ?? 0 } : op.on;
+      doc.addNote({ on, text: op.text, author: op.author ?? 'agent' }, ORIGIN_API);
+      return;
+    }
+    case 'note.reply':
+      doc.replyToNote(op.id, { text: op.text, author: op.author ?? 'agent' }, ORIGIN_API);
+      return;
+    case 'note.resolve':
+      doc.setNoteResolved(op.id, op.resolved, ORIGIN_API);
+      return;
+    case 'note.remove':
+      doc.removeNote(op.id, ORIGIN_API);
+      return;
+    default: {
+      const exhaustive: never = op;
+      throw new Error(`Unknown script op ${JSON.stringify(exhaustive)}`);
+    }
   }
 }

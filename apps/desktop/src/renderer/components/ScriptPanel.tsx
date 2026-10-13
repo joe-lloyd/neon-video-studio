@@ -15,7 +15,8 @@ import { PrompterView } from './Prompter.tsx';
 export function ScriptPanel() {
   const editor = useEditor();
   const mode = useSelector(editor.ui, (u) => u.scriptMode);
-  const cues = useStoreValue(editor.project).project.cues.length;
+  const script = useStoreValue(editor.project).project.script;
+  const cues = script.sections.reduce((n, s) => n + s.lines.filter((l) => l.placed).length, 0);
   return (
     <>
       <div className="script-mode">
