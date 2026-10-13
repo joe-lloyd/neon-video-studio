@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { cueIsTight, cueStateAt, framesToTimecode, type ScriptCue } from '@neon/core';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { cueIsTight, cueStateAt, framesToTimecode, scriptCues, type ScriptCue } from '@neon/core';
 import { useEditor } from '../lib/context.ts';
 import { useSelector, useStoreValue } from '../lib/store.ts';
 
@@ -16,7 +16,7 @@ export function PrompterView() {
   const frame = useStoreValue(editor.playhead).frame;
   const recording = useSelector(editor.ui, (u) => u.recording);
   const fps = project.meta.fps;
-  const cues = project.cues;
+  const cues = useMemo(() => scriptCues(project.script), [project.script]);
   const { current, next, framesToNext } = cueStateAt(cues, frame);
   const [editing, setEditing] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -31,9 +31,13 @@ export function PrompterView() {
     return (
       <div className="panel-body">
         <div className="empty">
-          <strong>No script yet.</strong>
+          <strong>Nothing to read yet.</strong>
           <br />
-          Write one with <span className="mono">neon-cli script set cues.json</span>: lines pinned to when they should be said. Then read along here, or press record and follow the big prompter.
+          Lines show up here once they are placed on the timeline. Plan them in the{' '}
+          <button className="link" onClick={() => editor.ui.set({ view: 'script' })}>
+            Script view
+          </button>
+          , then read along here, or press record and follow the big prompter.
         </div>
       </div>
     );
@@ -76,7 +80,7 @@ function CueEditor({ cue, onDone }: { cue: ScriptCue; onDone: () => void }) {
   const editor = useEditor();
   const [text, setText] = useState(cue.text);
   const save = () => {
-    if (text.trim() !== cue.text) editor.doc.updateCue(cue.id, { text: text.trim() });
+    if (text.trim() !== cue.text) editor.doc.updateLine(cue.id, { say: text.trim() });
     onDone();
   };
   return (
@@ -109,7 +113,7 @@ export function PrompterOverlay() {
   const frame = useStoreValue(editor.playhead).frame;
   const recording = useSelector(editor.ui, (u) => u.recording);
   const hidden = useSelector(editor.ui, (u) => u.prompterHidden);
-  const cues = project.cues;
+  const cues = useMemo(() => scriptCues(project.script), [project.script]);
   if (!recording || hidden || cues.length === 0) return null;
 
   const fps = project.meta.fps;

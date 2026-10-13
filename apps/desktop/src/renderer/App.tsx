@@ -13,6 +13,7 @@ import { StatusBar } from './components/StatusBar.tsx';
 import { Toasts } from './components/Toasts.tsx';
 import { Dialogs } from './components/Dialogs.tsx';
 import { StartPage } from './components/StartPage.tsx';
+import { ScriptWorkspace } from './components/ScriptWorkspace.tsx';
 
 export function App() {
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -66,9 +67,9 @@ function Shell() {
   useKeyboard(editor);
   const [timelineH, setTimelineH] = useState(300);
   const ready = useStoreValue(editor.project).ready;
-  const sidebarWidth = useStoreValue(editor.ui).sidebarWidth;
+  const { sidebarWidth, view } = useStoreValue(editor.ui);
   return (
-    <div className="app" style={{ ['--timeline-h' as string]: `${timelineH}px`, ['--side-w' as string]: `${sidebarWidth}px` }}>
+    <div className={`app${view === 'script' ? ' script-view' : ''}`} style={{ ['--timeline-h' as string]: `${timelineH}px`, ['--side-w' as string]: `${sidebarWidth}px` }}>
       <TitleBar />
       <div className="preview-area">
         <Preview />
@@ -79,6 +80,7 @@ function Shell() {
         <TimelineResizer height={timelineH} onChange={setTimelineH} />
         <Timeline />
       </div>
+      {view === 'script' ? <ScriptWorkspace /> : null}
       <StatusBar />
       <Toasts />
       <Dialogs />

@@ -371,27 +371,43 @@ neon-cli packs reload                # re-scan + recompile after editing a pack 
 neon-cli timeline insert --component SoftTitle --props '{"title":"Hello"}' --at 2s
 ```
 
-## Script and prompter
+## Script, notes and prompter
 
-The script is a list of **cues**: lines of narration pinned to when they should be said. It lives in
-the project, so cuts, undo, peers and agents all see the same script. A ripple cut through the whole
-timeline cuts the script too: cues inside the range go, cues across it are trimmed, later ones move.
+The script is the plan for the video: sections of lines, each line the words to **say** and what the
+picture **shows**. It lives in the project, so undo, peers and agents all see the same script, and
+the **Script** view in the title bar shows it full width with review notes in a margin. The whole
+workflow is in [script.md](script.md).
+
+Lines are named the way you read them: `4.2` is section 4, line 2. Notes are `#3`, their number in
+`neon-cli notes`. A moment on the timeline is `@02:56`.
 
 ```bash
-neon-cli script                       # every cue: number, start, time it has, "tight" when the words need longer
-neon-cli script set cues.json         # replace the script (or - for stdin)
-neon-cli script edit 12 --text "New words"     # by number from `script`, or by cue id
-neon-cli script edit 12 --at 3:05 --duration 6s
-neon-cli script remove 4 5 · script clear
+neon-cli script                       # outline: sections, status, lines with times (~ = estimate), shots, open notes
+neon-cli script set script.json       # replace sections and lines (or - for stdin); ids you keep keep their notes
+neon-cli script edit 4.2 --say "New words" --shot "zoom on the lanes"
+neon-cli script edit 4.2 --still <asset-id>      # storyboard still: import the image first
+neon-cli script edit 4.2 --at 3:05 --duration 6s # place a recorded line on the timeline (--at none takes it off)
+neon-cli script add 4 --say "…" [--after 4.1|first] · script move 4.3 --to 4.1 · script remove 4.3
+neon-cli script section 4 --status review        # draft · review (the person's turn) · approved
+neon-cli notes [--all]                # open notes and their replies
+neon-cli notes add 4.2 "Too slow"     # on a line; 4 = a section; @02:56 = a moment in the cut
+neon-cli notes reply '#3' "Cut it to one sentence" · notes resolve '#3' · notes reopen '#3'
 ```
 
-`cues.json` is an array of `{"at": T, "text": "…", "duration": T?}`. Without `duration` a cue runs to
-the next one (4 s for the last). "Tight" means the words take longer than the cue has, at about 180
-words a minute.
+`script.json` is `{"sections": [{"title", "intent"?, "status"?, "lines": [{"say", "show"?, "still"?,
+"at"?, "duration"?}]}]}`. A line with `at` is placed on the timeline; without `duration` it runs to the
+next placed line (4 s for the last). Notes from the control API are the agent's; pass `--as person`
+to write one for the person.
 
-In the app, **Script → Prompter** lists the cues, lights the one under the playhead and lets you edit
-the words in place. While a voice-over is recording, a large prompter covers the preview: the current
-line, the next one, a bar for how long the line has left, and a count-in before each line.
+Placed lines follow the footage: a ripple cut through the whole timeline trims them, moves later
+ones left, and takes a line off the timeline when the cut removes all of it. Notes on moments move
+the same way.
+
+The prompter reads the placed lines. **Script → Prompter** in the side panel lights the one under the
+playhead and lets you edit the words in place. While a voice-over is recording, a large prompter
+covers the preview: the current line, the next one, a bar for how long the line has left, and a
+count-in before each line. "Tight" means the words take longer than the line has, at about 180 words
+a minute.
 
 ## Edit history
 

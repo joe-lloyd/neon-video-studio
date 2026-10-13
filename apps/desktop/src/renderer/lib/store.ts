@@ -18,6 +18,7 @@ import {
   type CaptureState,
   type Clip,
   type Project,
+  type ScriptNoteTarget,
   type RenderJob,
   type RoomInfo,
   registerPack,
@@ -95,6 +96,10 @@ export interface UiState {
   scriptSelection: { assetId: string; words: number[]; anchor: number } | null;
   /** Script tab: word-level transcript editing, or the prompter for the planned script. */
   scriptMode: 'transcript' | 'prompter';
+  /** The editor (preview, timeline, panels) or the full-width Script workspace. */
+  view: 'edit' | 'script';
+  /** A note being written in the Script workspace, and what it is pinned to. */
+  noteDraft: ScriptNoteTarget | null;
   /** The big recording prompter was dismissed for this take. */
   prompterHidden: boolean;
   /** Right sidebar width in px (drag its left edge). */
@@ -126,7 +131,7 @@ export const EMPTY_PROJECT: Project = {
   clips: [],
   assets: [],
   transcripts: [],
-  cues: [],
+  script: { sections: [], notes: [] },
 };
 
 export class Editor {
@@ -157,6 +162,8 @@ export class Editor {
     aiCaps: null,
     scriptSelection: null,
     scriptMode: 'transcript',
+    view: 'edit',
+    noteDraft: null,
     prompterHidden: false,
     sidebarWidth: 320,
     showStart: true,
@@ -240,7 +247,8 @@ export class Editor {
             break;
         }
       },
-      uiControl: ({ panel, select, dialog }) => {
+      uiControl: ({ panel, select, dialog, view }) => {
+        if (view) this.ui.set({ view });
         if (select) {
           const ids = this.project.get().project.clips.filter((c) => select.includes(c.id)).map((c) => c.id);
           this.select(ids);
