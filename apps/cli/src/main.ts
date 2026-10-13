@@ -797,21 +797,22 @@ async function main(): Promise<void> {
         if (!rest[0] || rest.length < 2) throw usage('notes', 'add');
         const on = noteTarget(script, rest[0], fps);
         const next = await api.scriptEdit({ op: 'note.add', on: on.kind === 'frame' ? { kind: 'frame', at: on.frame } : on, text: rest.slice(1).join(' '), author });
-        out(next.notes.at(-1), () => `Added note #${next.notes.length}`);
+        const added = next.notes.at(-1)!;
+        out(added, () => `Added note #${added.number}`);
       } else if (sub === 'reply') {
         if (!rest[0] || rest.length < 2) throw usage('notes', 'reply');
-        const { note, number } = findNote(script, rest[0]);
+        const note = findNote(script, rest[0]);
         const next = await api.scriptEdit({ op: 'note.reply', id: note.id, text: rest.slice(1).join(' '), author });
-        out(next.notes[number - 1], () => `Replied to #${number}`);
+        out(next.notes.find((n) => n.id === note.id), () => `Replied to #${note.number}`);
       } else if (sub === 'resolve' || sub === 'reopen') {
         if (!rest.length) throw usage('notes', sub);
         const found = rest.map((ref) => findNote(script, ref));
-        const next = await api.scriptEdit(...found.map(({ note }) => ({ op: 'note.resolve' as const, id: note.id, resolved: sub === 'resolve' })));
+        const next = await api.scriptEdit(...found.map((note) => ({ op: 'note.resolve' as const, id: note.id, resolved: sub === 'resolve' })));
         out(next.notes, () => `${sub === 'resolve' ? 'Resolved' : 'Reopened'} ${found.map((f) => `#${f.number}`).join(', ')}`);
       } else if (sub === 'remove') {
         if (!rest.length) throw usage('notes', 'remove');
         const found = rest.map((ref) => findNote(script, ref));
-        await api.scriptEdit(...found.map(({ note }) => ({ op: 'note.remove' as const, id: note.id })));
+        await api.scriptEdit(...found.map((note) => ({ op: 'note.remove' as const, id: note.id })));
         out({ removed: found.length }, () => `Removed ${found.map((f) => `#${f.number}`).join(', ')}`);
       } else throw unknownSub('notes', sub, ['list', 'add', 'reply', 'resolve', 'reopen', 'remove']);
       return;

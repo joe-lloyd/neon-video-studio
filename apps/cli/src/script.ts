@@ -46,16 +46,11 @@ export function findLine(script: Script, ref: string): { line: ScriptLine; secti
   return matches[0]!;
 }
 
-export function findNote(script: Script, ref: string): { note: ScriptNote; number: number } {
+export function findNote(script: Script, ref: string): ScriptNote {
   const n = /^#?(\d+)$/.exec(ref);
-  if (n) {
-    const note = script.notes[Number(n[1]) - 1];
-    if (!note) throw new ApiError('NOT_FOUND', `No note #${n[1]}: there are ${script.notes.length}`);
-    return { note, number: Number(n[1]) };
-  }
-  const matches = script.notes.filter((x) => x.id === ref || x.id.startsWith(ref));
-  if (matches.length !== 1) throw new ApiError('NOT_FOUND', matches.length ? `"${ref}" matches ${matches.length} notes` : `No note "${ref}" (use its number from notes, like #3)`);
-  return { note: matches[0]!, number: script.notes.indexOf(matches[0]!) + 1 };
+  const matches = n ? script.notes.filter((x) => x.number === Number(n[1])) : script.notes.filter((x) => x.id === ref || x.id.startsWith(ref));
+  if (matches.length !== 1) throw new ApiError('NOT_FOUND', matches.length ? `"${ref}" matches ${matches.length} notes` : `No note ${n ? `#${n[1]}` : `"${ref}"`} (use its number from notes, like #3)`);
+  return matches[0]!;
 }
 
 /** What a note is pinned to, from "4.2" (a line), "4" (a section) or "@02:56" (a moment on the timeline). */
@@ -115,11 +110,11 @@ export function formatScript(name: string, script: Script, fps: number): string 
 
 /** Notes with their replies, open ones only unless `all`. */
 export function formatNotes(script: Script, fps: number, all: boolean): string {
-  const shown = script.notes.map((note, i) => ({ note, number: i + 1 })).filter(({ note }) => all || !note.resolved);
+  const shown = script.notes.filter((note) => all || !note.resolved);
   if (shown.length === 0) return all ? 'No notes yet.' : 'No open notes. (notes --all shows resolved ones)';
   return shown
-    .map(({ note, number }) => {
-      const head = `#${number}  ${note.resolved ? 'resolved' : 'open'}  on ${targetLabel(script, note.on, fps)}`;
+    .map((note) => {
+      const head = `#${note.number}  ${note.resolved ? 'resolved' : 'open'}  on ${targetLabel(script, note.on, fps)}`;
       const quoted = note.on.kind === 'line' ? quoteLine(script, note.on.lineId) : '';
       return [head + quoted, `    ${note.author}: ${note.text}`, ...note.replies.map((r) => `      ↳ ${r.author}: ${r.text}`)].join('\n');
     })

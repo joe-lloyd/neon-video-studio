@@ -774,7 +774,7 @@ export class ProjectDoc {
         ...section,
         lines: (lines.get(section.id) ?? []).sort(byOrder).map(({ sectionId: _s, order: _o, ...line }) => line),
       }));
-    const notes = [...this.notes.values()].map((m) => m.toJSON() as ScriptNote).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    const notes = [...this.notes.values()].map((m) => m.toJSON() as ScriptNote).sort((a, b) => a.number - b.number || a.id.localeCompare(b.id));
     return { sections, notes };
   }
 
@@ -900,7 +900,8 @@ export class ProjectDoc {
 
   addNote(input: { on: ScriptNoteTarget; text: string; author: ScriptNoteAuthor }, origin?: unknown): ScriptNote {
     return this.transact(() => {
-      const note: ScriptNote = { id: newId('note'), on: input.on, author: input.author, text: input.text, createdAt: new Date().toISOString(), replies: [], resolved: false };
+      const number = 1 + Math.max(0, ...[...this.notes.values()].map((m) => Number(m.get('number'))));
+      const note: ScriptNote = { id: newId('note'), number, on: input.on, author: input.author, text: input.text, createdAt: new Date().toISOString(), replies: [], resolved: false };
       this.notes.set(note.id, mapFrom(note));
       this.touch();
       return note;

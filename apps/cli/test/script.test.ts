@@ -18,8 +18,8 @@ const script: Script = {
     },
   ],
   notes: [
-    { id: 'note_1', on: { kind: 'line', lineId: 'line_c' }, author: 'person', text: 'Lead with the stashes.', createdAt: '2026-10-13T10:00:00Z', replies: [{ author: 'agent', text: 'Swapped the order.', createdAt: '2026-10-13T10:05:00Z' }], resolved: false },
-    { id: 'note_2', on: { kind: 'frame', frame: 60 }, author: 'person', text: 'Dead air here.', createdAt: '2026-10-13T10:10:00Z', replies: [], resolved: true },
+    { id: 'note_1', number: 1, on: { kind: 'line', lineId: 'line_c' }, author: 'person', text: 'Lead with the stashes.', createdAt: '2026-10-13T10:00:00Z', replies: [{ author: 'agent', text: 'Swapped the order.', createdAt: '2026-10-13T10:05:00Z' }], resolved: false },
+    { id: 'note_2', number: 2, on: { kind: 'frame', frame: 60 }, author: 'person', text: 'Dead air here.', createdAt: '2026-10-13T10:10:00Z', replies: [], resolved: true },
   ],
 };
 
@@ -45,7 +45,7 @@ test('script show prints the outline with numbered lines, times and open notes',
 test('lines, sections, notes and moments are named the way a person reads them', () => {
   assert.equal(findLine(script, '2.2').line.id, 'line_c');
   assert.equal(findLine(script, 'line_b').number, '2.1');
-  assert.equal(findNote(script, '#2').note.id, 'note_2');
+  assert.equal(findNote(script, '#2').id, 'note_2');
   assert.deepEqual(noteTarget(script, '2', 30), { kind: 'section', sectionId: 'sec_graph' });
   assert.deepEqual(noteTarget(script, '@00:02', 30), { kind: 'frame', frame: 60 });
   assert.throws(() => findLine(script, '2.3'), /section 2 has 2/);

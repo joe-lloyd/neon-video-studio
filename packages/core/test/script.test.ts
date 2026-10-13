@@ -95,6 +95,17 @@ test('notes thread between the person and the agent and survive a rewrite of the
   assert.deepEqual([kept!.on, kept!.text, kept!.replies.map((r) => [r.author, r.text]), kept!.resolved], [{ kind: 'line', lineId: line.id }, 'Too slow. Lead with the stashes.', [['agent', 'Swapped the order.']], true]);
 });
 
+test('notes keep their number: written in one go, or after another is deleted', () => {
+  const doc = fresh();
+  const on = { kind: 'frame' as const, frame: 0 };
+  doc.transact(() => {
+    for (const text of ['first', 'second', 'third']) doc.addNote({ on, text, author: 'person' });
+  });
+  doc.removeNote(doc.getScript().notes[1]!.id);
+  doc.addNote({ on, text: 'fourth', author: 'agent' });
+  assert.deepEqual(doc.getScript().notes.map((n) => [n.number, n.text]), [[1, 'first'], [3, 'third'], [4, 'fourth']]);
+});
+
 test('planned lines get a running time estimate; placed ones keep their place', () => {
   const doc = fresh();
   doc.setScript([{ title: 'A', lines: [{ say: 'one two three' }, { say: 'four five six seven eight nine' }, { say: 'placed', placed: placed(600, 60) }, { say: 'ten' }] }]);

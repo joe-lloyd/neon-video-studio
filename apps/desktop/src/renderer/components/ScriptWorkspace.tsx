@@ -285,8 +285,7 @@ function NotesMargin({ script, timings, fps, reveal }: { script: Script; timings
   const editor = useEditor();
   const draft = useSelector(editor.ui, (u) => u.noteDraft);
   const [all, setAll] = useState(false);
-  const numbered = script.notes.map((note, i) => ({ note, number: i + 1 }));
-  const shown = numbered.filter(({ note }) => all || !note.resolved).sort((a, b) => notePosition(script, timings, a.note.on) - notePosition(script, timings, b.note.on));
+  const shown = script.notes.filter((note) => all || !note.resolved).sort((a, b) => notePosition(script, timings, a.on) - notePosition(script, timings, b.on));
   const open = script.notes.filter((n) => !n.resolved).length;
   return (
     <aside className="script-notes">
@@ -304,8 +303,8 @@ function NotesMargin({ script, timings, fps, reveal }: { script: Script; timings
           {all ? 'No notes yet.' : 'No open notes.'} Hover a line and press <b>note</b> to pin one where the problem is. The agent reads them with <span className="mono">neon-cli notes</span> and replies here.
         </p>
       ) : null}
-      {shown.map(({ note, number }) => (
-        <NoteThread key={note.id} note={note} number={number} label={targetLabel(script, note.on, fps)} onOpenTarget={() => openTarget(note.on)} />
+      {shown.map((note) => (
+        <NoteThread key={note.id} note={note} label={targetLabel(script, note.on, fps)} onOpenTarget={() => openTarget(note.on)} />
       ))}
     </aside>
   );
@@ -392,7 +391,7 @@ function NoteComposer({ target, label }: { target: ScriptNoteTarget; label: stri
 
 const WHO: Record<ScriptNote['author'], string> = { person: 'You', agent: 'Agent' };
 
-function NoteThread({ note, number, label, onOpenTarget }: { note: ScriptNote; number: number; label: string; onOpenTarget: () => void }) {
+function NoteThread({ note, label, onOpenTarget }: { note: ScriptNote; label: string; onOpenTarget: () => void }) {
   const editor = useEditor();
   const [reply, setReply] = useState('');
   const send = () => {
@@ -402,7 +401,7 @@ function NoteThread({ note, number, label, onOpenTarget }: { note: ScriptNote; n
   return (
     <div className={`note-thread${note.resolved ? ' resolved' : ''}`}>
       <button className="note-on" onClick={onOpenTarget} title="Show it">
-        #{number} · {label}
+        #{note.number} · {label}
       </button>
       <div className="note-text">
         <span className={`who ${note.author}`}>{WHO[note.author]}</span> {note.text}
