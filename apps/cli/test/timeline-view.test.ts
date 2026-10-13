@@ -18,7 +18,7 @@ const project: Project = {
   ],
   assets: [{ id: 'a'.repeat(64), name: 'take.mp4', kind: 'video', mime: 'video/mp4', size: 1, importedAt: '' }],
   transcripts: [],
-  cues: [],
+  script: { sections: [], notes: [] },
 };
 
 test('timelineView orders tracks, fills gaps and maps zooms to timeline frames', () => {

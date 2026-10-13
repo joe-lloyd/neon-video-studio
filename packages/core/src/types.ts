@@ -182,10 +182,68 @@ export interface Transcript {
 }
 
 /**
- * One line of the script, pinned to when it should be said. Times are timeline frames, so a cue
- * stays over the footage it describes; ripple cuts across the whole timeline move it too.
+ * The plan for the video, written before anything is recorded: sections of lines, each line the
+ * words to say and what the picture shows. Once recorded a line is placed on the timeline and the
+ * prompter reads it from there. Notes are the review thread between the person and the agent.
  */
+export interface Script {
+  sections: ScriptSection[];
+  notes: ScriptNote[];
+}
+
+/** Where a section is in review: being written, waiting on the person, or signed off. */
+export type ScriptStatus = 'draft' | 'review' | 'approved';
+export const SCRIPT_STATUSES: readonly ScriptStatus[] = ['draft', 'review', 'approved'];
+
+export interface ScriptSection {
+  id: string;
+  title: string;
+  /** What the section has to get across, in a sentence. */
+  intent: string;
+  status: ScriptStatus;
+  lines: ScriptLine[];
+}
+
+export interface ScriptLine {
+  id: string;
+  /** The words to say. */
+  say: string;
+  /** What is on screen while they are said. */
+  show: string;
+  /** Storyboard still for the shot: an image asset. */
+  stillAssetId?: string;
+  /**
+   * Where the line sits on the timeline once recorded; absent while it is only planned. Ripple
+   * cuts across the whole timeline move it, and a cut that removes all of it unplaces it.
+   */
+  placed?: { startFrame: number; durationFrames: number };
+}
+
+export type ScriptNoteTarget = { kind: 'line'; lineId: string } | { kind: 'section'; sectionId: string } | { kind: 'frame'; frame: number };
+/** Notes from the app are the person's; notes through the control API are the agent's unless it says otherwise. */
+export type ScriptNoteAuthor = 'person' | 'agent';
+
+export interface ScriptNoteReply {
+  author: ScriptNoteAuthor;
+  text: string;
+  createdAt: string;
+}
+
+export interface ScriptNote {
+  id: string;
+  /** Shown as #number. Given in order of writing and kept when other notes are deleted. */
+  number: number;
+  on: ScriptNoteTarget;
+  author: ScriptNoteAuthor;
+  text: string;
+  createdAt: string;
+  replies: ScriptNoteReply[];
+  resolved: boolean;
+}
+
+/** A placed line as the prompter reads it. */
 export interface ScriptCue {
+  /** The line's id. */
   id: string;
   startFrame: number;
   /** How long the line has on the timeline; the prompter warns when the text needs longer. */
@@ -199,8 +257,8 @@ export interface Project {
   clips: Clip[];
   assets: Asset[];
   transcripts: Transcript[];
-  /** The script, for the prompter. Empty until someone writes one. */
-  cues: ScriptCue[];
+  /** The plan for the video and its review notes. Empty until someone writes one. */
+  script: Script;
 }
 
 /** Half-open frame range on the timeline [start, end). */

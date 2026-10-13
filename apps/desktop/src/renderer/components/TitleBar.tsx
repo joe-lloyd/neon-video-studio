@@ -18,6 +18,23 @@ function UpdatePill() {
   );
 }
 
+/** Edit (preview, timeline, panels) or Script (the plan and its notes). The count is open notes. */
+function ViewSwitch() {
+  const editor = useEditor();
+  const view = useSelector(editor.ui, (u) => u.view);
+  const open = useStoreValue(editor.project).project.script.notes.filter((n) => !n.resolved).length;
+  return (
+    <div className="view-switch">
+      <button className={view === 'edit' ? 'on' : ''} onClick={() => editor.ui.set({ view: 'edit' })}>
+        Edit
+      </button>
+      <button className={view === 'script' ? 'on' : ''} onClick={() => editor.ui.set({ view: 'script' })} title={open ? `${open} open note${open === 1 ? '' : 's'}` : 'The script and its review notes'}>
+        Script{open ? <span className="count">{open}</span> : null}
+      </button>
+    </div>
+  );
+}
+
 export function TitleBar() {
   const editor = useEditor();
   const ui = useStoreValue(editor.ui);
@@ -48,6 +65,7 @@ export function TitleBar() {
         }}
         spellCheck={false}
       />
+      <ViewSwitch />
       <span className={`save-state ${ui.saving}`}>{ui.saving === 'dirty' ? '● unsaved' : ui.saving === 'saved' ? 'autosaved' : ''}</span>
       {ui.projectPath ? <span className="hint mono" title={ui.projectPath}>{ui.projectPath.split('/').slice(-1)[0]}</span> : <span className="hint">scratch project — Save to choose a folder</span>}
       <div className="spacer" />

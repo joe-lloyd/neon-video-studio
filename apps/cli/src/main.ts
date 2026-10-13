@@ -7,8 +7,9 @@
 import { parseArgs } from 'node:util';
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { RENDER_PRESETS, bodyJsonSchema, catalogEntries, checkPlan, findRoute, getPreset, projectPreset, framesToTimecode, cueIsTight, timelineFrameAt, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type CatalogEntry, type ImportAssetResponse, type RenderJob } from '@neon/core';
+import { RENDER_PRESETS, bodyJsonSchema, catalogEntries, checkPlan, findRoute, getPreset, projectPreset, framesToTimecode, SCRIPT_STATUSES, timelineFrameAt, listTemplates, templateDefaults, templateJsonSchema, type AiJob, type CatalogEntry, type ImportAssetResponse, type RenderJob } from '@neon/core';
 import { renderHeadless } from '@neon/render';
+import { findLine, findNote, findSection, formatNotes, formatScript, noteTarget } from './script.ts';
 import { registerAllPacks } from '@neon/compositions/packs';
 import { registerInstalledPacks } from '@neon/core/node';
 
@@ -105,7 +106,7 @@ AI (local engines: whisper.cpp, ffmpeg, Apple Vision; Claude optional for B-roll
   ai cut <asset> --words 3,7,12-15 [--audio-only]   Non-contiguous words; --audio-only mutes them in place
   ai jobs | ai job <id> | ai cancel <id>
   preview play|pause|toggle|seek <T>      Drive the app's preview player (watch your edits play back)
-  ui panel <media|fx|inspect|room|ai|script|render|live> | ui select <clip...> | ui select none | ui dialog <render|room|shortcuts|none>
+  ui panel <media|fx|inspect|room|ai|script|render|live> | ui select <clip...> | ui select none | ui dialog <render|room|shortcuts|none> | ui view <edit|script>
 
 FX PACKS (folders with pack.json + index.tsx · installed to ~/.neon-video/packs · see docs/fx-packs.md)
   packs [list]                            Built-in, installed and example packs, with "in project" state
@@ -113,11 +114,19 @@ FX PACKS (folders with pack.json + index.tsx · installed to ~/.neon-video/packs
   packs add <name...> | packs remove <name...>   Enable/disable installed packs for THIS project (meta.packs)
   packs uninstall <name> | packs reload   Delete from ~/.neon-video/packs · re-scan + recompile after editing
 
+SCRIPT (plan the video before recording it · lines are 4.2 = section 4, line 2 · see docs/script.md)
+  script [show]                           The outline: sections, status, lines with times (~ = estimated), shots, open notes
+  script set <script.json|->              Replace sections and lines: {"sections":[{"title","intent"?,"status"?,"lines":[{"say","show"?,"at"?}]}]}
+  script edit <line> [--say T] [--shot T] [--still ASSET|none] [--at T|none] [--duration T]   Change a line (--shot = what is on screen)
+  script add <section> --say T [--shot T] [--after LINE|first]   Add a line (at the end unless --after)
+  script move <line> --to <N|LINE|N.0>    Move a line: to the end of section N, after LINE, or first in section N
+  script remove <line...>                 Delete lines
+  script section add --title T [--intent T] [--after N] | script section <n> [--title T] [--intent T] [--status draft|review|approved] | script section <n> remove
+  notes [--all]                           Open review notes with replies (--all includes resolved)
+  notes add <line|section|@T> <text...> [--as person|agent]      Pin a note to a line (4.2), a section (4) or a moment (@02:56)
+  notes reply <#n> <text...> | notes resolve <#n...> | notes reopen <#n...> | notes remove <#n...>
+
 EDIT HISTORY (checkpoints persisted in <project>.neon/history — survive restarts)
-  script [show]                           The script: timed cues for the prompter (tight = more words than time)
-  script set <cues.json|->                Replace the script: [{"at":"0:12","text":"…","duration":"5s"?}, …]
-  script edit <n|id> [--text T] [--at T] [--duration T]   Change one cue (n = its number in script show)
-  script remove <n|id...> | script clear  Delete cues
   history                                 Where you are: checkpoint N of M
   history undo | history redo             Step the project to the previous/next checkpoint
   history checkpoint                      Record the current state as a checkpoint (agents: do this before risky edits)
@@ -141,6 +150,15 @@ const { values: flags, positionals } = parseCli(() => parseArgs({
   options: {
     json: { type: 'boolean', default: false },
     text: { type: 'string' },
+    say: { type: 'string' },
+    shot: { type: 'string' },
+    still: { type: 'string' },
+    title: { type: 'string' },
+    intent: { type: 'string' },
+    status: { type: 'string' },
+    after: { type: 'string' },
+    all: { type: 'boolean', default: false },
+    as: { type: 'string' },
     endpoint: { type: 'string' },
     token: { type: 'string' },
     help: { type: 'boolean', short: 'h', default: false },
@@ -689,43 +707,114 @@ async function main(): Promise<void> {
     }
 
     case 'script': {
-      const resolveCue = async (ref: string) => {
-        const { cues } = await api.script();
-        const byNumber = /^\d+$/.test(ref) ? cues[Number(ref) - 1] : undefined;
-        const matches = byNumber ? [byNumber] : cues.filter((c) => c.id === ref || c.id.startsWith(ref));
-        if (matches.length !== 1) throw new ApiError('NOT_FOUND', matches.length ? `"${ref}" matches ${matches.length} cues` : `No cue "${ref}" (use its number from script show)`);
-        return matches[0]!;
+      const status = (raw: string | undefined) => {
+        if (raw === undefined) return undefined;
+        const found = SCRIPT_STATUSES.find((s) => s === raw);
+        if (!found) throw new ApiError('USAGE', `--status is one of ${SCRIPT_STATUSES.join(', ')}`);
+        return found;
       };
+      const script = await api.script();
       if (sub === undefined || sub === 'show') {
-        const { cues } = await api.script();
-        const fps = (await api.status()).project.fps;
-        out({ cues }, () =>
-          cues.length
-            ? table(cues.map((c, i) => [String(i + 1), framesToTimecode(c.startFrame, fps), `${(c.durationFrames / fps).toFixed(1)}s`, cueIsTight(c, fps) ? 'tight' : '', c.text]), ['#', 'at', 'has', '', 'text'])
-            : 'No script yet. Write one with neon-cli script set cues.json',
-        );
+        const { name, fps } = (await api.status()).project;
+        out(script, () => formatScript(name, script, fps));
       } else if (sub === 'set') {
         if (!rest[0]) throw usage('script', 'set');
         const parsed = await readJsonArg(rest[0], true);
-        const list = Array.isArray(parsed) ? parsed : (parsed as { cues?: unknown }).cues;
-        if (!Array.isArray(list)) throw new ApiError('USAGE', 'script set wants a JSON array of cues, or {"cues": [...]}');
-        const { cues } = await api.scriptSet(list as { at: string | number; text: string }[]);
-        out({ cues }, () => `Wrote the script: ${cues.length} cue(s)`);
+        const sections = Array.isArray(parsed) ? parsed : (parsed as { sections?: unknown }).sections;
+        if (!Array.isArray(sections)) throw new ApiError('USAGE', 'script set wants {"sections": [...]} or a JSON array of sections');
+        const next = await api.scriptSet(sections);
+        out(next, () => `Wrote the script: ${next.sections.length} section(s), ${next.sections.reduce((n, s) => n + s.lines.length, 0)} line(s)`);
       } else if (sub === 'edit') {
-        if (!rest[0] || (flags.text === undefined && flags.at === undefined && flags.duration === undefined)) throw usage('script', 'edit');
-        const cue = await resolveCue(rest[0]);
-        const updated = await api.scriptUpdate(cue.id, { text: flags.text, at: flags.at, duration: flags.duration });
-        out(updated, () => `Updated cue ${rest[0]}: ${updated.text}`);
+        if (!rest[0] || (flags.say ?? flags.shot ?? flags.still ?? flags.at ?? flags.duration) === undefined) throw usage('script', 'edit');
+        const { line, number } = findLine(script, rest[0]);
+        const next = await api.scriptEdit({
+          op: 'line.update',
+          id: line.id,
+          say: flags.say,
+          show: flags.shot,
+          still: flags.still === 'none' ? null : flags.still,
+          at: flags.at === 'none' ? null : flags.at,
+          duration: flags.duration,
+        });
+        out(next, () => `Updated line ${number}`);
+      } else if (sub === 'add') {
+        if (!rest[0] || flags.say === undefined) throw usage('script', 'add');
+        const { section } = findSection(script, rest[0]);
+        const after = flags.after === undefined ? undefined : flags.after === 'first' ? null : findLine(script, flags.after).line.id;
+        const next = await api.scriptEdit({ op: 'line.add', sectionId: section.id, say: flags.say, show: flags.shot, after });
+        out(next, () => `Added a line to section ${rest[0]}`);
+      } else if (sub === 'move') {
+        if (!rest[0] || !flags.to) throw usage('script', 'move');
+        const { line } = findLine(script, rest[0]);
+        // --to 4 = end of section 4 · --to 4.2 = after line 4.2 · --to 4.0 = first in section 4
+        const first = /^(\d+)\.0$/.exec(flags.to);
+        const to = first
+          ? { sectionId: findSection(script, first[1]!).section.id, after: null }
+          : /^\d+$/.test(flags.to)
+            ? (() => {
+                const { section } = findSection(script, flags.to!);
+                const last = section.lines.filter((l) => l.id !== line.id).at(-1);
+                return { sectionId: section.id, after: last?.id ?? null };
+              })()
+            : (() => {
+                const target = findLine(script, flags.to!);
+                return { sectionId: target.section.id, after: target.line.id };
+              })();
+        const next = await api.scriptEdit({ op: 'line.move', id: line.id, ...to });
+        out(next, () => `Moved line ${rest[0]}`);
       } else if (sub === 'remove') {
         if (!rest.length) throw usage('script', 'remove');
-        const ids = [];
-        for (const ref of rest) ids.push((await resolveCue(ref)).id);
-        const r = await api.scriptRemove(ids);
-        out(r, () => `Removed ${r.removed} cue(s)`);
-      } else if (sub === 'clear') {
-        const { cues } = await api.scriptSet([]);
-        out({ cues }, () => 'Cleared the script');
-      } else throw unknownSub('script', sub, ['show', 'set', 'edit', 'remove', 'clear']);
+        const ids = rest.map((ref) => findLine(script, ref).line.id);
+        const next = await api.scriptEdit(...ids.map((id) => ({ op: 'line.remove' as const, id })));
+        out(next, () => `Removed ${ids.length} line(s)`);
+      } else if (sub === 'section') {
+        const [ref, verb] = rest;
+        if (ref === 'add') {
+          if (!flags.title) throw usage('script', 'section');
+          const after = flags.after === undefined ? undefined : findSection(script, flags.after).section.id;
+          const next = await api.scriptEdit({ op: 'section.add', title: flags.title, intent: flags.intent, status: status(flags.status), after });
+          out(next, () => `Added section ${next.sections.findIndex((s) => s.title === flags.title) + 1}: ${flags.title}`);
+        } else if (ref && verb === 'remove') {
+          const { section } = findSection(script, ref);
+          const next = await api.scriptEdit({ op: 'section.remove', id: section.id });
+          out(next, () => `Removed section ${ref} (${section.title}) and its ${section.lines.length} line(s)`);
+        } else if (ref && verb === undefined && (flags.title ?? flags.intent ?? flags.status) !== undefined) {
+          const { section } = findSection(script, ref);
+          const next = await api.scriptEdit({ op: 'section.update', id: section.id, title: flags.title, intent: flags.intent, status: status(flags.status) });
+          out(next, () => `Updated section ${ref}`);
+        } else throw usage('script', 'section');
+      } else throw unknownSub('script', sub, ['show', 'set', 'edit', 'add', 'move', 'remove', 'section']);
+      return;
+    }
+
+    case 'notes': {
+      const script = await api.script();
+      const fps = (await api.status()).project.fps;
+      const author = flags.as === undefined ? undefined : flags.as === 'person' || flags.as === 'agent' ? flags.as : (() => { throw new ApiError('USAGE', '--as is person or agent'); })();
+      if (sub === undefined || sub === 'list') {
+        out(script.notes, () => formatNotes(script, fps, flags.all));
+      } else if (sub === 'add') {
+        if (!rest[0] || rest.length < 2) throw usage('notes', 'add');
+        const on = noteTarget(script, rest[0], fps);
+        const next = await api.scriptEdit({ op: 'note.add', on: on.kind === 'frame' ? { kind: 'frame', at: on.frame } : on, text: rest.slice(1).join(' '), author });
+        const added = next.notes.at(-1)!;
+        out(added, () => `Added note #${added.number}`);
+      } else if (sub === 'reply') {
+        if (!rest[0] || rest.length < 2) throw usage('notes', 'reply');
+        const note = findNote(script, rest[0]);
+        const next = await api.scriptEdit({ op: 'note.reply', id: note.id, text: rest.slice(1).join(' '), author });
+        out(next.notes.find((n) => n.id === note.id), () => `Replied to #${note.number}`);
+      } else if (sub === 'resolve' || sub === 'reopen') {
+        if (!rest.length) throw usage('notes', sub);
+        const found = rest.map((ref) => findNote(script, ref));
+        const next = await api.scriptEdit(...found.map((note) => ({ op: 'note.resolve' as const, id: note.id, resolved: sub === 'resolve' })));
+        out(next.notes, () => `${sub === 'resolve' ? 'Resolved' : 'Reopened'} ${found.map((f) => `#${f.number}`).join(', ')}`);
+      } else if (sub === 'remove') {
+        if (!rest.length) throw usage('notes', 'remove');
+        const found = rest.map((ref) => findNote(script, ref));
+        await api.scriptEdit(...found.map((note) => ({ op: 'note.remove' as const, id: note.id })));
+        out({ removed: found.length }, () => `Removed ${found.map((f) => `#${f.number}`).join(', ')}`);
+      } else throw unknownSub('notes', sub, ['list', 'add', 'reply', 'resolve', 'reopen', 'remove']);
       return;
     }
 
@@ -947,7 +1036,12 @@ async function main(): Promise<void> {
         if (!rest[0]) throw usage('ui', 'dialog');
         const r = await api.ui({ dialog: rest[0] });
         out(r, () => `Dialog: ${rest[0]}`);
-      } else throw unknownSub('ui', sub, ['panel', 'select', 'dialog']);
+      } else if (sub === 'view') {
+        const view = rest[0] === 'edit' || rest[0] === 'script' ? rest[0] : undefined;
+        if (!view) throw usage('ui', 'view');
+        const r = await api.ui({ view });
+        out(r, () => `Switched to the ${view} view`);
+      } else throw unknownSub('ui', sub, ['panel', 'select', 'dialog', 'view']);
       return;
     }
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { CLIP_COLORS, framesToTimecode, snapFrame, sortClips, sortTracks, trackKindForClip, type Clip, type Track, type TrackKind } from '@neon/core';
 import { Eye, EyeOff, Lock, NeonIcon, Plus, Trash2, Unlock, Volume2, VolumeX } from '@neon/icon-kit';
 import { useEditor } from '../lib/context.ts';
+import { NoteMarkers } from './FrameNotes.tsx';
 import { followScroll } from '../lib/follow-playhead.ts';
 import { kbdFor } from '../lib/kbd.ts';
 import { useElementSize } from '../lib/hooks.ts';
@@ -304,6 +305,7 @@ export function Timeline() {
               {t.major ? <div className="tick-label" style={{ left: t.frame * pxPerFrame }}>{framesToTimecode(t.frame, fps, { showFrames: interval < fps })}</div> : null}
             </div>
           ))}
+          <NoteMarkers pxPerFrame={pxPerFrame} />
           <div className="playhead" style={{ left: playhead.frame * pxPerFrame }} />
           <div className="playhead-chip" style={{ left: playhead.frame * pxPerFrame }}>{framesToTimecode(playhead.frame, fps)}</div>
         </div>
