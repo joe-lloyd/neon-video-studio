@@ -231,6 +231,8 @@ export interface ScriptNoteReply {
 
 export interface ScriptNote {
   id: string;
+  /** Shown as #number. Given in order of writing and kept when other notes are deleted. */
+  number: number;
   on: ScriptNoteTarget;
   author: ScriptNoteAuthor;
   text: string;

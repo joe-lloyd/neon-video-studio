@@ -159,6 +159,7 @@ export const ScriptNoteTargetSchema = z.discriminatedUnion('kind', [
 
 export const ScriptNoteSchema = z.object({
   id: z.string().min(1),
+  number: z.number().int().min(1),
   on: ScriptNoteTargetSchema,
   author: NoteAuthorSchema,
   text: z.string(),
