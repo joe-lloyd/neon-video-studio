@@ -1,10 +1,10 @@
 import React from 'react';
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import { SANS, useUiScale } from '@neon/fx-kit';
-import { BOBA, blobPath, blobRadii, easeEffects, easeExit, easeExpressiveDefault, easeExpressiveFast } from './tokens.ts';
+import { PALETTE, blobPath, blobRadii, easeEffects, easeExit, easeSpringDefault, easeSpringFast } from './tokens.ts';
 
 /** Display title: words drift up into place one after another, tight 1.05 leading, matte and flat. */
-export const BobaTitle: React.FC<{
+export const SoftTitle: React.FC<{
   title: string;
   subtitle: string;
   textColor: string;
@@ -26,16 +26,16 @@ export const BobaTitle: React.FC<{
   const wordProgress = (i: number) => {
     const start = fps * (0.15 + i * 0.06);
     return {
-      y: interpolate(frame, [start, start + fps * 0.5], [1, 0], { easing: easeExpressiveDefault, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }),
+      y: interpolate(frame, [start, start + fps * 0.5], [1, 0], { easing: easeSpringDefault, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }),
       o: interpolate(frame, [start, start + fps * 0.35], [0, 1], { easing: easeEffects, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }),
     };
   };
   const subStart = fps * (0.3 + words.length * 0.06);
   const subO = interpolate(frame, [subStart, subStart + fps * 0.35], [0, 1], { easing: easeEffects, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  const subY = interpolate(frame, [subStart, subStart + fps * 0.5], [20 * s, 0], { easing: easeExpressiveDefault, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
-  const markScale = interpolate(frame, [subStart, subStart + fps * 0.35], [0, 1], { easing: easeExpressiveFast, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const subY = interpolate(frame, [subStart, subStart + fps * 0.5], [20 * s, 0], { easing: easeSpringDefault, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const markScale = interpolate(frame, [subStart, subStart + fps * 0.35], [0, 1], { easing: easeSpringFast, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
 
-  const bg = background === 'dark' ? BOBA.surfaceDark : background === 'light' ? BOBA.surfaceLight : 'transparent';
+  const bg = background === 'dark' ? PALETTE.surfaceDark : background === 'light' ? PALETTE.surfaceLight : 'transparent';
   const alignItems = align === 'center' ? 'center' : 'flex-start';
   return (
     <AbsoluteFill style={{ background: bg, justifyContent: 'center', alignItems, padding: 140 * s, opacity: out }}>

@@ -8,7 +8,7 @@ test('a Windows absolute entry path is a file, not a package', () => {
 });
 
 test('POSIX absolute and relative paths are files', () => {
-  assert.equal(isBareImport('/Users/joe/.neon-video/packs/boba/index.tsx'), false);
+  assert.equal(isBareImport('/Users/joe/.neon-video/packs/my-pack/index.tsx'), false);
   assert.equal(isBareImport('./tokens.ts'), false);
   assert.equal(isBareImport('../shared.ts'), false);
 });

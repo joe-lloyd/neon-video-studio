@@ -1,9 +1,9 @@
 {
-  "name": "@neon-packs/boba-expressive",
+  "name": "@neon-packs/soft-shapes",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Example FX pack for Neon Video Studio — an M3-Expressive-inspired set (violet/lavender palette, pills, blobs, overshoot easings)",
+  "description": "Example FX pack for Neon Video Studio — Soft Shapes (mint/teal palette, pills, blobs, springy easings)",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "echo 'no unit tests (example pack)'"

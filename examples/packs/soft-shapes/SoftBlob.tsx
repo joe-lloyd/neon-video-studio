@@ -1,13 +1,13 @@
 import React from 'react';
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import { useUiScale } from '@neon/fx-kit';
-import { type BlobShape, blobPath, blobRadii, easeExit, easeExpressiveFast } from './tokens.ts';
+import { type BlobShape, blobPath, blobRadii, easeExit, easeSpringFast } from './tokens.ts';
 
 /**
  * A single organic blob shape — springs in with an overshoot, optionally
  * rotates slowly and "breathes". Move/scale it on the canvas like any clip.
  */
-export const BobaBlob: React.FC<{ shape: string; color: string; size: number; spin: boolean; breath: boolean }> = ({
+export const SoftBlob: React.FC<{ shape: string; color: string; size: number; spin: boolean; breath: boolean }> = ({
   shape,
   color,
   size,
@@ -19,7 +19,7 @@ export const BobaBlob: React.FC<{ shape: string; color: string; size: number; sp
   const s = useUiScale();
   const t = frame / fps;
 
-  const enter = interpolate(frame, [0, fps * 0.5], [0, 1], { easing: easeExpressiveFast, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const enter = interpolate(frame, [0, fps * 0.5], [0, 1], { easing: easeSpringFast, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const out = interpolate(frame, [durationInFrames - fps * 0.3, durationInFrames], [1, 0], { easing: easeExit, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const breathScale = breath ? 1 + 0.03 * Math.sin((t / 3) * Math.PI * 2) : 1;
   const rotation = spin ? (t / 10) * 360 : 0;

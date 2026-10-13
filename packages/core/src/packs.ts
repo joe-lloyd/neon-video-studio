@@ -18,7 +18,7 @@ export const PACK_DEFAULT_ENTRY = 'index.tsx';
 export type PackSource = 'builtin' | 'installed';
 
 export interface PackManifest {
-  /** Unique id, kebab-case (also the folder name), e.g. "boba-expressive". */
+  /** Unique id, kebab-case (also the folder name), e.g. "soft-shapes". */
   name: string;
   label: string;
   version: string;

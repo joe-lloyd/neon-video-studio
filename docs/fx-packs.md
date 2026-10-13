@@ -98,43 +98,43 @@ say what the value means and its units:
 | `boolean` | boolean | — | toggle |
 | `select` | string | `options: string[]` (≥ 1; `default` must be one of them) | dropdown |
 
-A complete example, excerpted from the shipped `examples/packs/boba-expressive/pack.json`:
+A complete example, excerpted from the shipped `examples/packs/soft-shapes/pack.json`:
 
 ```json
 {
-  "name": "boba-expressive",
-  "label": "Boba Expressive",
+  "name": "soft-shapes",
+  "label": "Soft Shapes",
   "version": "1.0.0",
-  "description": "An M3-Expressive-inspired FX set: violet/lavender tonal palette, pills that square up on exit, organic blobs, overshoot easings, and matte flatness (no glows or shadows).",
+  "description": "Example FX set: mint/teal tonal palette, pills that square up on exit, procedural blobs, springy overshoot easings, and matte flatness (no glows or shadows).",
   "author": "Joe Lloyd",
   "category": "Expressive",
-  "tags": ["m3", "expressive", "blob", "pill"],
+  "tags": ["expressive", "blob", "pill", "spring"],
   "entry": "index.tsx",
   "templates": [
     {
-      "name": "BobaTag",
-      "label": "Boba Tag",
+      "name": "SoftTag",
+      "label": "Soft Tag",
       "description": "Matte pill tag with the circle-to-pill clip reveal. Flat by design — no glow.",
       "defaultDurationSeconds": 4,
       "category": "Badges",
       "icon": "Tag",
       "fields": [
         { "key": "text", "type": "text", "default": "New" },
-        { "key": "color", "type": "color", "default": "#deb8f7" },
-        { "key": "textColor", "type": "color", "default": "#402357" },
+        { "key": "color", "type": "color", "default": "#7fd1c7" },
+        { "key": "textColor", "type": "color", "default": "#0f3b37" },
         { "key": "size", "type": "number", "default": 40, "min": 12, "max": 160 },
         { "key": "corner", "type": "select", "default": "top-right", "options": ["top-left", "top-right", "bottom-left", "bottom-right"] }
       ]
     },
     {
-      "name": "BobaMorphLoader",
-      "label": "Boba Morph Loader",
-      "description": "Brand-mark loader: a blob morphing through a shape sequence with rotation snaps.",
+      "name": "SoftMorphLoader",
+      "label": "Soft Morph Loader",
+      "description": "Logo-mark loader: a blob morphing through a shape sequence with rotation snaps.",
       "defaultDurationSeconds": 5,
       "category": "Loaders",
       "icon": "Loader2",
       "fields": [
-        { "key": "color", "type": "color", "default": "#deb8f7" },
+        { "key": "color", "type": "color", "default": "#7fd1c7" },
         { "key": "size", "type": "number", "default": 220, "min": 40, "max": 800 },
         { "key": "stepSeconds", "type": "number", "default": 1, "min": 0.5, "max": 3, "step": 0.1 }
       ]
@@ -148,7 +148,7 @@ manifest from the repo root without starting the app:
 
 ```bash
 node --experimental-strip-types --no-warnings -e \
-  "import('./packages/core/src/packs.ts').then(m => { m.parsePackManifest(JSON.parse(require('fs').readFileSync('examples/packs/boba-expressive/pack.json','utf8'))); console.log('manifest ok') })"
+  "import('./packages/core/src/packs.ts').then(m => { m.parsePackManifest(JSON.parse(require('fs').readFileSync('examples/packs/soft-shapes/pack.json','utf8'))); console.log('manifest ok') })"
 ```
 
 ### `index.tsx` — the export contract
@@ -158,19 +158,19 @@ name must equal the template name exactly:
 
 ```tsx
 // index.tsx
-export { BobaTitle } from './BobaTitle.tsx';
-export { BobaLowerThird } from './BobaLowerThird.tsx';
-export { BobaTag } from './BobaTag.tsx';
-export { BobaBlob } from './BobaBlob.tsx';
-export { BobaMorphLoader } from './BobaMorphLoader.tsx';
+export { SoftTitle } from './SoftTitle.tsx';
+export { SoftLowerThird } from './SoftLowerThird.tsx';
+export { SoftTag } from './SoftTag.tsx';
+export { SoftBlob } from './SoftBlob.tsx';
+export { SoftMorphLoader } from './SoftMorphLoader.tsx';
 ```
 
 Each component receives the template's fields as props, already validated and filled with defaults
-(`{ text: string; color: string; size: number; corner: string; … }` for the `BobaTag` above).
+(`{ text: string; color: string; size: number; corner: string; … }` for the `SoftTag` above).
 `select` fields arrive as `string`; narrow them yourself if you need a union. A template listed in
 `pack.json` but missing from the entry module is reported in the Library and renders a placeholder.
 
-Relative imports inside a pack carry their extension (`./tokens.ts`, `./BobaTag.tsx`), matching the
+Relative imports inside a pack carry their extension (`./tokens.ts`, `./SoftTag.tsx`), matching the
 rest of the repo.
 
 ### Allowed imports
@@ -246,9 +246,9 @@ const cue = frame === null ? undefined : cueAt(cues, frame);
 
 ## Developing a pack inside this repo
 
-`examples/packs/boba-expressive` is a complete, working pack and the intended starting point:
+`examples/packs/soft-shapes` is a complete, working pack and the intended starting point:
 
-1. Copy it: `cp -r examples/packs/boba-expressive examples/packs/my-pack`, then edit `pack.json`
+1. Copy it: `cp -r examples/packs/soft-shapes examples/packs/my-pack`, then edit `pack.json`
    (`name` must be `my-pack`) and `package.json` (`"name": "@neon-packs/my-pack"`).
 2. It is a **workspace package** (`pnpm-workspace.yaml` includes `examples/packs/*`), so after
    `pnpm install --ignore-scripts` the repo-wide `pnpm typecheck` covers it, and
@@ -272,7 +272,7 @@ Template names from every registered pack are ordinary `--component` values:
 ```bash
 neon-cli list templates                 # name, label, default duration, description; pack/category included
 neon-cli list templates --json          # includes the JSON Schema of every template's props (for agents)
-neon-cli templates BobaTitle            # defaults + JSON Schema for one template
+neon-cli templates SoftTitle            # defaults + JSON Schema for one template
 ```
 
 Installed packs are discovered from `~/.neon-video/packs` by the CLI as well, so it can validate
@@ -287,9 +287,9 @@ neon-cli timeline insert --component Callout --props '{"text":"Click Save","x":0
 neon-cli timeline insert --component NeonBadge --props '{"text":"50% OFF","corner":"top-left"}' --at 2s
 neon-cli timeline insert --component KineticList --props '{"title":"Agenda","items":"One\nTwo\nThree"}' --at 4s --duration 8s
 
-# installed example pack: boba-expressive (enable it in the project first)
-neon-cli timeline insert --component BobaTitle --props '{"title":"Make it expressive"}' --at 0s
-neon-cli timeline insert --component BobaMorphLoader --props '{"color":"#deb8f7"}' --at 5s
+# installed example pack: soft-shapes (enable it in the project first)
+neon-cli timeline insert --component SoftTitle --props '{"title":"Make it expressive"}' --at 0s
+neon-cli timeline insert --component SoftMorphLoader --props '{"color":"#7fd1c7"}' --at 5s
 ```
 
 ## Ships with
@@ -324,10 +324,10 @@ neon-cli timeline insert --component StepBadge --props '{"step":2,"total":5,"tit
 neon-cli timeline insert --component ClickPulse --props '{"x":0.87,"y":0.57}' --at 17s
 ```
 
-**boba-expressive** (example pack, `examples/packs/boba-expressive/`): an M3-Expressive-inspired
-set — violet/lavender tonal palette, matte flatness (no glows), pills that square to 12px on exit,
-organic blob shapes and overshoot-and-settle easings. `BobaTitle` (word-stagger display title),
-`BobaLowerThird` (frosted pill with center-out reveal), `BobaTag` (circle-to-pill clip reveal),
-`BobaBlob` (spinning organic shape), `BobaMorphLoader` (blob morphing through a shape sequence with
+**soft-shapes** (example pack, `examples/packs/soft-shapes/`): a soft, rounded
+set — mint/teal tonal palette, matte flatness (no glows), pills that square to 12px on exit,
+procedural blob shapes and springy overshoot-and-settle easings. `SoftTitle` (word-stagger display title),
+`SoftLowerThird` (frosted pill with center-out reveal), `SoftTag` (circle-to-pill clip reveal),
+`SoftBlob` (spinning organic shape), `SoftMorphLoader` (blob morphing through a shape sequence with
 60° rotation snaps). Shared tokens — palette, easings, blob geometry — live in `tokens.ts` and show
 how a pack keeps its own design system in a relative file.

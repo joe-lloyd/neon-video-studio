@@ -63,7 +63,7 @@ export async function makeProjectFixture(dir: string): Promise<void> {
   // Component props are complete, as the app stores them (it fills schema defaults on insert).
   const media = { volume: 1, fit: 'cover' as const, fadeIn: 0, fadeOut: 0, trimBefore: 0 };
   const project = {
-    meta: { id: 'e2e', name: 'E2E', fps: 30, width: 640, height: 360, background: '#000000', createdAt: now, updatedAt: now, schemaVersion: 1, packs: ['boba-expressive'] },
+    meta: { id: 'e2e', name: 'E2E', fps: 30, width: 640, height: 360, background: '#000000', createdAt: now, updatedAt: now, schemaVersion: 1, packs: ['soft-shapes'] },
     tracks: [
       { id: 'v', name: 'Video', kind: 'video', order: 0, muted: false, locked: false, hidden: false },
       { id: 'a', name: 'Audio', kind: 'audio', order: 1, muted: false, locked: false, hidden: false },
@@ -72,7 +72,7 @@ export async function makeProjectFixture(dir: string): Promise<void> {
     clips: [
       { ...media, id: 'c-video', trackId: 'v', name: 'Video', kind: 'video', assetId: video.id, startFrame: 0, durationFrames: 90, trimBefore: 15, volume: 0.5 },
       { ...media, id: 'c-tone', trackId: 'a', name: 'Tone', kind: 'audio', assetId: tone.id, startFrame: 30, durationFrames: 90, fadeIn: 15, fadeOut: 15 },
-      { id: 'c-boba', trackId: 'o', name: 'Boba', kind: 'component', componentName: 'BobaTitle', startFrame: 0, durationFrames: 60, props: { title: 'Neon Motion', subtitle: 'own render engine', textColor: '#ffffff', accentColor: '#deb8f7', background: 'none', align: 'left', size: 64 } },
+      { id: 'c-soft', trackId: 'o', name: 'Soft', kind: 'component', componentName: 'SoftTitle', startFrame: 0, durationFrames: 60, props: { title: 'Neon Motion', subtitle: 'own render engine', textColor: '#ffffff', accentColor: '#7fd1c7', background: 'none', align: 'left', size: 64 } },
       { id: 'c-lower', trackId: 'o', name: 'Lower third', kind: 'component', componentName: 'LowerThird', startFrame: 60, durationFrames: 30, props: { title: 'Ada Lovelace', subtitle: 'Engine · Analytical', accentColor: '#FF007F', textColor: '#FFFFFF', side: 'left' } },
       { id: 'c-title', trackId: 'o', name: 'Title', kind: 'component', componentName: 'TitleCard', startFrame: 90, durationFrames: 60, props: { title: 'Chapter Two', subtitle: 'Rendered headlessly', background: '#09090B', accentColor: '#00F3FF', textColor: '#FFFFFF' } },
     ],
@@ -83,11 +83,11 @@ export async function makeProjectFixture(dir: string): Promise<void> {
   await writeFile(join(dir, 'project.json'), JSON.stringify(project, null, 2));
 }
 
-/** NEON_HOME with the example Boba pack installed; BobaTitle imports from '@neon/motion' to exercise the alias. */
+/** NEON_HOME with the example Soft Shapes pack installed; SoftTitle imports from '@neon/motion' to exercise the alias. */
 async function makeNeonHome(dir: string): Promise<string> {
-  const pack = join(dir, 'packs', 'boba-expressive');
-  await cp(join(repoRoot, 'examples/packs/boba-expressive'), pack, { recursive: true, filter: (src) => !src.includes('node_modules') });
-  const title = join(pack, 'BobaTitle.tsx');
+  const pack = join(dir, 'packs', 'soft-shapes');
+  await cp(join(repoRoot, 'examples/packs/soft-shapes'), pack, { recursive: true, filter: (src) => !src.includes('node_modules') });
+  const title = join(pack, 'SoftTitle.tsx');
   await writeFile(title, (await readFile(title, 'utf8')).replace("from '@neon/motion'", `from '${COMPAT_NAME}'`));
   return dir;
 }

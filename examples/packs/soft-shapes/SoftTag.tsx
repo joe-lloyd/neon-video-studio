@@ -1,14 +1,14 @@
 import React from 'react';
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from '@neon/motion';
 import { SANS, useUiScale } from '@neon/fx-kit';
-import { RADIUS_ACTIVE, RADIUS_PILL, easeExit, easeExpressiveFast } from './tokens.ts';
+import { RADIUS_ACTIVE, RADIUS_PILL, easeExit, easeSpringFast } from './tokens.ts';
 
 /**
  * Matte pill tag: enters with the signature circle-to-pill clip reveal
- * (0.35s, expressive-fast), sits flat — no pulse, no glow — then squares
+ * (0.35s, spring-fast), sits flat — no pulse, no glow — then squares
  * to 12px and fades on exit.
  */
-export const BobaTag: React.FC<{ text: string; color: string; textColor: string; size: number; corner: string }> = ({
+export const SoftTag: React.FC<{ text: string; color: string; textColor: string; size: number; corner: string }> = ({
   text,
   color,
   textColor,
@@ -19,12 +19,12 @@ export const BobaTag: React.FC<{ text: string; color: string; textColor: string;
   const { fps, durationInFrames } = useVideoConfig();
   const s = useUiScale();
 
-  const inset = interpolate(frame, [0, fps * 0.35], [42, 0], { easing: easeExpressiveFast, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
+  const inset = interpolate(frame, [0, fps * 0.35], [42, 0], { easing: easeSpringFast, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const fadeIn = interpolate(frame, [0, fps * 0.12], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const exitStart = durationInFrames - fps * 0.3;
   const out = interpolate(frame, [exitStart, durationInFrames], [1, 0], { easing: easeExit, extrapolateLeft: 'clamp', extrapolateRight: 'clamp' });
   const radius = interpolate(frame, [exitStart, durationInFrames], [RADIUS_PILL, RADIUS_ACTIVE], {
-    easing: easeExpressiveFast,
+    easing: easeSpringFast,
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });

@@ -1,46 +1,44 @@
 /**
- * Boba Expressive design tokens — an M3-Expressive-flavored language:
- * violet/lavender tonal palette, pill shapes that square to 12px when "active",
- * overshoot-and-settle easing curves, organic blob geometry, and matte flatness
- * (no glows, no shadows, no gradients — depth comes from tonal surface steps).
+ * Soft Shapes design tokens: a mint/teal tonal palette, pill shapes that square to 12px when
+ * "active", springy overshoot-and-settle easing curves, procedural blob geometry, and matte
+ * flatness (no glows, no shadows, no gradients; depth comes from tonal surface steps).
  */
 import { Easing } from '@neon/motion';
 
-export const BOBA = {
-  lavender: '#deb8f7', // hero accent (inverse-primary / dark-mode primary)
-  violet: '#715188', // light-mode primary
-  lavenderContainer: '#f2daff',
-  deepViolet: '#402357',
-  plum: '#2a0c41',
-  surfaceDark: '#0d0d0d', // near-black, never pure black
-  surfaceLight: '#f9f9f9',
+export const PALETTE = {
+  mint: '#7fd1c7', // hero accent
+  teal: '#1f6f68', // primary on light surfaces
+  mintContainer: '#c9f0ea',
+  deepTeal: '#0f3b37',
   ink: '#1a1a1a',
-  onSurfaceVariant: '#cdc3ce',
+  surfaceDark: '#101214',
+  surfaceLight: '#f6f7f7',
+  onSurfaceVariant: '#c4cfcd',
 } as const;
 
-/** Expressive curves overshoot past 1 and settle — the core motion signature. */
-export const easeExpressiveFast = Easing.bezier(0.42, 1.67, 0.21, 0.9);
-export const easeExpressiveDefault = Easing.bezier(0.38, 1.21, 0.22, 1);
-export const easeExpressiveSlow = Easing.bezier(0.39, 1.29, 0.35, 0.98);
+/** Spring curves overshoot past 1 and settle; that is the pack's motion signature. */
+export const easeSpringFast = Easing.bezier(0.34, 1.56, 0.64, 1);
+export const easeSpringDefault = Easing.bezier(0.3, 1.3, 0.4, 1);
+export const easeSpringSlow = Easing.bezier(0.35, 1.2, 0.45, 1);
 /** Effects (opacity/color) get a plain settle; exits accelerate away. */
-export const easeEffects = Easing.bezier(0.34, 0.8, 0.34, 1);
-export const easeExit = Easing.bezier(0.3, 0, 0.8, 0.51);
+export const easeEffects = Easing.bezier(0.25, 0.8, 0.35, 1);
+export const easeExit = Easing.bezier(0.4, 0, 0.9, 0.6);
 
 /** Idle shapes are full pills; pressed/exiting shapes square up to 12px. */
 export const RADIUS_PILL = 999;
 export const RADIUS_ACTIVE = 12;
 
-// ---- organic blob geometry (400×400 viewBox, like the original shape library) ----
+// ---- procedural blob geometry (400×400 viewBox) ----
 
-export type BlobShape = 'sunny' | 'flower' | 'clover' | 'cookie' | 'oval';
+export type BlobShape = 'burst' | 'petal' | 'clover' | 'scallop' | 'oval';
 
-export const BLOB_SHAPES: BlobShape[] = ['sunny', 'flower', 'clover', 'cookie', 'oval'];
+export const BLOB_SHAPES: BlobShape[] = ['burst', 'petal', 'clover', 'scallop', 'oval'];
 
 const BLOB_SPECS: Record<BlobShape, { lobes: number; depth: number }> = {
-  sunny: { lobes: 12, depth: 0.16 },
-  flower: { lobes: 8, depth: 0.3 },
+  burst: { lobes: 12, depth: 0.16 },
+  petal: { lobes: 8, depth: 0.3 },
   clover: { lobes: 4, depth: 0.38 },
-  cookie: { lobes: 8, depth: 0.11 },
+  scallop: { lobes: 8, depth: 0.11 },
   oval: { lobes: 2, depth: 0.2 },
 };
 
