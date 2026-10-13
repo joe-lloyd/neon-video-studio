@@ -179,6 +179,20 @@ async function main(): Promise<void> {
     assert(canonical(cli<{ project: unknown }>('state', 'dump').project) === before, 'one history undo reverts the whole batch');
     log('history undo reverted the batch in one step');
 
+    // The script: a planned line and a placed one, and a note thread between the person and the agent.
+    const scriptFile = join(home, 'script.json');
+    writeFileSync(scriptFile, JSON.stringify({ sections: [{ title: 'Open', status: 'review', lines: [{ say: 'Planned line.' }, { say: 'Recorded line.', at: 45, duration: 30 }] }] }));
+    cli('script', 'set', scriptFile);
+    cli('notes', 'add', '1.1', 'Too long.', '--as', 'person');
+    cli('notes', 'reply', '#1', 'Cut to two words.');
+    type ScriptJson = { sections: { status: string; lines: { say: string; placed?: { startFrame: number; durationFrames: number } }[] }[]; notes: { author: string; on: { kind: string }; replies: { author: string }[] }[] };
+    const script = cli<ScriptJson>('script');
+    const [planned, placed] = script.sections[0]!.lines;
+    assert(script.sections[0]!.status === 'review' && planned?.placed === undefined && placed?.placed?.startFrame === 45 && placed.placed.durationFrames === 30, `script set keeps status and placement: ${JSON.stringify(script.sections)}`);
+    const [note] = script.notes;
+    assert(note?.author === 'person' && note.on.kind === 'line' && note.replies[0]?.author === 'agent', `note thread person → agent: ${JSON.stringify(script.notes)}`);
+    log('script set, notes add and notes reply round-trip through the app');
+
     if (!opts['no-render']) {
       const out = join(home, 'e2e.mp4');
       const job = cli<{ status: string; error?: string; outputPath: string }>('render', '--output', out, '--preset', 'draft');

@@ -204,7 +204,10 @@ async function loadDoc(dir: string): Promise<ProjectDoc> {
   try {
     const bin = await readFile(join(dir, 'doc.bin'));
     Y.applyUpdate(doc.doc, new Uint8Array(bin), ORIGIN_SYSTEM);
-    if (doc.isInitialized) return doc;
+    if (doc.isInitialized) {
+      doc.migrateLegacyCues();
+      return doc;
+    }
   } catch {
     /* fall back to project.json */
   }

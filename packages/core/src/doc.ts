@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 import { newId } from './ids.ts';
 import { clipEnd, mergeRanges, planRippleInsert, resolveFreePosition, sortClips, sortTracks, trackEnd, volumeAt } from './ops.ts';
 import { sliceKeyframes, speedOf } from './timing.ts';
+import { frameAfterCut, placementAfterCut, scriptFromCues } from './script.ts';
 import { CORE_PACK_NAME, getPack, getTemplate, hasTemplate, resolveTemplateProps } from './templates.ts';
 import {
   DEFAULT_PROJECT_META,
@@ -18,7 +19,14 @@ import {
   type Reframe,
   type Track,
   type TrackKind,
+  type Script,
   type ScriptCue,
+  type ScriptLine,
+  type ScriptNote,
+  type ScriptNoteAuthor,
+  type ScriptNoteTarget,
+  type ScriptSection,
+  type ScriptStatus,
   type Transcript,
 } from './types.ts';
 
@@ -80,7 +88,9 @@ export class ProjectDoc {
   readonly clips: Y.Map<YMap>;
   readonly assets: Y.Map<YMap>;
   readonly transcripts: Y.Map<YMap>;
-  readonly cues: Y.Map<YMap>;
+  readonly sections: Y.Map<YMap>;
+  readonly lines: Y.Map<YMap>;
+  readonly notes: Y.Map<YMap>;
 
   private snapshot: Project | null = null;
   private txDepth = 0;
@@ -93,7 +103,9 @@ export class ProjectDoc {
     this.clips = doc.getMap('clips');
     this.assets = doc.getMap('assets');
     this.transcripts = doc.getMap('transcripts');
-    this.cues = doc.getMap('cues');
+    this.sections = doc.getMap('scriptSections');
+    this.lines = doc.getMap('scriptLines');
+    this.notes = doc.getMap('scriptNotes');
     doc.on('update', () => {
       this.snapshot = null;
       if (this.listeners.size === 0) return;
@@ -135,13 +147,16 @@ export class ProjectDoc {
       for (const key of [...this.clips.keys()]) this.clips.delete(key);
       for (const key of [...this.assets.keys()]) this.assets.delete(key);
       for (const key of [...this.transcripts.keys()]) this.transcripts.delete(key);
-      for (const key of [...this.cues.keys()]) this.cues.delete(key);
+      for (const map of [this.sections, this.lines, this.notes]) for (const key of [...map.keys()]) map.delete(key);
       for (const [k, v] of Object.entries(project.meta)) this.meta.set(k, v);
       for (const track of project.tracks) this.tracks.set(track.id, mapFrom(track));
       for (const asset of project.assets) this.assets.set(asset.id, mapFrom(asset));
       for (const clip of project.clips) this.clips.set(clip.id, clipToMap(clip));
       for (const t of project.transcripts ?? []) this.transcripts.set(t.assetId, mapFrom(t));
-      for (const c of project.cues ?? []) this.cues.set(c.id, mapFrom(c));
+      const rows = scriptRows(project.script);
+      for (const row of rows.sections) this.sections.set(row.id, mapFrom(row));
+      for (const row of rows.lines) this.lines.set(row.id, mapFrom(row));
+      for (const note of project.script.notes) this.notes.set(note.id, mapFrom(note));
     }, ORIGIN_SYSTEM);
   }
 
@@ -157,7 +172,10 @@ export class ProjectDoc {
       syncCollection(this.assets, project.assets, (a) => a.id, mapFrom, (m) => m.toJSON());
       syncCollection(this.clips, project.clips, (c) => c.id, clipToMap, mapToClip);
       syncCollection(this.transcripts, project.transcripts ?? [], (t) => t.assetId, mapFrom, (m) => m.toJSON());
-      syncCollection(this.cues, project.cues ?? [], (c) => c.id, mapFrom, (m) => m.toJSON());
+      const rows = scriptRows(project.script);
+      syncCollection(this.sections, rows.sections, (r) => r.id, mapFrom, (m) => m.toJSON());
+      syncCollection(this.lines, rows.lines, (r) => r.id, mapFrom, (m) => m.toJSON());
+      syncCollection(this.notes, project.script.notes, (n) => n.id, mapFrom, (m) => m.toJSON());
     }, origin);
   }
 
@@ -208,8 +226,7 @@ export class ProjectDoc {
       .map((m) => m.toJSON() as Asset)
       .sort((a, b) => a.importedAt.localeCompare(b.importedAt) || a.name.localeCompare(b.name));
     const transcripts = [...this.transcripts.values()].map((m) => m.toJSON() as Transcript);
-    const cues = [...this.cues.values()].map((m) => m.toJSON() as ScriptCue).sort((a, b) => a.startFrame - b.startFrame || a.id.localeCompare(b.id));
-    const project: Project = { meta, tracks, clips, assets, transcripts, cues };
+    const project: Project = { meta, tracks, clips, assets, transcripts, script: this.readScript() };
     if (this.txDepth === 0) this.snapshot = project;
     return project;
   }
@@ -685,7 +702,7 @@ export class ProjectDoc {
             if (clip.startFrame >= end) this.clips.get(clip.id)!.set('startFrame', clip.startFrame - length);
           }
           // The script follows a cut through the whole timeline, not one limited to some tracks.
-          if (!opts.trackIds) this.cutCues(start, end);
+          if (!opts.trackIds) this.cutScript({ start, end });
         }
         removedFrames += length;
       }
@@ -742,62 +759,218 @@ export class ProjectDoc {
     }, origin);
   }
 
-  // ---- script cues ---------------------------------------------------------------------
+  // ---- the script ----------------------------------------------------------------------
 
-  /** Replace the whole script. Cues without an id get one. */
-  setCues(cues: (Omit<ScriptCue, 'id'> & { id?: string })[], origin?: unknown): ScriptCue[] {
-    return this.transact(() => {
-      for (const key of [...this.cues.keys()]) this.cues.delete(key);
-      for (const cue of cues) {
-        const full: ScriptCue = { id: cue.id ?? newId('cue'), startFrame: Math.max(0, Math.round(cue.startFrame)), durationFrames: Math.max(1, Math.round(cue.durationFrames)), text: cue.text };
-        this.cues.set(full.id, mapFrom(full));
-      }
-      this.touch();
-      return this.toJSON().cues;
-    }, origin);
-  }
-
-  updateCue(id: string, patch: Partial<Omit<ScriptCue, 'id'>>, origin?: unknown): ScriptCue {
-    return this.transact(() => {
-      const m = this.cues.get(id);
-      if (!m) throw new Error(`Cue ${id} not found`);
-      if (patch.text !== undefined) m.set('text', patch.text);
-      if (patch.startFrame !== undefined) m.set('startFrame', Math.max(0, Math.round(patch.startFrame)));
-      if (patch.durationFrames !== undefined) m.set('durationFrames', Math.max(1, Math.round(patch.durationFrames)));
-      this.touch();
-      return m.toJSON() as ScriptCue;
-    }, origin);
-  }
-
-  removeCues(ids: string[], origin?: unknown): void {
-    this.transact(() => {
-      for (const id of ids) {
-        if (!this.cues.has(id)) throw new Error(`Cue ${id} not found`);
-        this.cues.delete(id);
-      }
-      this.touch();
-    }, origin);
-  }
-
-  /** Remove [start, end) from the script: drop cues inside it, trim cues across it, shift later ones left. */
-  private cutCues(start: number, end: number): void {
-    const length = end - start;
-    for (const [id, m] of [...this.cues.entries()]) {
-      const cue = m.toJSON() as ScriptCue;
-      const cueEnd = cue.startFrame + cue.durationFrames;
-      if (cueEnd <= start) continue;
-      if (cue.startFrame >= end) {
-        m.set('startFrame', cue.startFrame - length);
-        continue;
-      }
-      const kept = Math.max(0, start - cue.startFrame) + Math.max(0, cueEnd - end);
-      if (kept === 0) {
-        this.cues.delete(id);
-        continue;
-      }
-      m.set('startFrame', Math.min(cue.startFrame, start));
-      m.set('durationFrames', kept);
+  private readScript(): Script {
+    const lines = new Map<string, LineRow[]>();
+    for (const m of this.lines.values()) {
+      const row = m.toJSON() as LineRow;
+      lines.set(row.sectionId, [...(lines.get(row.sectionId) ?? []), row]);
     }
+    const sections = [...this.sections.values()]
+      .map((m) => m.toJSON() as SectionRow)
+      .sort(byOrder)
+      .map(({ order: _order, ...section }) => ({
+        ...section,
+        lines: (lines.get(section.id) ?? []).sort(byOrder).map(({ sectionId: _s, order: _o, ...line }) => line),
+      }));
+    const notes = [...this.notes.values()].map((m) => m.toJSON() as ScriptNote).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    return { sections, notes };
+  }
+
+  getScript(): Script {
+    return this.toJSON().script;
+  }
+
+  /**
+   * Replace every section and line, keeping the ids given so notes stay attached. Notes are not
+   * touched: a note on a line that is gone stays, pinned to nothing, until someone resolves it.
+   */
+  setScript(sections: ScriptSectionInput[], origin?: unknown): Script {
+    return this.transact(() => {
+      for (const map of [this.sections, this.lines]) for (const key of [...map.keys()]) map.delete(key);
+      sections.forEach((section, i) => {
+        const id = section.id ?? newId('sec');
+        this.sections.set(id, mapFrom({ id, title: section.title, intent: section.intent ?? '', status: section.status ?? 'draft', order: i } satisfies SectionRow));
+        section.lines.forEach((line, j) => {
+          const lineId = line.id ?? newId('line');
+          this.lines.set(lineId, mapFrom({ id: lineId, sectionId: id, order: j, say: line.say, show: line.show ?? '', stillAssetId: line.stillAssetId, placed: line.placed } satisfies LineRow));
+        });
+      });
+      this.touch();
+      return this.readScript();
+    }, origin);
+  }
+
+  /** Add a section after `after` (a section id), or at the end. */
+  addSection(input: { title: string; intent?: string; status?: ScriptStatus; after?: string }, origin?: unknown): ScriptSection {
+    return this.transact(() => {
+      const rows = [...this.sections.values()].map((m) => m.toJSON() as SectionRow).sort(byOrder);
+      const at = input.after === undefined ? rows.length - 1 : rows.findIndex((r) => r.id === input.after);
+      if (input.after !== undefined && at === -1) throw new Error(`Section ${input.after} not found`);
+      const row: SectionRow = { id: newId('sec'), title: input.title, intent: input.intent ?? '', status: input.status ?? 'draft', order: orderBetween(rows[at]?.order, rows[at + 1]?.order) };
+      this.sections.set(row.id, mapFrom(row));
+      this.touch();
+      return { ...withoutOrder(row), lines: [] };
+    }, origin);
+  }
+
+  updateSection(id: string, patch: { title?: string; intent?: string; status?: ScriptStatus }, origin?: unknown): void {
+    this.transact(() => {
+      const m = this.sections.get(id);
+      if (!m) throw new Error(`Section ${id} not found`);
+      for (const [k, v] of Object.entries(patch)) if (v !== undefined) m.set(k, v);
+      this.touch();
+    }, origin);
+  }
+
+  /** Delete a section and its lines. */
+  removeSection(id: string, origin?: unknown): void {
+    this.transact(() => {
+      if (!this.sections.has(id)) throw new Error(`Section ${id} not found`);
+      this.sections.delete(id);
+      for (const [lineId, m] of [...this.lines.entries()]) if (m.get('sectionId') === id) this.lines.delete(lineId);
+      this.touch();
+    }, origin);
+  }
+
+  /** Add a line to a section, after `after` (a line id), first with `after: null`, or at the end. */
+  addLine(input: { sectionId: string; say: string; show?: string; after?: string | null }, origin?: unknown): ScriptLine {
+    return this.transact(() => {
+      if (!this.sections.has(input.sectionId)) throw new Error(`Section ${input.sectionId} not found`);
+      const order = this.slotIn(input.sectionId, input.after, undefined);
+      const row: LineRow = { id: newId('line'), sectionId: input.sectionId, order, say: input.say, show: input.show ?? '' };
+      this.lines.set(row.id, mapFrom(row));
+      this.touch();
+      return { id: row.id, say: row.say, show: row.show };
+    }, origin);
+  }
+
+  /** Change a line. `null` clears the still or takes the line off the timeline. */
+  updateLine(id: string, patch: { say?: string; show?: string; stillAssetId?: string | null; placed?: ScriptLine['placed'] | null }, origin?: unknown): ScriptLine {
+    return this.transact(() => {
+      const m = this.lines.get(id);
+      if (!m) throw new Error(`Line ${id} not found`);
+      if (patch.say !== undefined) m.set('say', patch.say);
+      if (patch.show !== undefined) m.set('show', patch.show);
+      if (patch.stillAssetId === null) m.delete('stillAssetId');
+      else if (patch.stillAssetId !== undefined) {
+        if (!this.assets.has(patch.stillAssetId)) throw new Error(`Asset ${patch.stillAssetId} not found`);
+        m.set('stillAssetId', patch.stillAssetId);
+      }
+      if (patch.placed === null) m.delete('placed');
+      else if (patch.placed !== undefined) m.set('placed', { startFrame: Math.max(0, Math.round(patch.placed.startFrame)), durationFrames: Math.max(1, Math.round(patch.placed.durationFrames)) });
+      this.touch();
+      const { sectionId: _s, order: _o, ...line } = m.toJSON() as LineRow;
+      return line;
+    }, origin);
+  }
+
+  /** Move a line into `sectionId` after `after` (a line id), or first with `after: null`. */
+  moveLine(id: string, to: { sectionId: string; after: string | null }, origin?: unknown): void {
+    this.transact(() => {
+      const m = this.lines.get(id);
+      if (!m) throw new Error(`Line ${id} not found`);
+      if (!this.sections.has(to.sectionId)) throw new Error(`Section ${to.sectionId} not found`);
+      m.set('order', this.slotIn(to.sectionId, to.after, id));
+      m.set('sectionId', to.sectionId);
+      this.touch();
+    }, origin);
+  }
+
+  removeLine(id: string, origin?: unknown): void {
+    this.transact(() => {
+      if (!this.lines.has(id)) throw new Error(`Line ${id} not found`);
+      this.lines.delete(id);
+      this.touch();
+    }, origin);
+  }
+
+  /** An order value for a line placed after `after` in a section (`null` = first, undefined = last), ignoring `moving`. */
+  private slotIn(sectionId: string, after: string | null | undefined, moving: string | undefined): number {
+    const rows = [...this.lines.values()]
+      .map((m) => m.toJSON() as LineRow)
+      .filter((r) => r.sectionId === sectionId && r.id !== moving)
+      .sort(byOrder);
+    if (after === null) return orderBetween(undefined, rows[0]?.order);
+    const at = after === undefined ? rows.length - 1 : rows.findIndex((r) => r.id === after);
+    if (after !== undefined && at === -1) throw new Error(`Line ${after} not found in section ${sectionId}`);
+    return orderBetween(rows[at]?.order, rows[at + 1]?.order);
+  }
+
+  addNote(input: { on: ScriptNoteTarget; text: string; author: ScriptNoteAuthor }, origin?: unknown): ScriptNote {
+    return this.transact(() => {
+      const note: ScriptNote = { id: newId('note'), on: input.on, author: input.author, text: input.text, createdAt: new Date().toISOString(), replies: [], resolved: false };
+      this.notes.set(note.id, mapFrom(note));
+      this.touch();
+      return note;
+    }, origin);
+  }
+
+  replyToNote(id: string, reply: { text: string; author: ScriptNoteAuthor }, origin?: unknown): ScriptNote {
+    return this.transact(() => {
+      const m = this.note(id);
+      m.set('replies', [...(m.toJSON() as ScriptNote).replies, { ...reply, createdAt: new Date().toISOString() }]);
+      this.touch();
+      return m.toJSON() as ScriptNote;
+    }, origin);
+  }
+
+  setNoteResolved(id: string, resolved: boolean, origin?: unknown): ScriptNote {
+    return this.transact(() => {
+      const m = this.note(id);
+      m.set('resolved', resolved);
+      this.touch();
+      return m.toJSON() as ScriptNote;
+    }, origin);
+  }
+
+  removeNote(id: string, origin?: unknown): void {
+    this.transact(() => {
+      this.note(id);
+      this.notes.delete(id);
+      this.touch();
+    }, origin);
+  }
+
+  private note(id: string): YMap {
+    const m = this.notes.get(id);
+    if (!m) throw new Error(`Note ${id} not found`);
+    return m;
+  }
+
+  /** Follow a ripple cut through the whole timeline: placed lines and frame notes move with the footage. */
+  private cutScript(range: FrameRange): void {
+    for (const m of this.lines.values()) {
+      const placed = m.get('placed') as ScriptLine['placed'];
+      if (!placed) continue;
+      const next = placementAfterCut(placed, range);
+      if (next) m.set('placed', next);
+      else m.delete('placed');
+    }
+    for (const m of this.notes.values()) {
+      const on = m.get('on') as ScriptNoteTarget;
+      if (on.kind === 'frame') m.set('on', { kind: 'frame', frame: frameAfterCut(on.frame, range) });
+    }
+  }
+
+  /**
+   * Neon 0.10 kept the script as bare timed cues in a `cues` map. Turn them into a recorded section
+   * once, when a project from then is opened. Returns whether anything moved.
+   */
+  migrateLegacyCues(): boolean {
+    const legacy = this.doc.getMap<YMap>('cues');
+    if (legacy.size === 0) return false;
+    const cues = [...legacy.values()].map((m) => m.toJSON() as ScriptCue);
+    this.transact(() => {
+      if (this.sections.size === 0) {
+        const rows = scriptRows(scriptFromCues(cues));
+        for (const row of rows.sections) this.sections.set(row.id, mapFrom(row));
+        for (const row of rows.lines) this.lines.set(row.id, mapFrom(row));
+      }
+      for (const key of [...legacy.keys()]) legacy.delete(key);
+    }, ORIGIN_SYSTEM);
+    return true;
   }
 
   // ---- transcripts ---------------------------------------------------------------------
@@ -892,6 +1065,36 @@ function reframeAt(kfs: Reframe['keyframes'], frame: number): Reframe['keyframes
   return { ...kfs[kfs.length - 1]!, frame };
 }
 
+type SectionRow = Omit<ScriptSection, 'lines'> & { order: number };
+type LineRow = ScriptLine & { sectionId: string; order: number };
+
+/** A section or line as `setScript` takes it: ids, status and shots are optional. */
+export type ScriptSectionInput = Pick<ScriptSection, 'title'> &
+  Partial<Pick<ScriptSection, 'id' | 'intent' | 'status'>> & { lines: (Pick<ScriptLine, 'say'> & Partial<Omit<ScriptLine, 'say'>>)[] };
+
+/** The script as stored: flat rows ordered by `order`, so concurrent edits to different lines merge. */
+function scriptRows(script: Script): { sections: SectionRow[]; lines: LineRow[] } {
+  const sections: SectionRow[] = [];
+  const lines: LineRow[] = [];
+  script.sections.forEach(({ lines: sectionLines, ...section }, i) => {
+    sections.push({ ...section, order: i });
+    sectionLines.forEach((line, j) => lines.push({ ...line, sectionId: section.id, order: j }));
+  });
+  return { sections, lines };
+}
+
+function withoutOrder({ order: _order, ...section }: SectionRow): Omit<ScriptSection, 'lines'> {
+  return section;
+}
+
+const byOrder = (a: { order: number; id: string }, b: { order: number; id: string }) => a.order - b.order || a.id.localeCompare(b.id);
+
+/** An order value that sorts between two neighbours (either may be missing). */
+function orderBetween(before: number | undefined, after: number | undefined): number {
+  if (before === undefined) return after === undefined ? 0 : after - 1;
+  return after === undefined ? before + 1 : (before + after) / 2;
+}
+
 /** Replace/insert/delete entries of a Y.Map so it mirrors `items`, leaving identical entries untouched. */
 function syncCollection<T extends object>(target: Y.Map<YMap>, items: T[], keyOf: (item: T) => string, toMap: (item: T) => YMap, fromMap: (m: YMap) => unknown): void {
   const wanted = new Map(items.map((item) => [keyOf(item), item] as const));
@@ -941,7 +1144,7 @@ function mapToClip(m: YMap): Clip {
 
 /** UndoManager scoped to a single peer's own edits. */
 export function createUndoManager(project: ProjectDoc, trackedOrigins: unknown[] = [ORIGIN_LOCAL]): Y.UndoManager {
-  return new Y.UndoManager([project.tracks, project.clips, project.assets, project.meta, project.transcripts, project.cues], {
+  return new Y.UndoManager([project.tracks, project.clips, project.assets, project.meta, project.transcripts, project.sections, project.lines, project.notes], {
     trackedOrigins: new Set(trackedOrigins),
     captureTimeout: 300,
   });

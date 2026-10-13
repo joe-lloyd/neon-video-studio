@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { MAX_SHEET_FRAMES } from './stills.ts';
+import { scriptFromCues } from './script.ts';
 
 export { ZodError } from 'zod';
 
@@ -130,21 +131,61 @@ export const TranscriptSchema = z.object({
   words: z.array(TranscriptWordSchema),
 });
 
-export const ScriptCueSchema = z.object({
+const ScriptStatusSchema = z.enum(['draft', 'review', 'approved']);
+const PlacementSchema = z.object({ startFrame: z.number().int().min(0), durationFrames: z.number().int().min(1) });
+
+export const ScriptLineSchema = z.object({
   id: z.string().min(1),
-  startFrame: z.number().int().min(0),
-  durationFrames: z.number().int().min(1),
-  text: z.string(),
+  say: z.string(),
+  show: z.string().default(''),
+  stillAssetId: z.string().optional(),
+  placed: PlacementSchema.optional(),
 });
 
-export const ProjectSchema = z.object({
-  meta: ProjectMetaSchema,
-  tracks: z.array(TrackSchema),
-  clips: z.array(ClipSchema),
-  assets: z.array(AssetSchema),
-  transcripts: z.array(TranscriptSchema).default([]),
-  cues: z.array(ScriptCueSchema).default([]),
+export const ScriptSectionSchema = z.object({
+  id: z.string().min(1),
+  title: z.string(),
+  intent: z.string().default(''),
+  status: ScriptStatusSchema.default('draft'),
+  lines: z.array(ScriptLineSchema),
 });
+
+const NoteAuthorSchema = z.enum(['person', 'agent']);
+export const ScriptNoteTargetSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('line'), lineId: z.string().min(1) }),
+  z.object({ kind: z.literal('section'), sectionId: z.string().min(1) }),
+  z.object({ kind: z.literal('frame'), frame: z.number().int().min(0) }),
+]);
+
+export const ScriptNoteSchema = z.object({
+  id: z.string().min(1),
+  on: ScriptNoteTargetSchema,
+  author: NoteAuthorSchema,
+  text: z.string(),
+  createdAt: z.string(),
+  replies: z.array(z.object({ author: NoteAuthorSchema, text: z.string(), createdAt: z.string() })).default([]),
+  resolved: z.boolean().default(false),
+});
+
+export const ScriptSchema = z.object({
+  sections: z.array(ScriptSectionSchema).default([]),
+  notes: z.array(ScriptNoteSchema).default([]),
+});
+
+/** Neon 0.10 kept the script as bare timed cues; they load as one placed section. */
+const LegacyCueSchema = z.object({ id: z.string().min(1), startFrame: z.number().int().min(0), durationFrames: z.number().int().min(1), text: z.string() });
+
+export const ProjectSchema = z
+  .object({
+    meta: ProjectMetaSchema,
+    tracks: z.array(TrackSchema),
+    clips: z.array(ClipSchema),
+    assets: z.array(AssetSchema),
+    transcripts: z.array(TranscriptSchema).default([]),
+    script: ScriptSchema.optional(),
+    cues: z.array(LegacyCueSchema).optional(),
+  })
+  .transform(({ cues, script, ...project }) => ({ ...project, script: script ?? scriptFromCues(cues ?? []) }));
 
 // ---- Control API request bodies -------------------------------------------------------
 
@@ -319,25 +360,64 @@ export const SplitClipRequestSchema = z.object({
   at: TimeExpr,
 });
 
-/** A cue as written by a person or an agent: when to say it (timecode or frames), how long it has, the words. */
-const CueInputSchema = z.object({
+const StatusInput = z.enum(['draft', 'review', 'approved']).describe('draft = being written · review = waiting on the person · approved = signed off');
+const AuthorInput = z.enum(['person', 'agent']).optional().describe('Who wrote it; the control API defaults to agent.');
+
+/** A line as an agent writes it. `at`/`duration` place it on the timeline once recorded. */
+const LineInputSchema = z.object({
   id: z.string().min(1).optional(),
-  at: TimeExpr,
-  duration: TimeExpr.optional().describe('Time the line has; defaults to the gap until the next cue (or 4 s for the last).'),
-  text: z.string(),
+  say: z.string(),
+  show: z.string().optional().describe('What is on screen while the line is said.'),
+  still: z.string().optional().describe('Asset id of a storyboard still (import the image first).'),
+  at: TimeExpr.optional().describe('Where the recorded line starts on the timeline. Omit while the line is only planned.'),
+  duration: TimeExpr.optional().describe('Time the line has; defaults to the gap to the next placed line (or 4 s for the last).'),
 });
 
 export const ScriptSetRequestSchema = z.object({
-  cues: z.array(CueInputSchema),
+  sections: z.array(
+    z.object({
+      id: z.string().min(1).optional(),
+      title: z.string(),
+      intent: z.string().optional(),
+      status: StatusInput.optional(),
+      lines: z.array(LineInputSchema),
+    }),
+  ),
 });
 
-export const ScriptUpdateRequestSchema = z.object({
-  id: z.string().min(1),
-  patch: z.object({ text: z.string().optional(), at: TimeExpr.optional(), duration: TimeExpr.optional() }),
-});
+const NoteTargetInput = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('line'), lineId: z.string().min(1) }),
+  z.object({ kind: z.literal('section'), sectionId: z.string().min(1) }),
+  z.object({ kind: z.literal('frame'), at: TimeExpr }),
+]);
 
-export const ScriptRemoveRequestSchema = z.object({
-  ids: z.array(z.string().min(1)).min(1),
+/** One change to the script or its notes. Ops apply in order, in one undoable step. */
+export const ScriptOpSchema = z.discriminatedUnion('op', [
+  z.object({ op: z.literal('section.add'), title: z.string(), intent: z.string().optional(), status: StatusInput.optional(), after: z.string().min(1).optional() }),
+  z.object({ op: z.literal('section.update'), id: z.string().min(1), title: z.string().optional(), intent: z.string().optional(), status: StatusInput.optional() }),
+  z.object({ op: z.literal('section.remove'), id: z.string().min(1) }),
+  z.object({ op: z.literal('line.add'), sectionId: z.string().min(1), say: z.string(), show: z.string().optional(), after: z.string().min(1).nullable().optional().describe('Line id to add after; null = first; omit = last.') }),
+  z.object({
+    op: z.literal('line.update'),
+    id: z.string().min(1),
+    say: z.string().optional(),
+    show: z.string().optional(),
+    still: z.string().min(1).nullable().optional().describe('Asset id of a storyboard still; null clears it.'),
+    at: TimeExpr.nullable().optional().describe('Place the line on the timeline; null takes it off.'),
+    duration: TimeExpr.optional(),
+  }),
+  z.object({ op: z.literal('line.move'), id: z.string().min(1), sectionId: z.string().min(1), after: z.string().min(1).nullable().describe('Line id to move after; null = first in the section.') }),
+  z.object({ op: z.literal('line.remove'), id: z.string().min(1) }),
+  z.object({ op: z.literal('note.add'), on: NoteTargetInput, text: z.string().min(1), author: AuthorInput }),
+  z.object({ op: z.literal('note.reply'), id: z.string().min(1), text: z.string().min(1), author: AuthorInput }),
+  z.object({ op: z.literal('note.resolve'), id: z.string().min(1), resolved: z.boolean().default(true) }),
+  z.object({ op: z.literal('note.remove'), id: z.string().min(1) }),
+]);
+
+export type ScriptOp = z.infer<typeof ScriptOpSchema>;
+
+export const ScriptEditRequestSchema = z.object({
+  ops: z.array(ScriptOpSchema).min(1),
 });
 
 export const RemoveClipRequestSchema = z.object({
@@ -449,6 +529,8 @@ export const UiControlRequestSchema = z.object({
   /** Clip ids (or empty array to clear the selection). */
   select: z.array(z.string()).optional(),
   dialog: z.enum(['render', 'room', 'shortcuts', 'none']).optional(),
+  /** edit = preview, timeline and panels · script = the full-width script and its notes. */
+  view: z.enum(['edit', 'script']).optional(),
 });
 
 export const AiEnhanceRequestSchema = AiTargetSchema.extend({
