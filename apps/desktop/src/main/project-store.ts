@@ -9,9 +9,9 @@
 import * as Y from 'yjs';
 import { cp, mkdir, readFile, rename, rm, writeFile, access } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
-import { ORIGIN_SYSTEM, ProjectDoc, ProjectSchema, newId, type Project, type ProjectMeta } from '@neon/core';
+import { ORIGIN_SYSTEM, ProjectDoc, ProjectSchema, newId, type Project, type ProjectMeta, type RecentProject } from '@neon/core';
 import { paths } from './paths.ts';
-import type { Settings } from './settings.ts';
+import { saveSettings, type Settings } from './settings.ts';
 
 type StoreEvent = 'doc-replaced' | 'saved' | 'changed';
 type Listener = (store: ProjectStore) => void;
@@ -222,6 +222,42 @@ async function writeAtomic(path: string, data: string | Uint8Array): Promise<voi
   const tmp = `${path}.${newId().slice(0, 6)}.tmp`;
   await writeFile(tmp, data);
   await rename(tmp, path);
+}
+
+async function readMeta(dir: string): Promise<{ name: string; updatedAt: string }> {
+  return (JSON.parse(await readFile(join(dir, 'project.json'), 'utf8')) as { meta: { name: string; updatedAt: string } }).meta;
+}
+
+/** The open project first, then recently opened ones whose folder still exists. */
+export async function recentProjects(settings: Settings, openDir: string): Promise<RecentProject[]> {
+  const out: RecentProject[] = [];
+  for (const dir of [openDir, ...settings.recent.filter((d) => d !== openDir)].slice(0, 12)) {
+    try {
+      const meta = await readMeta(dir);
+      out.push({ path: dir, name: meta.name, updatedAt: meta.updatedAt, current: dir === openDir });
+    } catch {
+      /* project folder gone — skip */
+    }
+  }
+  return out;
+}
+
+/**
+ * Remove a project folder from disk and from the recent list. Refuses the open project and
+ * anything that is not a `.neon` folder with a project.json, so a bad path cannot wipe a directory.
+ */
+export async function deleteProject(settings: Settings, openDir: string, dir: string): Promise<{ path: string; name: string }> {
+  const abs = resolve(dir);
+  if (abs === resolve(openDir)) throw new Error('That project is open. Open or create another project, then delete it.');
+  if (!abs.endsWith('.neon')) throw new Error(`Not a .neon project folder: ${abs}`);
+  const meta = await readMeta(abs).catch(() => {
+    throw new Error(`No project.json in ${abs}`);
+  });
+  await rm(abs, { recursive: true, force: true });
+  settings.recent = settings.recent.filter((d) => resolve(d) !== abs);
+  if (settings.lastProjectPath && resolve(settings.lastProjectPath) === abs) settings.lastProjectPath = null;
+  await saveSettings(settings);
+  return { path: abs, name: meta.name };
 }
 
 function safeName(name: string): string {

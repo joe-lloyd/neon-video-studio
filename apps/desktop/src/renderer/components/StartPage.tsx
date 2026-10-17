@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FolderOpen, NeonIcon, NeonLogo, Plus, X } from '@neon/icon-kit';
+import { FolderOpen, NeonIcon, NeonLogo, Plus, Trash2, X } from '@neon/icon-kit';
 import { useEditor } from '../lib/context.ts';
 import { useSelector } from '../lib/store.ts';
 
@@ -30,6 +30,7 @@ export function StartPage() {
   const [size, setSize] = useState(0);
   const [fps, setFps] = useState(30);
   const [dir, setDir] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   useEffect(() => {
     if (show) void editor.refreshRecentProjects();
@@ -50,12 +51,21 @@ export function StartPage() {
             <h2>Recent projects</h2>
             {recent.length === 0 ? <p className="hint">Nothing yet — create one on the right.</p> : null}
             {recent.map((r) => (
-              <div key={r.path} className="list-item" style={{ cursor: 'pointer' }} onClick={() => (r.current ? editor.ui.set({ showStart: false }) : void editor.openProjectPath(r.path))}>
+              <div key={r.path} className="list-item" style={{ cursor: 'pointer' }} onMouseLeave={() => setConfirmDelete(null)} onClick={() => (r.current ? editor.ui.set({ showStart: false }) : void editor.openProjectPath(r.path))}>
                 <NeonIcon icon={FolderOpen} size={16} tone={r.current ? 'magenta' : 'cyan'} />
                 <div className="name">
                   <div>{r.name} {r.current ? <span className="pill magenta">open</span> : null}</div>
                   <div className="meta mono" title={r.path}>{r.path.replace(/^\/Users\/[^/]+/, '~')} · {ago(r.updatedAt)}</div>
                 </div>
+                {r.current ? null : confirmDelete === r.path ? (
+                  <button className="btn sm danger" title="Deletes the project folder and its media from disk" onClick={(e) => { e.stopPropagation(); setConfirmDelete(null); void editor.deleteProject(r.path); }}>
+                    <NeonIcon icon={Trash2} size={13} tone="red" /> Delete
+                  </button>
+                ) : (
+                  <div className="actions">
+                    <button className="btn icon ghost" title="Delete project" onClick={(e) => { e.stopPropagation(); setConfirmDelete(r.path); }}><NeonIcon icon={Trash2} size={13} tone="red" /></button>
+                  </div>
+                )}
               </div>
             ))}
             {canNative ? (
