@@ -136,6 +136,12 @@ export async function bootCore(opts: { headless: boolean }): Promise<Core> {
     knownPeers = now;
     ctx.rpc?.send.roomUpdate({ room: ctx.room.state, info: ctx.room.info() });
   });
+  // Also at boot, so the project the app starts in (often a fresh scratch one) shows up as recent.
+  const rememberOpenProject = async () => {
+    settings.lastProjectPath = store.dir;
+    settings.recent = [store.dir, ...settings.recent.filter((p) => p !== store.dir)].slice(0, 10);
+    await saveSettings(settings);
+  };
   let changeTimer: ReturnType<typeof setTimeout> | null = null;
   store.on('changed', () => {
     if (changeTimer) return;
@@ -148,17 +154,14 @@ export async function bootCore(opts: { headless: boolean }): Promise<Core> {
   store.on('doc-replaced', async () => {
     ctx.proxies.sync(store.toJSON().assets);
     await ctx.history.load();
-    settings.lastProjectPath = store.dir;
-    settings.recent = [store.dir, ...settings.recent.filter((p) => p !== store.dir)].slice(0, 10);
-    await saveSettings(settings);
+    await rememberOpenProject();
     await writeInstance();
     const name = store.doc.isInitialized ? store.doc.getMeta().name : 'Syncing…';
     ctx.rpc?.send.projectOpened({ projectId: store.projectId, path: store.isScratch ? null : store.dir, name });
     ctx.events.emit({ type: 'project-opened', projectId: store.projectId, path: store.isScratch ? null : store.dir, name });
     ctx.events.activity('system', 'project.switched', `Now editing “${store.doc.isInitialized ? store.doc.getMeta().name : basename(store.dir)}” (${store.dir})`);
   });
-  settings.lastProjectPath = store.dir;
-  await saveSettings(settings);
+  await rememberOpenProject();
 
   let stopped = false;
   const shutdown = () => {
