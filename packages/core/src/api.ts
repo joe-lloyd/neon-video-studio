@@ -176,6 +176,14 @@ export interface ImportAssetResponse {
   deduplicated: boolean;
 }
 
+/** A project on the start page: the open one first, then recently opened ones that still exist. */
+export interface RecentProject {
+  path: string;
+  name: string;
+  updatedAt: string;
+  current: boolean;
+}
+
 export interface StateResponse {
   project: Project;
   durationFrames: number;
@@ -201,6 +209,8 @@ export const API_ROUTES = {
   projectNew: '/api/project/new',
   projectOpen: '/api/project/open',
   projectSave: '/api/project/save',
+  projects: '/api/projects',
+  projectDelete: '/api/project/delete',
   timelineInsert: '/api/timeline/insert',
   timelineUpdate: '/api/timeline/update',
   timelineMove: '/api/timeline/move',

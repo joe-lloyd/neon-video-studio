@@ -504,6 +504,7 @@ export const UpdateMetaRequestSchema = z.object({
 export const ProjectOpenRequestSchema = z.object({ path: z.string().min(1) });
 export const PacksInstallRequestSchema = z.object({ path: z.string().min(1) });
 export const ProjectPacksRequestSchema = z.object({ enable: z.array(z.string()).optional(), disable: z.array(z.string()).optional() });
+export const ProjectDeleteRequestSchema = z.object({ path: z.string().min(1) });
 export const ProjectSaveRequestSchema = z.object({ path: z.string().min(1).optional() });
 export const ProjectNewRequestSchema = z.object({
   name: z.string().min(1).optional(),

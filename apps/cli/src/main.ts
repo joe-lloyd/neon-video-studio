@@ -51,6 +51,8 @@ COMMANDS
   project new [--name N] [--fps 30] [--width W] [--height H]
   project open <dir>                      Open a .neon project directory
   project save [<dir>]                    Save (optionally Save As)
+  project list                            The open project and recently opened ones
+  project delete <dir>                    Delete a .neon project folder from disk (not the open one)
   timeline insert --component NAME [--props JSON] [--at T] [--duration T] [--track REF] [--name N] [--ripple|--overlap|--free]
   timeline insert --asset REF [--at T] [--duration T] [--trim T] [--track REF] [--volume V] [--ripple|--overlap|--free]
       placement: --ripple = insert edit (later clips shift; default for media with --at)
@@ -605,7 +607,14 @@ async function main(): Promise<void> {
       } else if (sub === 'save') {
         const r = await api.projectSave(rest[0] ? appPath(rest[0]) : undefined);
         out(r, () => `Saved ${r.path}`);
-      } else throw unknownSub('project', sub, ['new', 'open', 'save']);
+      } else if (sub === 'list') {
+        const r = await api.projects();
+        out(r, () => r.map((p) => `${p.current ? '*' : ' '} ${p.name}  ${p.path}`).join('\n') || 'No projects');
+      } else if (sub === 'delete') {
+        if (!rest[0]) throw usage('project', 'delete');
+        const r = await api.projectDelete(appPath(rest[0]));
+        out(r, () => `Deleted "${r.name}" (${r.path})`);
+      } else throw unknownSub('project', sub, ['new', 'open', 'save', 'list', 'delete']);
       return;
     }
 

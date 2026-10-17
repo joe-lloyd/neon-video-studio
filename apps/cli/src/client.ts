@@ -1,5 +1,5 @@
 /** Typed HTTP client for the desktop app's control API. */
-import { API_ROUTES, parseTimecode, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type CaptureDevices, type CaptureStartBody, type CaptureState, type ImportAssetResponse, type ListResponse, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary, type SheetRequestInput, type StillRequestInput, type StillResult } from '@neon/core';
+import { API_ROUTES, parseTimecode, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type CaptureDevices, type CaptureStartBody, type CaptureState, type ImportAssetResponse, type ListResponse, type RecentProject, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary, type SheetRequestInput, type StillRequestInput, type StillResult } from '@neon/core';
 import { isProcessAlive, readInstanceInfo } from '@neon/core/node';
 import type { Asset, BatchRequest, BatchResult, Clip, Project, Script, ScriptOp, Track } from '@neon/core';
 
@@ -74,6 +74,8 @@ export class NeonClient {
 
   projectNew = (body: Record<string, unknown>) => this.call<{ path: string | null; project: Project }>('POST', API_ROUTES.projectNew, body);
   projectOpen = (path: string) => this.call<{ path: string; project: Project }>('POST', API_ROUTES.projectOpen, { path });
+  projects = () => this.call<RecentProject[]>('GET', API_ROUTES.projects);
+  projectDelete = (path: string) => this.call<{ path: string; name: string }>('POST', API_ROUTES.projectDelete, { path });
   projectSave = (path?: string) => this.call<{ path: string }>('POST', API_ROUTES.projectSave, { path });
 
   insert = (body: Record<string, unknown>) => this.call<Clip>('POST', API_ROUTES.timelineInsert, body);

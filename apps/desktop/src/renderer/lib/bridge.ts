@@ -181,6 +181,10 @@ async function httpBridge(): Promise<Bridge> {
           return call<{ path: string }>('POST', '/api/project/save', {}) as never;
         case 'newProject':
           return call('POST', '/api/project/new', params) as never;
+        case 'recentProjects':
+          return call('GET', '/api/projects') as never;
+        case 'deleteProject':
+          return call('POST', '/api/project/delete', params).then(() => true) as never;
         case 'aiRun': {
           const p = params as Requests['aiRun']['params'];
           return call<AiJob>('POST', `/api/ai/${p.op}`, p.params) as never;
