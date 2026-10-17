@@ -13,7 +13,7 @@ import { buildStatus } from './control-server.ts';
 import { cancelCapture, startCapture, stopCapture } from './screen-recorder.ts';
 import { installMenu } from './menu.ts';
 import { paths } from './paths.ts';
-import { ProjectStore } from './project-store.ts';
+import { ProjectStore, deleteProject, recentProjects } from './project-store.ts';
 import { saveSettings } from './settings.ts';
 import { UpdateManager } from './updates.ts';
 import type { Bootstrap, DesktopRPC } from '../shared/rpc.ts';
@@ -160,18 +160,11 @@ async function main(): Promise<void> {
         aiCancel: ({ id }) => ctx.ai.cancel(id) ?? null,
         cutRanges: ({ ranges, trackIds }) => store.doc.cutRanges(ranges, { trackIds, ripple: true, crossfadeFrames: 2 }, ORIGIN_LOCAL),
         detachAudio: ({ id }) => store.doc.detachAudio(id, ORIGIN_LOCAL),
-        recentProjects: async () => {
-          const { readFile: rf } = await import('node:fs/promises');
-          const out: { path: string; name: string; updatedAt: string; current: boolean }[] = [];
-          for (const dir of [store.dir, ...settings.recent.filter((d) => d !== store.dir)].slice(0, 12)) {
-            try {
-              const meta = (JSON.parse(await rf(join(dir, 'project.json'), 'utf8')) as { meta: { name: string; updatedAt: string } }).meta;
-              out.push({ path: dir, name: meta.name, updatedAt: meta.updatedAt, current: dir === store.dir });
-            } catch {
-              /* project folder gone — skip */
-            }
-          }
-          return out;
+        recentProjects: () => recentProjects(settings, store.dir),
+        deleteProject: async ({ path }) => {
+          const r = await deleteProject(settings, store.dir, path);
+          ctx.events.activity('ui', 'project.delete', `Deleted project “${r.name}” (${r.path})`);
+          return true;
         },
         newProjectAt: async ({ name, fps, width, height, dir }) => {
           const fresh = await ProjectStore.create({ name, fps, width, height });
