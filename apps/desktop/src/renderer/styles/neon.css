@@ -198,7 +198,7 @@ input, select, textarea { user-select: text; }
 }
 .list-item:hover { background: rgba(255, 255, 255, 0.04); border-color: var(--border-subtle); }
 .list-item .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.list-item .meta { font-size: 11px; color: var(--muted); }
+.list-item .meta { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .list-item .actions { display: none; gap: 4px; }
 .list-item:hover .actions { display: flex; }
 .empty { color: var(--faint); text-align: center; padding: 30px 12px; line-height: 1.6; }
@@ -453,7 +453,7 @@ kbd { font-family: var(--mono); font-size: 10px; padding: 1px 5px; border: 1px s
 
 /* ---- round 4 -------------------------------------------------------------------------- */
 .start-page h2 { margin: 0 0 10px; font-size: 13px; }
-.start-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 26px; }
+.start-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 26px; }
 .btn.record { border-color: var(--danger); }
 .btn.record.armed { background: rgba(255, 59, 59, 0.18); box-shadow: 0 0 14px rgba(255, 59, 59, 0.6); }
 .btn.record.armed .rec-dot { animation: pulse 1s ease-in-out infinite; }

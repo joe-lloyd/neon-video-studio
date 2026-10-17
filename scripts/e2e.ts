@@ -80,6 +80,7 @@ function tool(name: string): string {
 }
 
 interface Clip { id: string; trackId: string; startFrame: number; durationFrames: number; kind: string }
+interface RecentProject { path: string; name: string; current: boolean }
 interface Still { path: string; frames: number[]; width: number; height: number }
 
 /** Width and height from a PNG's IHDR chunk, plus the file size. */
@@ -118,7 +119,18 @@ async function main(): Promise<void> {
     assert(gen.status === 0, `ffmpeg test media: ${gen.stderr}`);
     log('generated 4 s test clip');
 
+    // The boot project is listed, can be deleted once another is open, and the open one is refused.
+    const [boot] = cli<RecentProject[]>('project', 'list');
+    assert(boot?.current === true, 'project list starts with the boot project, marked open');
     cli('project', 'new', '--name', 'E2E', '--fps', '30', '--width', '1280', '--height', '720');
+    const open = cli<RecentProject[]>('project', 'list').find((p) => p.current);
+    assert(open?.name === 'E2E', `E2E is the open project, got ${open?.name}`);
+    assert(cliFails('project', 'delete', open.path).error?.message.includes('That project is open'), 'deleting the open project is refused');
+    cli('project', 'delete', boot.path);
+    assert(!existsSync(boot.path), 'project delete removed the folder');
+    assert(!cli<RecentProject[]>('project', 'list').some((p) => p.path === boot.path), 'deleted project left the list');
+    log('project list shows the boot project; project delete removes it and refuses the open one');
+
     const [imported] = cli<{ asset: { id: string; durationFrames: number }; clip: Clip }[]>('assets', 'import', media, '--at', '0');
     assert(imported, 'import returned one result');
     assert(imported.asset.durationFrames === 120, `probed duration 120 frames, got ${imported.asset.durationFrames}`);

@@ -118,6 +118,8 @@ neon-cli state dump [--json] [--out project.json]       # full project document
 neon-cli project new [--name N] [--fps 30] [--width W] [--height H]
 neon-cli project open <dir.neon>
 neon-cli project save [<dir>]       # Save As when a directory is given
+neon-cli project list               # the open project (*) and recently opened ones
+neon-cli project delete <dir.neon>  # deletes the folder from disk; refuses the open project
 ```
 
 ## Timeline editing

@@ -18,6 +18,7 @@ import {
   type CaptureState,
   type Clip,
   type Project,
+  type RecentProject,
   type ScriptNoteTarget,
   type RenderJob,
   type RoomInfo,
@@ -106,7 +107,7 @@ export interface UiState {
   sidebarWidth: number;
   /** Project overview / start page. */
   showStart: boolean;
-  recentProjects: { path: string; name: string; updatedAt: string; current: boolean }[];
+  recentProjects: RecentProject[];
   /** Voice-over recording state. */
   recording: { startFrame: number; startedAt: number } | null;
   screenCapture: ScreenCaptureUi;
@@ -384,6 +385,15 @@ export class Editor {
     try {
       await this.bridge.request('openProject', { path });
       this.ui.set({ showStart: false });
+    } catch (err) {
+      this.toast('error', (err as Error).message);
+    }
+  }
+
+  async deleteProject(path: string): Promise<void> {
+    try {
+      await this.bridge.request('deleteProject', { path });
+      this.ui.set((u) => ({ recentProjects: u.recentProjects.filter((r) => r.path !== path) }));
     } catch (err) {
       this.toast('error', (err as Error).message);
     }

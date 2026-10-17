@@ -22,6 +22,7 @@ import {
   MoveClipRequestSchema,
   ORIGIN_API,
   ProjectNewRequestSchema,
+  ProjectDeleteRequestSchema,
   ProjectOpenRequestSchema,
   ProjectSaveRequestSchema,
   PreviewControlRequestSchema,
@@ -85,7 +86,7 @@ import type { SignalSocket, SyncSocket } from '@neon/p2p/server';
 import { ffprobeAvailable } from './assets.ts';
 import type { MainContext } from './context.ts';
 import { sseFrame } from './events.ts';
-import { ProjectStore } from './project-store.ts';
+import { ProjectStore, deleteProject, recentProjects } from './project-store.ts';
 import { cancelCapture, startCapture, stopCapture } from './screen-recorder.ts';
 
 type Scope = 'local' | 'lan';
@@ -660,6 +661,14 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
       return { path: ctx.store.dir, project: ctx.store.toJSON() };
     }
 
+    case `GET ${API_ROUTES.projects}`:
+      return recentProjects(ctx.settings, ctx.store.dir);
+
+    case `POST ${API_ROUTES.projectDelete}`: {
+      const { path } = ProjectDeleteRequestSchema.parse(body);
+      return deleteProject(ctx.settings, ctx.store.dir, path);
+    }
+
     case `POST ${API_ROUTES.projectSave}`: {
       const { path } = ProjectSaveRequestSchema.parse(body);
       const saved = path ? await ctx.store.saveAs(path) : await ctx.store.save();
@@ -972,6 +981,9 @@ function recordActivity(ctx: MainContext, path: string, body: unknown, result: u
       break;
     case API_ROUTES.projectOpen:
       ctx.events.activity('cli', 'project.open', `Opened ${String(r.path)}`);
+      break;
+    case API_ROUTES.projectDelete:
+      ctx.events.activity('cli', 'project.delete', `Deleted project “${String(r.name)}” (${String(r.path)})`);
       break;
     case API_ROUTES.projectSave:
       ctx.events.activity('cli', 'project.save', `Saved to ${String(r.path)}`);
