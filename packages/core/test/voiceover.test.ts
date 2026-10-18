@@ -34,11 +34,13 @@ test('a re-recording replaces only its own line after successful import and pres
   const undo = createUndoManager(doc);
   doc.placeVoiceOver({ assetId: 'b'.repeat(64), startFrame: 90, lineId: 'line-one', trimBefore: 15 }, ORIGIN_LOCAL);
   assert.deepEqual(takes(doc).sort((a,b) => a.start-b.start), [
-    { line: 'line-one', start: 90, duration: 60, trim: 15, asset: 'b'.repeat(64), volume: 1 },
+    { line: 'line-one', start: 90, duration: 105, trim: 15, asset: 'b'.repeat(64), volume: 1 },
     { line: 'line-two', start: 180, duration: 90, trim: 180, asset: 'a'.repeat(64), volume: 1 },
   ]);
+  assert.deepEqual(doc.getScript().sections[0]!.lines[0]!.placed, { startFrame: 90, durationFrames: 105 });
   undo.undo();
   assert.equal(takes(doc).find(c => c.line === 'line-one')!.asset, 'a'.repeat(64));
+  assert.deepEqual(doc.getScript().sections[0]!.lines[0]!.placed, { startFrame: 90, durationFrames: 60 });
 });
 
 test('a missing or empty new take never removes the previous recording', () => {
@@ -150,4 +152,23 @@ test('trimming linked audio updates the cue and source offset, while unrelated e
   assert.deepEqual(doc.getScript().sections[0]!.lines.map(l => l.placed), [
     { startFrame: 100, durationFrames: 40 }, { startFrame: 180, durationFrames: 90 },
   ]);
+});
+
+test('a single-line take includes speech beyond the old end and updates the cue to the new length', () => {
+  const doc = setup();
+  doc.placeVoiceOver({ assetId: 'a'.repeat(64), startFrame: 0, durationFrames: 300 });
+  doc.placeVoiceOver({ assetId: 'b'.repeat(64), startFrame: 90, lineId: 'line-one', trimBefore: 10,
+    speechRanges: [{ start: 20, end: 40 }, { start: 85, end: 115 }] });
+  assert.deepEqual(takes(doc).find(c => c.line === 'line-one'),
+    { line: 'line-one', start: 100, duration: 95, trim: 20, asset: 'b'.repeat(64), volume: 1 });
+  assert.deepEqual(doc.getScript().sections[0]!.lines[0]!.placed, { startFrame: 100, durationFrames: 95 });
+  assert.deepEqual(takes(doc).find(c => c.line === 'line-two'),
+    { line: 'line-two', start: 180, duration: 90, trim: 180, asset: 'a'.repeat(64), volume: 1 });
+});
+
+test('a shorter single-line take shrinks the cue instead of retaining the previous duration', () => {
+  const doc = setup();
+  doc.placeVoiceOver({ assetId: 'b'.repeat(64), startFrame: 180, lineId: 'line-two', durationFrames: 40 });
+  assert.deepEqual(doc.getScript().sections[0]!.lines[1]!.placed, { startFrame: 180, durationFrames: 40 });
+  assert.equal(takes(doc)[0]!.duration, 40);
 });

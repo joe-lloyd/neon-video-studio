@@ -449,7 +449,7 @@ export class Editor {
       return;
     }
     const target = { id: newId('take'), startFrame: cue?.startFrame ?? this.playhead.get().frame, lineId,
-      endFrame: cue ? cue.startFrame + cue.durationFrames : cues.at(-1) ? cues.at(-1)!.startFrame + cues.at(-1)!.durationFrames : undefined };
+      endFrame: cue ? undefined : cues.at(-1) ? cues.at(-1)!.startFrame + cues.at(-1)!.durationFrames : undefined };
     if (target.endFrame !== undefined && target.endFrame <= target.startFrame) {
       this.toast('error', 'Move the playhead before the last script line to record');
       return;
