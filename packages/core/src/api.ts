@@ -144,7 +144,7 @@ export interface PackSummary {
   version: string;
   description?: string;
   category?: string;
-  /** builtin = ships with the app · installed = ~/.neon-video/packs · example = in the repo, installable */
+  /** builtin = ships with the app · installed = ~/.neon-video/packs or the project's own packs/ copy (see `dir`) · example = in the repo, installable */
   source: 'builtin' | 'installed' | 'example';
   status: 'ready' | 'error';
   error?: string;

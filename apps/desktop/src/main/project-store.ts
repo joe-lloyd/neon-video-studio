@@ -160,7 +160,7 @@ export class ProjectStore {
     return this.dir;
   }
 
-  /** Copy the project (including assets) to a new directory and continue working there. */
+  /** Copy the project (including assets and packs) to a new directory and continue working there. */
   async saveAs(targetDir: string): Promise<string> {
     const abs = resolve(targetDir).replace(/\/$/, '');
     const dest = abs.endsWith('.neon') ? abs : `${abs}.neon`;
@@ -168,6 +168,7 @@ export class ProjectStore {
     await mkdir(dest, { recursive: true });
     await cp(this.assetsDir, join(dest, 'assets'), { recursive: true, force: false, errorOnExist: false });
     await cp(join(this.dir, 'history'), join(dest, 'history'), { recursive: true, force: true }).catch(() => undefined);
+    await cp(join(this.dir, 'packs'), join(dest, 'packs'), { recursive: true, force: true }).catch(() => undefined);
     const oldDir = this.dir;
     this.dir = dest;
     if (this.doc.getMeta().name === 'Untitled Project') {
