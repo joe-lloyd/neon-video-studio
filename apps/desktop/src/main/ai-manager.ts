@@ -10,6 +10,7 @@ import { basename, extname, join } from 'node:path';
 import { resetProbeCache } from './assets.ts';
 import {
   ORIGIN_API,
+  StudioVoiceRequestSchema, StudioVoiceApplyRequestSchema, type StudioVoicePreview,
   mergeRanges,
   newId,
   sourceSecondsToTimeline,
@@ -23,6 +24,7 @@ import {
 } from '@neon/core';
 import {
   DEFAULT_FILLERS,
+  studioVoiceStatus,
   withAiCancellation,
   throwIfCancelled,
   aiAbortSignal,
@@ -59,6 +61,7 @@ import {
   type Segment,
   type ToolPaths,
 } from '@neon/ai';
+import { generateStudioVoice, applyStudioVoice } from './studio-voice.ts';
 import { audioClipGroups } from './ai-audio-targets.ts';
 import type { MainContext } from './context.ts';
 
@@ -87,7 +90,7 @@ export class AiManager {
 
   async capabilities(refresh = false): Promise<AiCapabilities & { hints: typeof SETUP_HINTS }> {
     if (!this.tools || refresh) this.tools = await detectTools();
-    return { ...this.tools.capabilities, hints: SETUP_HINTS };
+    return { ...this.tools.capabilities, studioVoice: await studioVoiceStatus(), hints: SETUP_HINTS };
   }
 
   private async paths(): Promise<ToolPaths> {
@@ -316,6 +319,19 @@ export class AiManager {
       return this.opAudioBatch(job, params);
     }
     switch (job.op) {
+      case 'studio-voice': {
+        const request = StudioVoiceRequestSchema.parse(params);
+        return generateStudioVoice(this.ctx, request.clipId, await this.paths(), (p, m) => this.progress(job, p, m));
+      }
+      case 'studio-voice-apply': {
+        const request = StudioVoiceApplyRequestSchema.parse(params);
+        const previewJob = this.get(request.previewJobId);
+        if (!previewJob || previewJob.op !== 'studio-voice' || previewJob.status !== 'done' || !previewJob.result) throw new Error('Generate a Studio Voice preview first');
+        const preview = previewJob.result as StudioVoicePreview;
+        const result = await applyStudioVoice(this.ctx, preview, request.strength, await this.paths(), (p, m) => this.progress(job, p, m));
+        this.update(previewJob, { result: { ...preview, appliedAssetId: result.newAssetId } });
+        return result;
+      }
       case 'transcribe':
         return this.opTranscribe(job, params);
       case 'fillers':
@@ -882,6 +898,8 @@ function summarize(op: AiOperation, result: unknown): string {
       return `Attenuated ${String(r.breaths)} breath/mouth-noise event(s) by ${String(r.reductionDb)} dB`;
     case 'denoise':
       return `Denoised with ${String(r.engine)} → new asset ${String(r.newAssetId).slice(0, 8)}…`;
+    case 'studio-voice': return 'Studio Voice preview ready — audition, then Apply';
+    case 'studio-voice-apply': return 'Studio Voice blend applied';
     case 'enhance':
       return `Voice enhanced to ${String(r.lufs)} LUFS → new asset ${String(r.newAssetId).slice(0, 8)}…`;
     case 'rip':

@@ -36,6 +36,8 @@ import {
   AiBreathsRequestSchema,
   AiDenoiseRequestSchema,
   AiEnhanceRequestSchema,
+  StudioVoiceRequestSchema,
+  StudioVoiceApplyRequestSchema,
   AiSetupRequestSchema,
   AiRipRequestSchema,
   DetachAudioRequestSchema,
@@ -433,7 +435,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     return t;
   }
   if (key === `POST ${API_ROUTES.aiTranscript}/cut`) return ctx.ai.start('transcript-cut', TranscriptCutRequestSchema.parse(body));
-  const aiOp = /^POST \/api\/ai\/(transcribe|fillers|silence|breaths|denoise|enhance|matte|reframe|broll|clean|pace|setup|rip)$/.exec(key);
+  const aiOp = /^POST \/api\/ai\/(transcribe|fillers|silence|breaths|denoise|enhance|studio-voice|studio-voice-apply|matte|reframe|broll|clean|pace|setup|rip)$/.exec(key);
   if (aiOp) {
     const op = aiOp[1] as AiOperation;
     const schemas: Record<string, { parse(v: unknown): unknown }> = {
@@ -443,6 +445,8 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
       breaths: AiBreathsRequestSchema,
       denoise: AiDenoiseRequestSchema,
       enhance: AiEnhanceRequestSchema,
+      'studio-voice': StudioVoiceRequestSchema,
+      'studio-voice-apply': StudioVoiceApplyRequestSchema,
       setup: AiSetupRequestSchema,
       rip: AiRipRequestSchema,
       matte: AiMatteRequestSchema,

@@ -653,3 +653,6 @@ export const CaptureStopRequestSchema = z.object({
   /** Track id, name or id prefix. */
   track: z.string().min(1).optional(),
 });
+
+export const StudioVoiceRequestSchema = z.object({ clipId: z.string().min(1) });
+export const StudioVoiceApplyRequestSchema = z.object({ previewJobId: z.string().min(1), strength: z.number().min(0).max(1).default(0.75) });

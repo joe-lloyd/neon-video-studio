@@ -48,3 +48,31 @@ neon-cli ai enhance <clip> --lufs=-16 --no-denoise
 The X button aborts the current engine process tree, stops the remaining processing stages, and marks the job Cancelled after process cleanup. A cancelled filler analysis cannot subsequently cut the edit. Queued jobs can be removed before they start. Cancellation does not undo edits already applied by earlier completed stages or sources; use history/undo for those.
 
 Sources: `packages/ai/src/denoise.ts`, `packages/ai/src/enhance.ts`, and the [FFmpeg filter documentation](https://ffmpeg.org/ffmpeg-filters.html).
+
+## Studio Voice (local restoration)
+
+Select **one audio clip → AI tools → Studio Voice → Generate preview**. This runs VoiceFixer locally, including its neural vocoder, to restore speech affected by noise, reverberation, clipping and limited bandwidth. It can change voice texture and cannot guarantee a booth-quality result for every recording. It preserves your speech and timing rather than generating a replacement script or cloning another speaker. Detach video audio first; this first version handles one audio clip at a time.
+
+Generation processes the full underlying source recording and adds lossless, mono 44.1 kHz audition assets without replacing clips. Compare **Original / Studio**, adjust **Studio blend**, then explicitly **Apply Studio Voice**. Both auditions are normalized to -16 LUFS with a -1.5 dBTP target; Original here means the un-restored, level-matched mono source. Both play on one audio clock. Applying renders the same blend into a new 24-bit WAV, preserving timeline position, duration, trim, speed, volume automation and script links. Other uses of that source are untouched. Reapplying the same preview uses its original audition files, so effects do not accumulate. Undo restores the preceding asset. A changed clip/project requires a fresh preview. Preview jobs live in the current app session.
+
+During voice recording, audition stops and playback/apply are disabled. The job's X cancels Python/FFmpeg processing and prevents later timeline application. Every inference stays on the computer; initial installation downloads packages and ~625 MB of model weights.
+
+Windows setup (Python 3.11; NVIDIA CUDA by default, optional `-Cpu`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-studio-voice.ps1 -Python 'C:\path\to\python.exe'
+```
+
+The installer uses an isolated `~/.neon-video/tools/studio-voice-runtime` environment, pins compatible PyTorch/VoiceFixer versions, verifies upstream model checksums, and loads the model before reporting ready. Refresh AI engines afterward. Jellybingus uses its RTX 3090. Model files stay in `~/.cache/voicefixer`; inference checks that they exist before importing VoiceFixer, preventing automatic model downloads while processing.
+
+The same operations are exposed through the control API and generic CLI:
+
+```sh
+neon-cli api POST /api/ai/studio-voice '{"clipId":"clip_…"}'
+# Wait for the returned job to finish, audition its dryAssetId/wetAssetId, then:
+neon-cli api POST /api/ai/studio-voice-apply '{"previewJobId":"ai_…","strength":0.75}'
+```
+
+Optional real-engine verification: `node scripts/test-studio-voice.ts <short-mono-44100Hz-voice.wav>` uses an isolated in-memory project and temporary media, never the open edit. It checks GPU restoration, sample duration, blend application, preserved clip properties, unselected clips and cancellation.
+
+Model and license: [VoiceFixer (MIT)](https://github.com/haoheliu/voicefixer), [analysis weights](https://zenodo.org/records/5600188), [vocoder weights](https://zenodo.org/records/5469951).
