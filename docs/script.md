@@ -46,3 +46,26 @@ thread with Enter. The **Script** button in the title bar counts open notes.
 | Esc | Drop the edit |
 
 Deleting a line or a section is undoable.
+
+## Record one line at a time
+
+Open **Edit → Script → Prompter**. Click a line to select it, then click
+**Record line**. Neon shows a three-second countdown, opens the microphone,
+plays that line's part of the timeline, and stops at the line's end.
+**Stop and save** finishes a take early. **Cancel** during the countdown
+keeps the previous recording.
+
+A recorded line shows **Re-record line**. The new take replaces only that
+line's audio after it has saved successfully. An empty or silent take keeps
+the previous one. Undo restores the previous take. The source audio files
+stay in the media library.
+
+**Record from playhead** records consecutive lines and stops at the last
+placed line. Neon saves separate clips linked to the script lines and trims
+quiet edges with a little padding. Pauses within a line stay in place, and
+the graphics do not move.
+
+For a take recorded before this feature, click **Split existing takes**.
+Neon splits the VO track at the placed script lines without changing the
+source audio. This uses the script's existing timing; it does not transcribe
+or recognise words. Check the line timings first if the reading drifted.

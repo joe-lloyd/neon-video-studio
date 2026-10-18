@@ -39,6 +39,7 @@ export class VoiceRecorder {
   private dir: string | null = null;
   private device: string | null = null;
   private startedAt = 0;
+  private starting = false;
   /** Why recording is not possible right now (a screen capture owns the mic), or null. */
   private readonly blockedBy: () => string | null;
 
@@ -74,7 +75,14 @@ export class VoiceRecorder {
     ];
   }
 
-  async start(): Promise<{ device: string }> {
+  async start(): Promise<{ device: string; leadInMs: number }> {
+    if (this.starting) throw new Error('The microphone is already opening');
+    this.starting = true;
+    try { return await this.startRecording(); }
+    finally { this.starting = false; }
+  }
+
+  private async startRecording(): Promise<{ device: string; leadInMs: number }> {
     if (this.child) throw new Error('Already recording');
     const blocked = this.blockedBy();
     if (blocked) throw new Error(blocked);
@@ -85,8 +93,16 @@ export class VoiceRecorder {
 
     let lastError = 'ffmpeg exited';
     for (const candidate of candidates) {
-      const child = spawn(ffmpeg, ['-hide_banner', '-y', ...candidate.inputArgs, '-ac', '1', '-ar', '48000', '-c:a', 'pcm_s16le', this.file], {
-        stdio: ['pipe', 'ignore', 'pipe'],
+      let recordedUs = 0;
+      let progress = '';
+      const child = spawn(ffmpeg, ['-hide_banner', '-y', ...candidate.inputArgs, '-ac', '1', '-ar', '48000', '-c:a', 'pcm_s16le', '-stats_period', '0.05', '-progress', 'pipe:1', this.file], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      child.stdout?.on('data', (d: Buffer) => {
+        progress += d.toString();
+        const rows = progress.split('\n');
+        progress = rows.pop() ?? '';
+        for (const row of rows) if (row.startsWith('out_time_us=')) recordedUs = Math.max(0, Number(row.slice(12)) || 0);
       });
       let stderr = '';
       child.stderr?.on('data', (d: Buffer) => (stderr += d.toString()));
@@ -96,7 +112,7 @@ export class VoiceRecorder {
         this.child = child;
         this.device = candidate.name;
         this.startedAt = Date.now();
-        return { device: candidate.name };
+        return { device: candidate.name, leadInMs: recordedUs / 1000 };
       }
       lastError = stderr.trim().split('\n').pop() ?? lastError;
     }
@@ -104,23 +120,32 @@ export class VoiceRecorder {
     throw new Error(`Recording failed to start (${lastError})${hint}`);
   }
 
-  /** Stop and return the recorded file path (caller imports + cleans up with discard()). */
-  async stop(): Promise<{ file: string; durationMs: number }> {
+  /** Hand off one take and its cleanup, so saving it cannot discard a newer recording. */
+  async stop(): Promise<{ file: string; durationMs: number; dispose: () => Promise<void> }> {
     const child = this.child;
     if (!child || !this.file) throw new Error('Not recording');
+    const file = this.file;
+    const dir = this.dir;
+    const startedAt = this.startedAt;
     this.child = null;
-    const done = new Promise<void>((resolve) => child.once('close', () => resolve()));
+    this.file = null;
+    this.dir = null;
+    const dispose = async () => { if (dir) await rm(dir, { recursive: true, force: true }); };
+    const done = new Promise<void>((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null) resolve();
+      else child.once('close', () => resolve());
+    });
     child.stdin?.write('q'); // graceful finish writes the WAV header (works on all platforms)
     child.stdin?.end();
     const timeout = setTimeout(() => child.kill(process.platform === 'win32' ? undefined : 'SIGINT'), 1500);
     await done;
     clearTimeout(timeout);
-    const info = await stat(this.file).catch(() => null);
+    const info = await stat(file).catch(() => null);
     if (!info || info.size < 4000) {
-      await this.discard();
+      await dispose();
       throw new Error(`Recording was empty${permissionHint()}`);
     }
-    return { file: this.file, durationMs: Date.now() - this.startedAt };
+    return { file, durationMs: Date.now() - startedAt, dispose };
   }
 
   async discard(): Promise<void> {

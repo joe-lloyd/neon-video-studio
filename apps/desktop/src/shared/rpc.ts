@@ -88,8 +88,9 @@ export type DesktopRPC = {
       deleteProject: { params: { path: string }; response: boolean };
       newProjectAt: { params: { name?: string; fps?: number; width?: number; height?: number; dir?: string }; response: { projectId: string; path: string | null } };
       chooseFolder: { params: Record<string, never>; response: string | null };
-      voStart: { params: Record<string, never>; response: { device: string } };
-      voStop: { params: { startFrame: number }; response: ImportAssetResponse };
+      voStart: { params: Record<string, never>; response: { device: string; leadInMs: number } };
+      voStop: { params: { startFrame: number; lineId?: string; trimBefore?: number }; response: ImportAssetResponse };
+      voPlace: { params: { assetId: string; startFrame: number; lineId?: string; trimBefore?: number }; response: ImportAssetResponse };
       voCancel: { params: Record<string, never>; response: boolean };
       captureDevices: { params: Record<string, never>; response: CaptureDevices };
       captureState: { params: Record<string, never>; response: CaptureState };

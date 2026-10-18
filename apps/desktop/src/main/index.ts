@@ -11,6 +11,7 @@ import { ORIGIN_LOCAL, type ImportAssetResponse } from '@neon/core';
 import { VERSION, bootCore } from './core.ts';
 import { buildStatus } from './control-server.ts';
 import { cancelCapture, startCapture, stopCapture } from './screen-recorder.ts';
+import { finishVoiceOver, placeVoiceOver } from './voiceover.ts';
 import { installMenu } from './menu.ts';
 import { paths } from './paths.ts';
 import { ProjectStore, deleteProject, recentProjects } from './project-store.ts';
@@ -179,15 +180,8 @@ async function main(): Promise<void> {
           ctx.events.activity('ui', 'vo.start', `Recording voice-over (${r.device})`);
           return r;
         },
-        voStop: async ({ startFrame }) => {
-          const { file } = await ctx.recorder.stop();
-          let track = store.toJSON().tracks.find((t) => t.kind === 'audio' && t.name === 'VO');
-          track ??= store.doc.addTrack('audio', 'VO', ORIGIN_LOCAL);
-          const result = await ctx.assets.import(file, { insertAt: startFrame, trackId: track.id, origin: ORIGIN_LOCAL }).finally(() => ctx.recorder.discard());
-          ctx.waveforms.warm(result.asset.id);
-          ctx.events.activity('ui', 'vo.done', `Voice-over take placed on ${track.name} at frame ${startFrame}`, { clipIds: result.clip ? [result.clip.id] : [], assetIds: [result.asset.id] });
-          return result;
-        },
+        voStop: params => finishVoiceOver(ctx, params, ORIGIN_LOCAL),
+        voPlace: params => placeVoiceOver(ctx, params, ORIGIN_LOCAL),
         voCancel: async () => {
           await ctx.recorder.discard();
           return true;

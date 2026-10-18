@@ -6,6 +6,8 @@ import { useSyncExternalStore } from 'react';
 import type * as Y from 'yjs';
 import {
   ORIGIN_LOCAL,
+  AssetUploadResponseSchema,
+  scriptCues,
   ProjectDoc,
   createUndoManager,
   newId,
@@ -69,6 +71,13 @@ export type ScreenCaptureUi =
   | { phase: 'recording'; startedAt: number }
   | { phase: 'finishing' };
 
+export type VoiceOverState = { id: string; startFrame: number; lineId?: string; endFrame?: number } & (
+  | { phase: 'countdown'; remaining: number }
+  | { phase: 'starting' }
+  | { phase: 'recording'; startedAt: number; trimBefore: number }
+  | { phase: 'finishing' }
+);
+
 export interface UiState {
   selection: string[];
   /** Pixels per frame on the timeline. */
@@ -109,7 +118,8 @@ export interface UiState {
   showStart: boolean;
   recentProjects: RecentProject[];
   /** Voice-over recording state. */
-  recording: { startFrame: number; startedAt: number } | null;
+  recording: VoiceOverState | null;
+  voiceOverLineId: string | null;
   screenCapture: ScreenCaptureUi;
   /** Auto-update state pushed by the main process. */
   update: UpdateState;
@@ -170,6 +180,7 @@ export class Editor {
     showStart: true,
     recentProjects: [],
     recording: null,
+    voiceOverLineId: null,
     screenCapture: { phase: 'idle' },
     update: { phase: 'idle', currentVersion: '' },
     canUndo: false,
@@ -413,100 +424,147 @@ export class Editor {
 
   private mediaRecorder: MediaRecorder | null = null;
   private recordedChunks: Blob[] = [];
+  private voiceOverStopTimer: ReturnType<typeof setTimeout> | null = null;
 
-  async startVoiceOver(): Promise<void> {
+  selectVoiceOverLine(lineId: string): void {
     if (this.ui.get().recording) return;
-    // views:// is not a secure context → navigator.mediaDevices does not exist in the webview.
-    // The main process records via ffmpeg/avfoundation instead; MediaRecorder is the browser-mode path.
-    if (this.bridge.mode === 'electrobun' || typeof navigator.mediaDevices?.getUserMedia !== 'function') {
-      const startFrame = this.playhead.get().frame;
-      try {
-        const { device } = await this.bridge.request('voStart', {});
-        this.ui.set({ recording: { startFrame, startedAt: Date.now() }, prompterHidden: false });
-        this.noteUiAction('vo.record', `Recording voice-over (${device}) from frame ${startFrame}`);
-        this.player?.play();
-      } catch (err) {
-        this.toast('error', (err as Error).message);
+    const cue = scriptCues(this.doc.getScript()).find(c => c.id === lineId);
+    if (!cue) return;
+    const clips = this.doc.toJSON().clips.filter(c => c.kind === 'audio' && c.scriptLineId === lineId);
+    this.select(clips.map(c => c.id));
+    this.ui.set({ voiceOverLineId: lineId });
+    this.seek(cue.startFrame);
+  }
+
+  async startVoiceOver(lineId?: string): Promise<void> {
+    if (this.ui.get().recording) return;
+    if (this.ui.get().screenCapture.phase !== 'idle') {
+      this.toast('error', 'Stop the screen recording before recording a voice-over');
+      return;
+    }
+    const cues = scriptCues(this.doc.getScript());
+    const cue = lineId ? cues.find(c => c.id === lineId) : undefined;
+    if (lineId && !cue) {
+      this.toast('error', 'Place the line on the timeline before recording it');
+      return;
+    }
+    const target = { id: newId('take'), startFrame: cue?.startFrame ?? this.playhead.get().frame, lineId,
+      endFrame: cue ? cue.startFrame + cue.durationFrames : cues.at(-1) ? cues.at(-1)!.startFrame + cues.at(-1)!.durationFrames : undefined };
+    if (target.endFrame !== undefined && target.endFrame <= target.startFrame) {
+      this.toast('error', 'Move the playhead before the last script line to record');
+      return;
+    }
+    this.player?.pause();
+    this.seek(target.startFrame);
+    if (cue) {
+      for (let remaining = 3; remaining > 0; remaining--) {
+        this.ui.set({ recording: { ...target, phase: 'countdown', remaining }, prompterHidden: false });
+        await new Promise(r => setTimeout(r, 1000));
+        if (this.ui.get().recording?.id !== target.id) return;
       }
-      return;
     }
-    let stream: MediaStream;
+    this.ui.set({ recording: { ...target, phase: 'starting' }, prompterHidden: false });
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false } });
+      let trimBefore = 0;
+      if (this.bridge.mode === 'electrobun' || typeof navigator.mediaDevices?.getUserMedia !== 'function') {
+        const result = await this.bridge.request('voStart', {});
+        trimBefore = Math.round(result.leadInMs * this.doc.fps / 1000);
+        if (this.ui.get().recording?.id !== target.id || this.ui.get().recording?.phase !== 'starting') {
+          await this.bridge.request('voCancel', {});
+          this.ui.set({ recording: null });
+          return;
+        }
+      } else {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false } });
+        if (this.ui.get().recording?.id !== target.id || this.ui.get().recording?.phase !== 'starting') {
+          stream.getTracks().forEach(t => t.stop());
+          this.ui.set({ recording: null });
+          return;
+        }
+        const mime = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find(m => MediaRecorder.isTypeSupported(m)) ?? '';
+        const recorder = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 192_000 } : undefined);
+        this.recordedChunks = [];
+        recorder.ondataavailable = e => { if (e.data.size) this.recordedChunks.push(e.data); };
+        recorder.onstop = () => {
+          stream.getTracks().forEach(t => t.stop());
+          void this.finishBrowserVoiceOver(target, mime);
+        };
+        this.mediaRecorder = recorder;
+        recorder.start(100);
+      }
+      this.ui.set({ recording: { ...target, phase: 'recording', startedAt: Date.now(), trimBefore }, prompterHidden: false });
+      this.noteUiAction('vo.record', cue ? 'Recording the selected script line' : 'Recording voice-over');
+      this.player?.play();
+      if (target.endFrame !== undefined) {
+        this.voiceOverStopTimer = setTimeout(() => this.stopVoiceOver(), Math.max(1, target.endFrame - target.startFrame) * 1000 / this.doc.fps);
+      }
     } catch (err) {
-      this.toast('error', `Microphone unavailable: ${(err as Error).message}. Grant mic access to Neon Video Studio in System Settings → Privacy.`);
-      return;
+      this.ui.set({ recording: null });
+      this.toast('error', (err as Error).message);
     }
-    const mime = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'].find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
-    const recorder = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 192_000 } : undefined);
-    this.recordedChunks = [];
-    recorder.ondataavailable = (e) => e.data.size && this.recordedChunks.push(e.data);
-    const startFrame = this.playhead.get().frame;
-    recorder.onstop = () => {
-      stream.getTracks().forEach((t) => t.stop());
-      void this.finishVoiceOver(startFrame, mime);
-    };
-    this.mediaRecorder = recorder;
-    recorder.start(250);
-    this.ui.set({ recording: { startFrame, startedAt: Date.now() }, prompterHidden: false });
-    this.noteUiAction('vo.record', `Recording voice-over from frame ${startFrame}`);
-    // Roll the timeline so you can speak to the picture (wear headphones or mute the preview).
-    this.player?.play();
   }
 
   stopVoiceOver(): void {
     const rec = this.ui.get().recording;
+    if (!rec || rec.phase === 'finishing') return;
     this.player?.pause();
+    if (this.voiceOverStopTimer) clearTimeout(this.voiceOverStopTimer);
+    this.voiceOverStopTimer = null;
+    if (rec.phase === 'countdown') {
+      this.ui.set({ recording: null });
+      return;
+    }
+    this.ui.set({ recording: { ...rec, phase: 'finishing' } });
+    if (rec.phase === 'starting') return; // startVoiceOver releases the microphone when its request completes.
     if (this.mediaRecorder) {
       this.mediaRecorder.stop();
       this.mediaRecorder = null;
       return;
     }
-    if (!rec) return;
-    this.ui.set({ recording: null });
-    this.bridge
-      .request('voStop', { startFrame: rec.startFrame })
-      .then((result) => {
-        if (result.clip) {
-          this.select([result.clip.id]);
-          this.flashClips([result.clip.id]);
-        }
+    void this.bridge.request('voStop', { startFrame: rec.startFrame, lineId: rec.lineId, trimBefore: rec.trimBefore })
+      .then(result => {
+        if (result.clip) { this.select([result.clip.id]); this.flashClips([result.clip.id]); }
         this.seek(rec.startFrame);
-        this.toast('success', `Voice-over placed at frame ${rec.startFrame}`);
+        this.toast('success', rec.lineId ? 'Line saved. The previous take was replaced.' : 'Voice-over saved as script line clips');
       })
-      .catch((err: Error) => this.toast('error', err.message));
+      .catch((err: Error) => this.toast('error', err.message))
+      .finally(() => this.ui.set({ recording: null }));
   }
 
-  private async finishVoiceOver(startFrame: number, mime: string): Promise<void> {
-    this.ui.set({ recording: null });
+  private async finishBrowserVoiceOver(target: { startFrame: number; lineId?: string }, mime: string): Promise<void> {
     const blob = new Blob(this.recordedChunks, { type: mime || 'audio/mp4' });
     this.recordedChunks = [];
-    if (blob.size < 2000) {
-      this.toast('error', 'Recording was empty');
-      return;
-    }
     try {
-      // A dedicated VO track keeps takes out of the music lane.
-      let track = this.project.get().project.tracks.find((t) => t.kind === 'audio' && t.name === 'VO');
-      track ??= this.doc.addTrack('audio', 'VO', ORIGIN_LOCAL);
+      if (blob.size < 2000) throw new Error('Recording was empty; the previous take was kept');
       const ext = blob.type.includes('mp4') ? 'm4a' : 'webm';
       const name = `voiceover-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}.${ext}`;
       const b = this.bridge.bootstrap;
-      const res = await fetch(`http://127.0.0.1:${b.port}/api/assets/upload?name=${encodeURIComponent(name)}&at=${startFrame}&track=${encodeURIComponent(track.id)}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${b.token}`, 'Content-Type': blob.type || 'application/octet-stream' },
-        body: blob,
+      const response = await fetch(`http://127.0.0.1:${b.port}/api/assets/upload?name=${encodeURIComponent(name)}`, {
+        method: 'POST', headers: { Authorization: `Bearer ${b.token}`, 'Content-Type': blob.type || 'application/octet-stream' }, body: blob,
       });
-      const json = (await res.json()) as { ok: boolean; data?: { clip?: { id: string } }; error?: { message: string } };
-      if (!json.ok) throw new Error(json.error?.message ?? 'upload failed');
-      if (json.data?.clip) {
-        this.select([json.data.clip.id]);
-        this.flashClips([json.data.clip.id]);
-      }
-      this.seek(startFrame);
-      this.toast('success', `Voice-over placed on ${track.name} at frame ${startFrame}`);
+      const { data } = AssetUploadResponseSchema.parse(await response.json());
+      const result = await this.bridge.request('voPlace', { ...target, assetId: data.asset.id });
+      if (result.clip) { this.select([result.clip.id]); this.flashClips([result.clip.id]); }
+      this.seek(target.startFrame);
+      this.toast('success', target.lineId ? 'Line saved. The previous take was replaced.' : 'Voice-over saved as script line clips');
     } catch (err) {
-      this.toast('error', `Voice-over import failed: ${(err as Error).message}`);
+      this.toast('error', (err as Error).message);
+    } finally {
+      this.ui.set({ recording: null });
+    }
+  }
+
+  splitExistingVoiceOver(): void {
+    if (this.ui.get().recording) return;
+    const project = this.doc.toJSON();
+    const tracks = new Set(project.tracks.filter(t => t.kind === 'audio' && t.name === 'VO').map(t => t.id));
+    const takes = project.clips.filter(c => c.kind === 'audio' && tracks.has(c.trackId) && !c.scriptLineId);
+    try {
+      if (!takes.length) throw new Error('No unsplit takes on the VO track');
+      this.doc.transact(() => { for (const take of takes) this.doc.splitVoiceOver(take.id, ORIGIN_LOCAL); }, ORIGIN_LOCAL);
+      this.toast('success', 'Existing takes split into script lines. Original audio files kept.');
+    } catch (err) {
+      this.toast('error', (err as Error).message);
     }
   }
 
@@ -795,7 +853,8 @@ export class Editor {
   }
 
   select(ids: string[], additive = false): void {
-    this.ui.set((u) => ({ selection: additive ? Array.from(new Set([...u.selection, ...ids])) : ids }));
+    const clip = ids.length === 1 ? this.doc.getClip(ids[0]!) : undefined;
+    this.ui.set((u) => ({ selection: additive ? Array.from(new Set([...u.selection, ...ids])) : ids, voiceOverLineId: clip?.kind === 'audio' ? clip.scriptLineId ?? null : null }));
     this.session.setSelection(ids);
   }
 
@@ -821,11 +880,14 @@ export class Editor {
   // ---- playback ------------------------------------------------------------------------
 
   seek(frame: number, opts: { fromPlayer?: boolean } = {}): void {
+    if (!opts.fromPlayer && this.ui.get().recording?.phase === 'recording') return;
     const max = Math.max(0, this.project.get().durationFrames - 1);
     const f = Math.max(0, Math.min(max, Math.round(frame)));
     if (this.playhead.get().frame !== f) this.playhead.set({ frame: f });
     if (!opts.fromPlayer) this.player?.seekTo(f);
     this.session.setPlayhead(f);
+    const rec = this.ui.get().recording;
+    if (opts.fromPlayer && rec?.phase === 'recording' && rec.endFrame !== undefined && f >= rec.endFrame) this.stopVoiceOver();
   }
 
   setPlaying(playing: boolean): void {
@@ -833,6 +895,7 @@ export class Editor {
   }
 
   togglePlay(): void {
+    if (this.ui.get().recording) { this.stopVoiceOver(); return; }
     this.player?.toggle();
   }
 

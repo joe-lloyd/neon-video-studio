@@ -103,6 +103,8 @@ export interface ZoomRegion {
 
 export interface MediaClip extends ClipBase {
   kind: 'video' | 'audio' | 'image';
+  /** The script line narrated by this take. Re-recording replaces only this line's audio. */
+  scriptLineId?: string;
   /** SHA-256 of the source file; key into Project.assets. */
   assetId: string;
   /** Offset into the source media where playback starts (frames). */
