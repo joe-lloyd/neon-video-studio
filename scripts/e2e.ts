@@ -81,6 +81,7 @@ function tool(name: string): string {
 
 interface Clip { id: string; trackId: string; startFrame: number; durationFrames: number; kind: string }
 interface RecentProject { path: string; name: string; current: boolean }
+interface PackSummary { name: string; enabled: boolean; status: string; dir?: string }
 interface Still { path: string; frames: number[]; width: number; height: number }
 
 /** Width and height from a PNG's IHDR chunk, plus the file size. */
@@ -130,6 +131,19 @@ async function main(): Promise<void> {
     assert(!existsSync(boot.path), 'project delete removed the folder');
     assert(!cli<RecentProject[]>('project', 'list').some((p) => p.path === boot.path), 'deleted project left the list');
     log('project list shows the boot project; project delete removes it and refuses the open one');
+
+    // A project folder carries a copy of each FX pack it uses, so it still opens with them once the
+    // library copy is gone (another machine, a reinstall).
+    cli('packs', 'install', join(ROOT, 'examples/packs/soft-shapes'));
+    await until('the project copy of soft-shapes', () => existsSync(join(open.path, 'packs', 'soft-shapes', 'pack.json')), 15_000);
+    cli('packs', 'uninstall', 'soft-shapes');
+    assert(!existsSync(join(home, 'packs', 'soft-shapes')), 'packs uninstall removed the library copy');
+    cli('project', 'open', open.path);
+    const carried = cli<PackSummary[]>('packs').find((p) => p.name === 'soft-shapes');
+    assert(carried?.enabled && carried.status === 'ready' && carried.dir?.startsWith(open.path), `soft-shapes loads from the project after reopening: ${JSON.stringify(carried)}`);
+    const title = cli<Clip>('timeline', 'insert', '--component', 'SoftTitle', '--at', '0', '--duration', '1s');
+    cli('timeline', 'remove', title.id);
+    log('the project keeps its FX pack after the library copy is uninstalled');
 
     const [imported] = cli<{ asset: { id: string; durationFrames: number }; clip: Clip }[]>('assets', 'import', media, '--at', '0');
     assert(imported, 'import returned one result');

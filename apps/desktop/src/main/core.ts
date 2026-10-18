@@ -86,7 +86,11 @@ export async function bootCore(opts: { headless: boolean }): Promise<Core> {
   } catch {
     /* packaged app: no in-repo examples */
   }
-  ctx.packs = new PackManager({ examplesDir, onChange: (packs) => ctx.rpc?.send.packsChanged({ packs }) });
+  ctx.packs = new PackManager({
+    examplesDir,
+    project: () => ({ dir: store.dir, packs: store.doc.isInitialized ? (store.doc.getMeta().packs ?? []) : [] }),
+    onChange: (packs) => ctx.rpc?.send.packsChanged({ packs }),
+  });
   await ctx.packs.load();
   ctx.sync = new SyncHub(store);
   ctx.room = new RoomManager(ctx);
@@ -151,8 +155,11 @@ export async function bootCore(opts: { headless: boolean }): Promise<Core> {
       ctx.events.emit({ type: 'project-changed', durationFrames: store.doc.durationFrames(), clips: store.toJSON().clips.length, updatedAt: new Date().toISOString() });
     }, 250);
   });
+  // The project folder carries a copy of every pack the project lists (see PackManager).
+  store.on('saved', () => void ctx.packs.syncProject().catch((err: unknown) => console.warn(`[packs] project sync failed: ${(err as Error).message}`)));
   store.on('doc-replaced', async () => {
     ctx.proxies.sync(store.toJSON().assets);
+    await ctx.packs.reload();
     await ctx.history.load();
     await rememberOpenProject();
     await writeInstance();
