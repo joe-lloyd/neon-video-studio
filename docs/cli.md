@@ -361,14 +361,16 @@ neon-cli ui dialog render|room|shortcuts|none
 
 Packs are folders (`pack.json` + `index.tsx`) — see [fx-packs.md](fx-packs.md). Installed packs live in
 `~/.neon-video/packs`; a pack is *enabled per project* (stored in `meta.packs`) so exports know what
-to bundle. Inserting a component from an installed pack enables the pack automatically.
+to bundle. Inserting a component from an installed pack enables the pack automatically. The project
+folder keeps a copy of each enabled pack in `packs/<name>/`, and that copy wins over the library's,
+so a project opens with its packs on any machine.
 
 ```bash
 neon-cli packs                       # built-in, installed and example packs + whether they're in this project
-neon-cli packs install ./my-pack     # validate, copy to ~/.neon-video/packs, compile, add to the project
+neon-cli packs install ./my-pack     # validate, copy to ~/.neon-video/packs and the project, compile, add to the project
 neon-cli packs install examples/packs/[removed]   # the shipped example (from a source checkout)
 neon-cli packs add [removed]   # enable an installed pack for this project · packs remove … disables it
-neon-cli packs uninstall [removed]
+neon-cli packs uninstall [removed]   # removes the library copy; projects keep theirs
 neon-cli packs reload                # re-scan + recompile after editing a pack in place
 neon-cli timeline insert --component RemovedComponent --props '{"title":"Hello"}' --at 2s
 ```

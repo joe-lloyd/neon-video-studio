@@ -1,20 +1,25 @@
 /**
  * Installed FX packs: discovery, validation, compilation and install/uninstall.
  *
- *   ~/.neon-video/packs/<name>/        the pack folder (pack.json + index.tsx + …)
+ *   ~/.neon-video/packs/<name>/        the library: every pack installed on this machine
+ *   <project>.neon/packs/<name>/       a copy of each pack the project uses (project.meta.packs)
  *   ~/.neon-video/packs-build/<name>.<hash>.js   browser bundle for the renderer's previews/player
  *
  * The bundle is produced by Bun's bundler with the host modules (react, @neon/motion — also under its compatibility name `remotion` — @neon/core,
  * @neon/fx-kit) redirected to `globalThis.__neonPackHost` — the renderer fills that object with its
  * own module instances before importing the bundle, so hooks and the engine's frame context are shared.
+ *
+ * A project's copy wins over the library's, so a project folder opens with the pack version it was
+ * made with on any machine. Installing a pack again is how a project picks up a new version.
  * Exports use the render worker instead: it webpack-bundles the pack source straight from the
  * folder (see packages/render/src/worker.ts), so the compiled JS here is UI-only.
  */
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, normalize, resolve } from 'node:path';
 import { listPacks as listRegisteredPacks, listTemplates, registerPack, unregisterPack, type PackManifest } from '@neon/core';
-import { discoverInstalledPacks, neonHome, packsDir, readPackDir, type DiscoveredPack } from '@neon/core/node';
+import { discoverInstalledPacks, discoverProjectPacks, neonHome, packsDir, projectPacksDir, readPackDir, type DiscoveredPack } from '@neon/core/node';
 import type { PackInfo } from '../shared/rpc.ts';
 import { isBareImport } from './pack-imports.ts';
 
@@ -39,9 +44,12 @@ export class PackManager {
   private readonly packs = new Map<string, LoadedPack>();
   private readonly examplesDir: string | null;
   private readonly onChange: (packs: PackInfo[]) => void;
+  /** The open project's folder and the packs it lists. */
+  private readonly project: () => { dir: string; packs: readonly string[] };
 
-  constructor(opts: { examplesDir: string | null; onChange: (packs: PackInfo[]) => void }) {
+  constructor(opts: { examplesDir: string | null; project: () => { dir: string; packs: readonly string[] }; onChange: (packs: PackInfo[]) => void }) {
     this.examplesDir = opts.examplesDir;
+    this.project = opts.project;
     this.onChange = opts.onChange;
   }
 
@@ -49,9 +57,10 @@ export class PackManager {
     return join(neonHome(), 'packs-build');
   }
 
-  /** Scan the packs folder and (re)activate everything. */
+  /** Copy the project's packs into its folder, then scan the library and the project and (re)activate everything. */
   async load(): Promise<PackInfo[]> {
-    const found = await discoverInstalledPacks();
+    await this.syncProjectFolder();
+    const found = await discoverProjectPacks(this.project().dir);
     for (const name of [...this.packs.keys()]) if (!found.some((p) => p.name === name)) this.deactivate(name);
     for (const p of found) await this.activate(p);
     return this.list();
@@ -89,14 +98,23 @@ export class PackManager {
     if (!probe.manifest) throw new Error(probe.error ?? 'not a pack folder');
     const name = probe.manifest.name;
     const dest = join(packsDir(), name);
-    if (resolve(dest) !== src) {
-      await mkdir(packsDir(), { recursive: true });
-      await rm(dest, { recursive: true, force: true });
-      await cp(src, dest, { recursive: true, filter: (p) => !/(^|\/)(node_modules|\.git)(\/|$)/.test(p) });
-    }
-    const info = await this.activate(await readPackDir(dest));
+    if (resolve(dest) !== src) await copyPack(src, dest);
+    // The open project carries its own copy; an explicit install replaces it with this version.
+    const projectCopy = join(projectPacksDir(this.project().dir), name);
+    if (existsSync(projectCopy)) await copyPack(dest, projectCopy);
+    await this.reload();
+    return (await this.list()).find((p) => p.name === name)!;
+  }
+
+  /** Load and tell the renderer (after a project switch). */
+  async reload(): Promise<void> {
+    await this.load();
     await this.broadcast();
-    return info;
+  }
+
+  /** After a save: bring the project's packs folder in line with project.meta.packs. */
+  async syncProject(): Promise<void> {
+    if (await this.syncProjectFolder()) await this.reload();
   }
 
   /** Install from in-memory files (a folder dropped onto the Library panel). Paths are relative and start with the folder name. */
@@ -120,12 +138,12 @@ export class PackManager {
     }
   }
 
+  /** Remove a pack from the library. A project that carries its own copy keeps it. */
   async uninstall(name: string): Promise<boolean> {
-    const pack = this.packs.get(name);
-    if (!pack) return false;
-    this.deactivate(name);
-    await rm(pack.discovered.dir, { recursive: true, force: true });
-    await this.broadcast();
+    const dir = join(packsDir(), name);
+    if (!existsSync(dir)) return false;
+    await rm(dir, { recursive: true, force: true });
+    await this.reload();
     return true;
   }
 
@@ -145,6 +163,30 @@ export class PackManager {
   }
 
   // ---- internals -----------------------------------------------------------------------
+
+  /**
+   * Copy each pack the project lists from the library into <project>/packs, and drop copies of
+   * packs it no longer lists while the library still has them. Returns true when anything changed.
+   */
+  private async syncProjectFolder(): Promise<boolean> {
+    const { dir, packs } = this.project();
+    const target = projectPacksDir(dir);
+    const library = new Map((await discoverInstalledPacks()).filter((p) => p.manifest && !p.error).map((p) => [p.name, p]));
+    const carried = await discoverInstalledPacks(target);
+    let changed = false;
+    for (const name of packs) {
+      const source = library.get(name);
+      if (!source || carried.some((p) => p.name === name)) continue;
+      await copyPack(source.dir, join(target, name));
+      changed = true;
+    }
+    for (const p of carried) {
+      if (packs.includes(p.name) || !library.has(p.name)) continue;
+      await rm(p.dir, { recursive: true, force: true });
+      changed = true;
+    }
+    return changed;
+  }
 
   private async activate(discovered: DiscoveredPack): Promise<PackInfo> {
     const name = discovered.name;
@@ -228,6 +270,12 @@ export class PackManager {
     }
     return { file, hash };
   }
+}
+
+async function copyPack(src: string, dest: string): Promise<void> {
+  await rm(dest, { recursive: true, force: true });
+  await mkdir(dirname(dest), { recursive: true });
+  await cp(src, dest, { recursive: true, filter: (p) => !/(^|[\\/])(node_modules|\.git)([\\/]|$)/.test(p) });
 }
 
 function summary(manifest: PackManifest | null, fallbackName = ''): Pick<PackInfo, 'name' | 'label' | 'version' | 'description' | 'author' | 'category' | 'tags'> {

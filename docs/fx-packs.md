@@ -18,6 +18,7 @@ Two kinds of packs exist:
 |---|---|---|
 | **Built-in** (`core`, `neon-essentials`, `demo-kit`) | inside the app bundle | always, in every project |
 | **Installed** | `~/.neon-video/packs/<name>/` | listed in the Library; enabled per project |
+| **Carried by a project** | `<project>.neon/packs/<name>/` | a copy of each pack the project uses |
 
 > **Security.** A pack is arbitrary code. It runs inside the app's renderer and inside the headless
 > browser that renders your exports, with whatever access those processes have. Only install packs
@@ -34,7 +35,7 @@ In the app open the **FX** panel and switch to the **Library** sub-tab.
   `examples/packs/` is listed in an *Examples* section with a one-click **Install**.
 
 **Uninstall** from the same place (the pack card's menu). Uninstalling removes the folder from
-`~/.neon-video/packs`; projects that still list the pack keep working once it is installed again.
+`~/.neon-video/packs`. Projects that use the pack keep their own copy, so they keep working.
 
 Installed packs are discovered on start-up by scanning `~/.neon-video/packs` (override the home
 folder with `NEON_HOME`). A folder whose `pack.json` fails validation, or whose template names clash
@@ -46,7 +47,11 @@ Built-in packs are always available. Installed packs are opt-in per project so a
 exactly which packs it needs:
 
 - In the **Library**, click **Add to project** on a pack card, or drag the card onto the project
-  area. The pack name is stored in the project (`meta.packs`) and travels with the project folder.
+  area. The pack name is stored in the project (`meta.packs`) and the app copies the pack into
+  the project folder at `packs/<name>/`, next to `assets/`. Copy the folder to another machine and
+  it opens with its packs, even where they were never installed.
+- The project's copy wins over the library's. A project keeps the pack version it was made with
+  until you install the pack again, which also replaces the copy in the open project.
 - Remove it the same way. Clips that still reference a template from a removed pack render as a
   placeholder until the pack is enabled again.
 
