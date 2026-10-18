@@ -226,13 +226,26 @@ async function main(): Promise<void> {
     cli('script', 'set', scriptFile);
     cli('notes', 'add', '1.1', 'Too long.', '--as', 'person');
     cli('notes', 'reply', '#1', 'Cut to two words.');
-    type ScriptJson = { sections: { status: string; lines: { say: string; placed?: { startFrame: number; durationFrames: number } }[] }[]; notes: { author: string; on: { kind: string }; replies: { author: string }[] }[] };
+    type ScriptJson = { sections: { status: string; lines: { id: string; say: string; placed?: { startFrame: number; durationFrames: number } }[] }[]; notes: { author: string; on: { kind: string }; replies: { author: string }[] }[] };
     const script = cli<ScriptJson>('script');
     const [planned, placed] = script.sections[0]!.lines;
     assert(script.sections[0]!.status === 'review' && planned?.placed === undefined && placed?.placed?.startFrame === 45 && placed.placed.durationFrames === 30, `script set keeps status and placement: ${JSON.stringify(script.sections)}`);
     const [note] = script.notes;
     assert(note?.author === 'person' && note.on.kind === 'line' && note.replies[0]?.author === 'agent', `note thread person → agent: ${JSON.stringify(script.notes)}`);
     log('script set, notes add and notes reply round-trip through the app');
+
+    const voice = cli<Clip>('api', 'POST', 'timeline/insert', JSON.stringify({ kind: 'audio', assetId, at: 45, duration: 30, scriptLineId: placed.id, placement: 'overlap' }));
+    cli('history', 'checkpoint');
+    cli('timeline', 'move', voice.id, '--at', '90f');
+    const movedLine = cli<ScriptJson>('script').sections[0]!.lines[1];
+    assert(movedLine?.placed?.startFrame === 90 && movedLine.placed.durationFrames === 30, 'moving voice-over moves its script cue to 90 for 30 frames');
+    cli('history', 'checkpoint');
+    cli('history', 'undo');
+    const restoredLine = cli<ScriptJson>('script').sections[0]!.lines[1];
+    const restoredVoice = cli<{ project: { clips: Clip[] } }>('state', 'dump').project.clips.find(c => c.id === voice.id);
+    assert(restoredLine?.placed?.startFrame === 45 && restoredVoice?.startFrame === 45, 'one undo restores both the script cue and audio to frame 45');
+    cli('timeline', 'remove', voice.id);
+    log('voice-over movement updates the script cue and history undo restores both');
 
     if (!opts['no-render']) {
       const out = join(home, 'e2e.mp4');

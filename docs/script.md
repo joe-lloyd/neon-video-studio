@@ -60,6 +60,12 @@ line's audio after it has saved successfully. An empty or silent take keeps
 the previous one. Undo restores the previous take. The source audio files
 stay in the media library.
 
+Drag a linked voice-over clip to change when its script line appears in the
+prompter. The cue updates when you drop the clip. Trimming an edge also updates
+the cue. If a line has several audio pieces, its cue spans the earliest piece
+through the latest. Undo restores both the audio edit and its script timing.
+Other clips and graphics keep their positions.
+
 **Record from playhead** records consecutive lines and stops at the last
 placed line. Neon saves separate clips linked to the script lines and trims
 quiet edges with a little padding. Pauses within a line stay in place, and

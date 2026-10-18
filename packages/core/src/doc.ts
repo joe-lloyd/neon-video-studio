@@ -506,6 +506,7 @@ export class ProjectDoc {
     const m = this.clips.get(id);
     if (!m) throw new Error(`Clip ${id} not found`);
     return this.transact(() => {
+      const before = mapToClip(m);
       const { props, ...scalars } = patch;
       for (const [k, v] of Object.entries(scalars)) {
         if (v === undefined) continue;
@@ -533,8 +534,19 @@ export class ProjectDoc {
         const target = m.get('props') as YMap;
         for (const [k, v] of Object.entries(validated)) target.set(k, v);
       }
+      const clip = mapToClip(m);
+      if (clip.kind === 'audio' && clip.scriptLineId && (clip.startFrame !== before.startFrame || clip.durationFrames !== before.durationFrames)) {
+        const line = this.lines.get(clip.scriptLineId);
+        if (line) {
+          // A silence-trimmed line can have several pieces with gaps between them.
+          const pieces = this.toJSON().clips.filter(c => c.kind === 'audio' && c.scriptLineId === clip.scriptLineId);
+          const startFrame = Math.min(...pieces.map(c => c.startFrame));
+          const endFrame = Math.max(...pieces.map(clipEnd));
+          line.set('placed', { startFrame, durationFrames: endFrame - startFrame });
+        }
+      }
       this.touch();
-      return mapToClip(m);
+      return clip;
     }, origin);
   }
 
