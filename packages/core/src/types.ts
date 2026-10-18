@@ -33,6 +33,8 @@ export interface Track {
   /** Lower order renders first (bottom of the stack). Overlays should have the highest order. */
   order: number;
   muted: boolean;
+  /** Track gain multiplier. Omitted in older projects = 1 (100%). */
+  volume?: number;
   locked: boolean;
   hidden: boolean;
 }

@@ -375,7 +375,7 @@ function TrackHeader({ track }: { track: Track }) {
   const select = (e: ReactMouseEvent) => editor.selectTrack(track.id, e.shiftKey || e.metaKey || e.ctrlKey);
   return (
     <div className={`track-header${selected ? ' selected' : ''}`} style={{ height: ROW_H }} onClick={e => {
-      if (!(e.target as HTMLElement).closest('button')) select(e);
+      if (!(e.target as HTMLElement).closest('button, input, label')) select(e);
     }}>
       <span className="kind" style={{ background: TRACK_COLOR[track.kind], boxShadow: `0 0 6px ${TRACK_COLOR[track.kind]}` }} />
       <button className="tname" title={`Select all clips on ${track.name}`} aria-label={`Select all clips on ${track.name}`} aria-pressed={selected} onClick={select}>{track.name}</button>
@@ -393,6 +393,11 @@ function TrackHeader({ track }: { track: Track }) {
       <button title="Remove track (and its clips)" onClick={() => editor.removeTrack(track.id)}>
         <NeonIcon icon={Trash2} size={13} tone="muted" />
       </button>
+      {track.kind !== 'overlay' ? <label className="track-volume" title="Volume for the whole track; double-click to reset to 100%" onClick={e => e.stopPropagation()} onDoubleClick={() => editor.updateTrack(track.id, { volume: 1 })}>
+        <input type="range" aria-label={`${track.name} track volume`} min={0} max={2} step={0.01} value={track.volume ?? 1}
+          onChange={e => editor.updateTrack(track.id, { volume: Number(e.target.value) })} />
+        <output>{Math.round((track.volume ?? 1) * 100)}%</output>
+      </label> : null}
     </div>
   );
 }

@@ -256,6 +256,26 @@ async function main(): Promise<void> {
       assert(Math.abs(seconds - 2.5) < 0.2, `rendered 2.5 s, got ${probe.stdout.trim()}`);
       log(`rendered ${out} (${seconds.toFixed(2)} s)`);
 
+      // Track gain is independent of clip gain and must reach the offline audio mixer.
+      const beforeGain = cli<{ project: { clips: unknown[] } }>('state', 'dump').project.clips;
+      cli('tracks', 'update', 'V1', '--volume', '0.5');
+      const quiet = join(home, 'track-volume.mp4');
+      const quietJob = cli<{ status: string; error?: string }>('render', '--output', quiet, '--preset', 'draft');
+      assert(quietJob.status === 'done', `track-volume render: ${quietJob.error ?? quietJob.status}`);
+      const rms = (file: string) => {
+        const decoded = spawnSync(tool('ffmpeg'), ['-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', '16000', '-f', 'f32le', '-'], { maxBuffer: 2_000_000 });
+        assert(decoded.status === 0, 'decode exported audio for gain comparison');
+        let energy = 0;
+        for (let i = 0; i + 4 <= decoded.stdout.length; i += 4) energy += decoded.stdout.readFloatLE(i) ** 2;
+        return Math.sqrt(energy / (decoded.stdout.length / 4));
+      };
+      const ratio = rms(quiet) / rms(out);
+      assert(Math.abs(ratio - 0.5) < 0.03, `50% track volume scales exported audio by 0.5, got ${ratio}`);
+      assert(canonical(beforeGain) === canonical(cli<{ project: { clips: unknown[] } }>('state', 'dump').project.clips), 'track gain preserves individual clip settings');
+      cli('tracks', 'update', 'V1', '--volume', '1');
+      log('track volume halves exported audio and preserves clip settings');
+
+
       // Frame 15 is the first frame after a cut join: it must show the picture, not dip to black.
       const luma = spawnSync(tool('ffmpeg'), ['-v', 'error', '-i', out, '-vf', 'select=eq(n\\,15),scale=1:1', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'gray', '-'], { maxBuffer: 1024 });
       const level = luma.stdout[0] ?? 0;

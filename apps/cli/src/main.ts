@@ -62,7 +62,7 @@ COMMANDS
   timeline split <clip> --at T
   timeline remove <clip...>
   tracks add --kind video|audio|overlay [--name N]
-  tracks update <track> [--name N] [--mute|--unmute] [--lock|--unlock] [--hide|--show]
+  tracks update <track> [--name N] [--volume 1.2] [--mute|--unmute] [--lock|--unlock] [--hide|--show]
   tracks remove <track>
   assets import <file...> [--at T] [--track REF]
   assets remove <ref>
@@ -839,6 +839,7 @@ async function main(): Promise<void> {
         if (!rest[0]) throw usage('tracks', 'update');
         const target = await api.resolveTrack(rest[0]);
         const patch: Record<string, unknown> = { name: flags.name };
+        if (flags.volume !== undefined) patch.volume = Number(flags.volume);
         if (flags.mute) patch.muted = true;
         if (flags.unmute) patch.muted = false;
         if (flags.lock) patch.locked = true;

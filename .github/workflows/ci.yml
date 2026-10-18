@@ -46,4 +46,6 @@ jobs:
         with:
           bun-version: 1.4.0 # the Bun Electrobun 2.0.1 ships inside the app
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Cancel active AI engines and queued jobs
+        run: node --test packages/ai/test/cancellation.test.ts apps/desktop/test/ai-cancellation.test.ts
       - run: node scripts/e2e.ts

@@ -29,6 +29,7 @@ export const TrackSchema = z.object({
   kind: z.enum(['video', 'audio', 'overlay']),
   order: z.number(),
   muted: z.boolean(),
+  volume: z.number().min(0).max(2).optional(),
   locked: z.boolean(),
   hidden: z.boolean(),
 });
@@ -445,6 +446,7 @@ export const UpdateTrackRequestSchema = z.object({
   patch: z.object({
     name: z.string().optional(),
     muted: z.boolean().optional(),
+    volume: z.number().min(0).max(2).optional(),
     locked: z.boolean().optional(),
     hidden: z.boolean().optional(),
     order: z.number().optional(),
