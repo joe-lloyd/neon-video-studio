@@ -654,5 +654,8 @@ export const CaptureStopRequestSchema = z.object({
   track: z.string().min(1).optional(),
 });
 
-export const StudioVoiceRequestSchema = z.object({ clipId: z.string().min(1) });
+export const StudioVoiceRequestSchema = z.object({
+  clipId: z.string().min(1).optional(),
+  clipIds: z.array(z.string().min(1)).min(1).optional(),
+}).refine(value => Boolean(value.clipId) !== Boolean(value.clipIds), 'Specify either clipId or clipIds');
 export const StudioVoiceApplyRequestSchema = z.object({ previewJobId: z.string().min(1), strength: z.number().min(0).max(1).default(0.75) });
