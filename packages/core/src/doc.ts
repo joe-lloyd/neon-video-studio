@@ -2,7 +2,7 @@ import * as Y from 'yjs';
 import { newId } from './ids.ts';
 import { clipEnd, mergeRanges, planRippleInsert, resolveFreePosition, sortClips, sortTracks, trackEnd, volumeAt } from './ops.ts';
 import { sliceKeyframes, speedOf } from './timing.ts';
-import { frameAfterCut, placementAfterCut, scriptFromCues } from './script.ts';
+import { frameAfterCut, placementAfterCut, scriptFromCues, scriptCues } from './script.ts';
 import { CORE_PACK_NAME, getPack, getTemplate, hasTemplate, resolveTemplateProps } from './templates.ts';
 import {
   DEFAULT_PROJECT_META,
@@ -47,6 +47,7 @@ export interface InsertClipInput {
   assetId?: string;
   trimBefore?: number;
   volume?: number;
+  scriptLineId?: string;
   // component
   componentName?: string;
   props?: Record<string, unknown>;
@@ -399,6 +400,7 @@ export class ProjectDoc {
           startFrame: 0,
           durationFrames,
           assetId: asset.id,
+          ...(input.scriptLineId ? { scriptLineId: input.scriptLineId } : {}),
           trimBefore,
           volume: input.volume ?? 1,
           fit: 'contain',
@@ -430,6 +432,73 @@ export class ProjectDoc {
       this.clips.set(clip.id, clipToMap(clip));
       this.touch();
       return clip;
+    }, origin);
+  }
+
+  /** Save a take as separate line clips. The previous take stays until validation succeeds. */
+  placeVoiceOver(input: { assetId: string; startFrame: number; durationFrames?: number; trimBefore?: number; lineId?: string; speechRanges?: FrameRange[] }, origin?: unknown): Clip[] {
+    const asset = this.getAsset(input.assetId);
+    if (!asset || asset.kind !== 'audio') throw new Error(`Audio asset ${input.assetId} not found`);
+    const trimBefore = input.trimBefore ?? 0;
+    const available = (asset.durationFrames ?? 0) - trimBefore;
+    const durationFrames = Math.min(input.durationFrames ?? available, available);
+    if (durationFrames < 1) throw new Error('The voice-over contains no audio');
+    const cues = scriptCues(this.getScript());
+    const line = input.lineId ? cues.find(c => c.id === input.lineId) : undefined;
+    if (input.lineId && !line) throw new Error('Place the script line on the timeline before recording it');
+    const startFrame = line?.startFrame ?? input.startFrame;
+    const endFrame = startFrame + Math.min(durationFrames, line?.durationFrames ?? durationFrames);
+    const segments = (line ? [line] : cues).flatMap(cue => {
+      let start = Math.max(startFrame, cue.startFrame);
+      let end = Math.min(endFrame, cue.startFrame + cue.durationFrames);
+      if (input.speechRanges) {
+        const speech = input.speechRanges.map(r => ({ start: startFrame + r.start - trimBefore, end: startFrame + r.end - trimBefore })).filter(r => r.start < end && r.end > start);
+        if (!speech.length) return [];
+        start = Math.max(start, speech[0]!.start);
+        end = Math.min(end, speech[speech.length - 1]!.end);
+      }
+      return end > start ? [{ cue, start, end }] : [];
+    });
+    if (input.speechRanges && !segments.length) throw new Error('No speech was recorded for the script lines; the previous takes were kept');
+    if (segments.some((s, i) => i > 0 && s.start < segments[i - 1]!.end)) throw new Error('Script lines overlap; adjust their timing before recording');
+    const track = this.toJSON().tracks.find(t => t.kind === 'audio' && t.name === 'VO');
+    if (track?.locked) throw new Error('Track "VO" is locked');
+    return this.transact(() => {
+      const lane = track ?? this.addTrack('audio', 'VO', origin);
+      if (!segments.length) return [this.insertClip({ kind: 'audio', assetId: asset.id, trackId: lane.id, startFrame, durationFrames, trimBefore, placement: 'overlap' }, origin)];
+      const replaced = new Set(segments.map(s => s.cue.id));
+      this.removeClips(this.toJSON().clips.filter(c => c.kind === 'audio' && c.trackId === lane.id && c.scriptLineId && replaced.has(c.scriptLineId)).map(c => c.id), origin);
+      return segments.map(({ cue, start, end }) => this.insertClip({ kind: 'audio', assetId: asset.id, trackId: lane.id, startFrame: start, durationFrames: end - start, trimBefore: trimBefore + start - startFrame, scriptLineId: cue.id, name: cue.text, placement: 'overlap' }, origin));
+    }, origin);
+  }
+
+  /** Split a legacy take at the placed script lines, retaining the same source and timing. */
+  splitVoiceOver(id: string, origin?: unknown): Clip[] {
+    const clip = this.getClip(id);
+    if (!clip || clip.kind !== 'audio') throw new Error('Select an audio take to split');
+    const track = this.getTrack(clip.trackId);
+    if (track?.locked) throw new Error(`Track "${track.name}" is locked`);
+    const cues = scriptCues(this.getScript()).filter(c => c.startFrame < clipEnd(clip) && c.startFrame + c.durationFrames > clip.startFrame);
+    if (!cues.length) throw new Error('No placed script lines overlap this take');
+    if (cues.some((c, i) => i > 0 && c.startFrame < cues[i - 1]!.startFrame + cues[i - 1]!.durationFrames)) throw new Error('Script lines overlap; adjust their timing before splitting');
+    return this.transact(() => {
+      const result: Clip[] = [];
+      let remaining: Clip = clip;
+      for (const cue of cues) {
+        const start = Math.max(clip.startFrame, cue.startFrame);
+        const end = Math.min(clipEnd(clip), cue.startFrame + cue.durationFrames);
+        if (start > remaining.startFrame) {
+          const [gap, right] = this.splitClipInternal(remaining.id, start);
+          this.removeClips([gap.id], origin);
+          remaining = right;
+        }
+        let piece = remaining;
+        if (end < clipEnd(remaining)) [piece, remaining] = this.splitClipInternal(remaining.id, end);
+        result.push(this.updateClip(piece.id, { scriptLineId: cue.id, name: cue.text }, origin));
+      }
+      const kept = new Set(result.map(c => c.id));
+      if (!kept.has(remaining.id)) this.removeClips([remaining.id], origin);
+      return result;
     }, origin);
   }
 

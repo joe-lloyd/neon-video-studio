@@ -285,6 +285,9 @@ export const API_ROUTES = {
   aiRip: '/api/ai/rip',
   recordStart: '/api/record/start',
   recordStop: '/api/record/stop',
+  recordSplit: '/api/record/split',
+  recordPlace: '/api/record/place',
+  recordCancel: '/api/record/cancel',
   recordState: '/api/record/state',
   batch: '/api/batch',
 } as const;

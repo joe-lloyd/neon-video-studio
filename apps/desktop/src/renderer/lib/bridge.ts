@@ -199,10 +199,16 @@ async function httpBridge(): Promise<Bridge> {
           return call('POST', '/api/timeline/cut', params) as never;
         case 'voStart':
           return call('POST', '/api/record/start') as never;
-        case 'voStop':
-          return call('POST', '/api/record/stop', { at: (params as { startFrame: number }).startFrame }) as never;
+        case 'voStop': {
+          const p = params as Requests['voStop']['params'];
+          return call('POST', '/api/record/stop', { at: p.startFrame, lineId: p.lineId, trimBefore: p.trimBefore }) as never;
+        }
         case 'voCancel':
-          return true as never;
+          return call('POST', '/api/record/cancel') as never;
+        case 'voPlace': {
+          const p = params as Requests['voPlace']['params'];
+          return call('POST', '/api/record/place', { at: p.startFrame, assetId: p.assetId, lineId: p.lineId, trimBefore: p.trimBefore }) as never;
+        }
         case 'captureDevices':
           return call('GET', '/api/capture/devices') as never;
         case 'captureState':

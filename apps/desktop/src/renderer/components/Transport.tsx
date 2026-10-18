@@ -8,23 +8,25 @@ import { useSelector, useStoreValue } from '../lib/store.ts';
 function RecordButton() {
   const editor = useEditor();
   const recording = useSelector(editor.ui, (u) => u.recording);
+  const selectedLine = useSelector(editor.ui, (u) => u.voiceOverLineId);
   const [, tick] = useState(0);
   useEffect(() => {
     if (!recording) return;
     const t = setInterval(() => tick((n) => n + 1), 500);
     return () => clearInterval(t);
   }, [recording]);
-  const seconds = recording ? Math.floor((Date.now() - recording.startedAt) / 1000) : 0;
+  const seconds = recording?.phase === 'recording' ? Math.floor((Date.now() - recording.startedAt) / 1000) : 0;
   return (
     <>
       <button
         className={`btn icon record${recording ? ' armed' : ''}`}
-        title={recording ? 'Stop recording (drops the take on the VO track)' : 'Record voice-over from the playhead (wear headphones or mute the preview)'}
-        onClick={() => (recording ? editor.stopVoiceOver() : void editor.startVoiceOver())}
+        disabled={recording?.phase === 'finishing'}
+        title={recording ? recording.phase === 'countdown' || recording.phase === 'starting' ? 'Cancel recording' : 'Stop and save take' : selectedLine ? 'Record selected script line after a 3-second countdown' : 'Record voice-over from the playhead'}
+        onClick={() => (recording ? editor.stopVoiceOver() : void editor.startVoiceOver(selectedLine ?? undefined))}
       >
         <span className="rec-dot" />
       </button>
-      {recording ? <span className="rec-time">{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}</span> : null}
+      {recording ? <span className="rec-time">{recording.phase === 'countdown' ? recording.remaining : recording.phase === 'starting' ? 'Opening mic…' : recording.phase === 'finishing' ? 'Saving…' : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`}</span> : null}
     </>
   );
 }

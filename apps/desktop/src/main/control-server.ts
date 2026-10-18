@@ -18,6 +18,8 @@ import {
   type BatchResult,
   AddTrackRequestSchema,
   ImportAssetRequestSchema,
+  RecordStopRequestSchema,
+  RecordPlaceRequestSchema,
   InsertClipRequestSchema,
   MoveClipRequestSchema,
   ORIGIN_API,
@@ -88,6 +90,7 @@ import type { MainContext } from './context.ts';
 import { sseFrame } from './events.ts';
 import { ProjectStore, deleteProject, recentProjects } from './project-store.ts';
 import { cancelCapture, startCapture, stopCapture } from './screen-recorder.ts';
+import { finishVoiceOver, placeVoiceOver } from './voiceover.ts';
 
 type Scope = 'local' | 'lan';
 interface WsData {
@@ -242,7 +245,19 @@ async function start(ctx: MainContext, scope: Scope, hostname: string, port: num
             try {
               const file = joinPath(dir, name);
               // Stream the body to disk: remote CLIs upload whole screen recordings this way.
-              await Bun.write(file, new Response(req.body));
+              const writer = Bun.file(file).writer();
+              const reader = req.body?.getReader();
+              try {
+                if (reader) for (;;) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  writer.write(value);
+                  await writer.flush();
+                }
+              } finally {
+                reader?.releaseLock();
+                await writer.end();
+              }
               const result = await ctx.assets.import(file, {
                 insertAt: at === null ? undefined : /^\d+$/.test(at) ? Number(at) : parseTimecode(at, ctx.store.doc.fps),
                 trackId,
@@ -454,15 +469,14 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     return { ...r, state: ctx.recorder.state() };
   }
   if (key === 'POST /api/record/stop') {
-    const at = Number((body as { at?: number | string })?.at ?? 0);
-    const startFrame = Number.isFinite(at) ? Math.max(0, Math.round(at)) : parseTimecode(String((body as { at?: string }).at ?? '0'), fps);
-    const { file } = await ctx.recorder.stop();
-    let track = doc.toJSON().tracks.find((t) => t.kind === 'audio' && t.name === 'VO');
-    track ??= doc.addTrack('audio', 'VO', ORIGIN_API);
-    const result = await ctx.assets.import(file, { insertAt: startFrame, trackId: track.id, origin: ORIGIN_API }).finally(() => ctx.recorder.discard());
-    ctx.events.activity('cli', 'vo.done', `Voice-over take placed on ${track.name} at frame ${startFrame}`, { clipIds: result.clip ? [result.clip.id] : [] });
-    return result;
+    const req = RecordStopRequestSchema.parse(body);
+    return finishVoiceOver(ctx, { startFrame: T(req.at) ?? 0, lineId: req.lineId, trimBefore: T(req.trimBefore) });
   }
+  if (key === 'POST /api/record/place') {
+    const req = RecordPlaceRequestSchema.parse(body);
+    return placeVoiceOver(ctx, { assetId: req.assetId, startFrame: T(req.at) ?? 0, lineId: req.lineId, trimBefore: T(req.trimBefore) });
+  }
+  if (key === 'POST /api/record/cancel') { await ctx.recorder.discard(); return true; }
   if (key === 'GET /api/record/state') return ctx.recorder.state();
   if (key === `GET ${API_ROUTES.captureDevices}`) return ctx.capture.devices();
   if (key === `GET ${API_ROUTES.captureState}`) return ctx.capture.state();
@@ -640,6 +654,8 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
 
     case `GET ${API_ROUTES.state}`:
       return { project: doc.toJSON(), durationFrames: doc.durationFrames() };
+    case `POST ${API_ROUTES.recordSplit}`:
+      return doc.splitVoiceOver(IdRequestSchema.parse(body).id, ORIGIN_API);
 
     case `POST ${API_ROUTES.meta}`: {
       const patch = UpdateMetaRequestSchema.parse(body);
@@ -692,6 +708,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
           : {
               kind: req.kind,
               assetId: req.assetId,
+              scriptLineId: req.scriptLineId,
               startFrame: T(req.at),
               durationFrames: T(req.duration),
               trimBefore: T(req.trimBefore),
@@ -709,6 +726,7 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
         id,
         {
           name: patch.name,
+          scriptLineId: patch.scriptLineId,
           startFrame: T(patch.startFrame),
           durationFrames: T(patch.durationFrames),
           trimBefore: T(patch.trimBefore),
