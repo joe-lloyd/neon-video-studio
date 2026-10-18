@@ -100,6 +100,11 @@ export function packsDir(): string {
   return join(neonHome(), 'packs');
 }
 
+/** Where a project keeps a copy of each pack it uses, so the folder opens on any machine. */
+export function projectPacksDir(projectDir: string): string {
+  return join(projectDir, 'packs');
+}
+
 export interface DiscoveredPack {
   /** Folder name (== manifest.name when valid). */
   name: string;
@@ -138,6 +143,14 @@ export async function discoverInstalledPacks(dir = packsDir()): Promise<Discover
     out.push(await readPackDir(join(dir, e.name)));
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The library's packs, with the project's own copies taking the place of same-named ones. */
+export async function discoverProjectPacks(projectDir: string): Promise<DiscoveredPack[]> {
+  const byName = new Map<string, DiscoveredPack>();
+  for (const p of await discoverInstalledPacks()) byName.set(p.name, p);
+  for (const p of await discoverInstalledPacks(projectPacksDir(projectDir))) byName.set(p.name, p);
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Register the templates of every valid installed pack in this process's registry. */

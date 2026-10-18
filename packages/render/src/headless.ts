@@ -2,7 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { ProjectSchema, type Project } from '@neon/core';
-import { discoverInstalledPacks } from '@neon/core/node';
+import { discoverProjectPacks } from '@neon/core/node';
 import { startAssetServer } from './asset-server.ts';
 import { findRepoRoot, renderPaths } from './paths.ts';
 import { runRenderWorker } from './run.ts';
@@ -32,7 +32,7 @@ export async function renderHeadless(opts: HeadlessRenderOptions): Promise<Rende
   const target = opts.target(project);
   const assets = await startAssetServer(join(projectDir, 'assets'));
   const enabled = new Set(project.meta.packs ?? []);
-  const packs = (await discoverInstalledPacks()).filter((p) => enabled.has(p.name) && p.manifest && !p.error);
+  const packs = (await discoverProjectPacks(projectDir)).filter((p) => enabled.has(p.name) && p.manifest && !p.error);
   try {
     const spec: RenderJobSpec = {
       ...target,

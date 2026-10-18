@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useSyncExternalStore } from 'react';
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from '@neon/motion';
-import { sortClips, sortTracks, speedOf, volumeAt, zoomAt, type Asset, type Clip, type MediaClip, type Project, type Track } from '@neon/core';
+import { getTemplatesVersion, sortClips, sortTracks, speedOf, subscribeTemplates, volumeAt, zoomAt, type Asset, type Clip, type MediaClip, type Project, type Track } from '@neon/core';
 import { TimelineProjectContext, type TimelineContextValue } from '@neon/fx-kit';
 import { getTemplateComponent } from '../templates/index.ts';
 
@@ -187,6 +187,8 @@ const MissingBox: React.FC<{ label: string }> = ({ label }) => (
 
 /** Templates read the project from context; `timeline.clipFrom` lets them map their frame back to the timeline. */
 const ComponentClipView: React.FC<{ clip: Extract<Clip, { kind: 'component' }>; timeline: TimelineContextValue }> = ({ clip, timeline }) => {
+  // Installed packs load after the first paint; re-render when one registers so the clip stops showing as unknown.
+  useSyncExternalStore(subscribeTemplates, getTemplatesVersion, getTemplatesVersion);
   const Template = getTemplateComponent(clip.componentName);
   if (!Template) return <MissingBox label={`Unknown component ${clip.componentName}`} />;
   return (
