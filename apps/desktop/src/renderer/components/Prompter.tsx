@@ -142,7 +142,7 @@ export function PrompterOverlay() {
   const status = recording.phase === 'countdown' ? String(recording.remaining)
     : recording.phase === 'starting' ? 'Opening microphone…'
     : recording.phase === 'finishing' ? 'Saving take…'
-    : active ? 'Read now' : countIn !== null ? String(countIn) : 'pause';
+    : targetIndex !== -1 ? 'Recording · stop when finished' : active ? 'Read now' : countIn !== null ? String(countIn) : 'pause';
 
   return (
     <div className="prompter-overlay">
@@ -153,7 +153,7 @@ export function PrompterOverlay() {
       <div className="prompter-reading">
         <div key={reading?.id ?? 'end'} className="line now">{reading?.text ?? 'End of script'}</div>
       </div>
-      <div className="bar">
+      <div className="bar" style={{ visibility: targetIndex !== -1 ? 'hidden' : 'visible' }}>
         <i style={{ width: `${Math.max(0, Math.min(1, left)) * 100}%` }} />
       </div>
       <div className="prompter-upcoming">

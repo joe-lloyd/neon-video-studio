@@ -447,10 +447,10 @@ export class ProjectDoc {
     const line = input.lineId ? cues.find(c => c.id === input.lineId) : undefined;
     if (input.lineId && !line) throw new Error('Place the script line on the timeline before recording it');
     const startFrame = line?.startFrame ?? input.startFrame;
-    const endFrame = startFrame + Math.min(durationFrames, line?.durationFrames ?? durationFrames);
+    const endFrame = startFrame + durationFrames;
     const segments = (line ? [line] : cues).flatMap(cue => {
       let start = Math.max(startFrame, cue.startFrame);
-      let end = Math.min(endFrame, cue.startFrame + cue.durationFrames);
+      let end = line ? endFrame : Math.min(endFrame, cue.startFrame + cue.durationFrames);
       if (input.speechRanges) {
         const speech = input.speechRanges.map(r => ({ start: startFrame + r.start - trimBefore, end: startFrame + r.end - trimBefore })).filter(r => r.start < end && r.end > start);
         if (!speech.length) return [];
@@ -468,7 +468,13 @@ export class ProjectDoc {
       if (!segments.length) return [this.insertClip({ kind: 'audio', assetId: asset.id, trackId: lane.id, startFrame, durationFrames, trimBefore, placement: 'overlap' }, origin)];
       const replaced = new Set(segments.map(s => s.cue.id));
       this.removeClips(this.toJSON().clips.filter(c => c.kind === 'audio' && c.trackId === lane.id && c.scriptLineId && replaced.has(c.scriptLineId)).map(c => c.id), origin);
-      return segments.map(({ cue, start, end }) => this.insertClip({ kind: 'audio', assetId: asset.id, trackId: lane.id, startFrame: start, durationFrames: end - start, trimBefore: trimBefore + start - startFrame, scriptLineId: cue.id, name: cue.text, placement: 'overlap' }, origin));
+      const clips = segments.map(({ cue, start, end }) => this.insertClip({ kind: 'audio', assetId: asset.id, trackId: lane.id, startFrame: start, durationFrames: end - start, trimBefore: trimBefore + start - startFrame, scriptLineId: cue.id, name: cue.text, placement: 'overlap' }, origin));
+      // A single-line take defines its own timing; the previous cue is only its starting point.
+      if (line) {
+        const segment = segments[0]!;
+        this.updateLine(line.id, { placed: { startFrame: segment.start, durationFrames: segment.end - segment.start } }, origin);
+      }
+      return clips;
     }, origin);
   }
 
