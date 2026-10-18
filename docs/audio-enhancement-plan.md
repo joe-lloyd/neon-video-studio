@@ -54,3 +54,7 @@ Ship this first; bass and tone controls need no new AI model or external service
 - Existing implementation: `packages/ai/src/enhance.ts`, `packages/ai/src/denoise.ts`, `apps/desktop/src/main/ai-manager.ts`, and `apps/desktop/src/renderer/components/AiPanel.tsx`.
 - FFmpeg filters: https://ffmpeg.org/ffmpeg-filters.html (bass, equalizer, acompressor, deesser, alimiter, loudnorm).
 - DeepFilterNet upstream: https://github.com/Rikorose/DeepFilterNet.
+
+## Implemented: local Studio Voice restoration
+
+Studio Voice now provides a separate VoiceFixer neural restoration path with a local Windows installer, GPU inference, level-matched Original/Studio audition, an adjustable dry/wet blend and explicit Apply. See [audio-processing.md](audio-processing.md#studio-voice-local-restoration). This addresses reconstruction without a cloud account; the proposed warmth/preset controls for the conventional Enhance voice chain remain future work.

@@ -1,3 +1,4 @@
+import { StudioVoice } from './StudioVoice.tsx';
 import { useState } from 'react';
 import type { AiJob, MediaClip } from '@neon/core';
 import { AudioLines, Brain, Captions, Crop, Eraser, Mic, NeonIcon, Sparkles, UserRound, Wind, X, MessageSquareText } from '@neon/icon-kit';
@@ -99,6 +100,7 @@ export function AiPanel() {
             </p>
 
             {selectedMedia.length > 1 ? <p className="hint">Denoise and Enhance voice apply to all {selectedMedia.length} selected clips. Other tools below apply to the first clip: {media.name}.</p> : null}
+            <StudioVoice />
             <Section icon={Mic} title="Voice clean-up" tone="cyan">
               <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                 <button className="btn sm cyan" disabled={busy || !hasSpeechEngine} title={hasSpeechEngine ? '' : 'Install whisper.cpp (see engines)'} onClick={() => run('fillers', { apply: true })}>
