@@ -627,3 +627,8 @@ button.link { padding: 0; border: 0; background: none; color: var(--cyan); font:
 .preview-chip .frame-note span { padding: 0; border: 0; background: none; color: var(--magenta); }
 .preview-chip .frame-note input { width: 340px; padding: 3px 6px; border: 0; border-radius: 4px; background: rgba(255, 255, 255, 0.06); outline: none; font-size: 12px; }
 .tl-ruler .note-marker { position: absolute; bottom: 2px; z-index: 10; width: 9px; height: 9px; padding: 0; border: 0; background: var(--magenta); transform: translateX(-50%) rotate(45deg); box-shadow: 0 0 8px var(--glow-m); cursor: pointer; }
+
+.prompter-body .cue.selected { outline: 1px solid var(--cyan); outline-offset: -1px; }
+.prompter-body .cue-record { margin-top: 6px; gap: 6px; }
+.prompter-body .cue-record .rec-dot { width: 6px; height: 6px; }
+.prompter-overlay > .btn { align-self: flex-start; }

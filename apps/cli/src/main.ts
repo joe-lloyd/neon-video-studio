@@ -83,6 +83,8 @@ COMMANDS
   captions srt|vtt [--out file] [--source A1,V1]   Subtitle file of what is said on the timeline now (stdout without --out)
   timeline update <clip> --pos 0.5,0.3 --scale 0.6 --rotation -15 --in pop:12 --out fade:10   Canvas placement + enter/exit animation
   record start | record stop [--at T]     Record a mic voice-over in the app (take lands on the VO track)
+  record stop --line 4.2                 Save a take for one script line, replacing its previous audio
+  record split <clip> | record cancel    Split an existing take into script lines, or discard a live take
   capture devices                         Displays and microphones the screen recorder can use
   capture start [--display N] [--region x,y,w,h] [--window "Title"] [--fps 30] [--mic NAME|--no-mic] [--no-cursor] [--countdown 3] [--duration T]
   capture stop [--at T] [--track REF] | capture cancel | capture status
@@ -154,6 +156,7 @@ const { values: flags, positionals } = parseCli(() => parseArgs({
     text: { type: 'string' },
     say: { type: 'string' },
     shot: { type: 'string' },
+    line: { type: 'string' },
     still: { type: 'string' },
     title: { type: 'string' },
     intent: { type: 'string' },
@@ -1010,9 +1013,17 @@ async function main(): Promise<void> {
         const r = (await api.call2('POST', '/api/record/start')) as { device: string };
         out(r, () => `Recording from “${r.device}” — stop with: neon-cli record stop [--at T]`);
       } else if (sub === 'stop') {
-        const r = (await api.call2('POST', '/api/record/stop', { at: flags.at ?? 0 })) as ImportAssetResponse;
+        const lineId = flags.line ? findLine(await api.script(), flags.line).line.id : undefined;
+        const r = (await api.call2('POST', '/api/record/stop', { at: flags.at ?? 0, lineId })) as ImportAssetResponse;
         out(r, () => `Take “${r.asset.name}” placed${r.clip ? ` at frame ${r.clip.startFrame} on the VO track` : ''}`);
-      } else throw unknownSub('record', sub, ['start', 'stop']);
+      } else if (sub === 'split') {
+        if (!rest[0]) throw usage('record', 'split');
+        const clip = await api.resolveClip(rest[0]);
+        const result = await api.call2('POST', '/api/record/split', { id: clip.id });
+        out(result, () => 'Voice-over split into script lines');
+      } else if (sub === 'cancel') {
+        out(await api.call2('POST', '/api/record/cancel'), () => 'Take discarded; previous recordings kept');
+      } else throw unknownSub('record', sub, ['start', 'stop', 'split', 'cancel']);
       return;
     }
 
