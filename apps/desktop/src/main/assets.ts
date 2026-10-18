@@ -86,8 +86,16 @@ export class AssetManager {
 
   async import(
     sourcePath: string,
-    opts: { insertAt?: number; trackId?: string; origin?: unknown } = {},
+    opts: { insertAt?: number; trackId?: string; origin?: unknown; expectedProjectId?: string } = {},
   ): Promise<ImportAssetResponse> {
+    const importDoc = this.store.doc;
+    const importDir = this.store.assetsDir;
+    const checkProject = () => {
+      if (opts.expectedProjectId && (importDoc !== this.store.doc || importDoc.toJSON().meta.id !== opts.expectedProjectId)) {
+        throw new Error('The open project changed. Asset import stopped.');
+      }
+    };
+    checkProject();
     const type = mediaTypeForFile(sourcePath);
     if (!type) throw new Error(`Unsupported file type: ${basename(sourcePath)}`);
     const info = await stat(sourcePath).catch(() => null);
@@ -95,18 +103,21 @@ export class AssetManager {
 
     const hash = await sha256File(sourcePath);
     const ext = extname(sourcePath).toLowerCase();
-    const target = join(this.store.assetsDir, `${hash}${ext}`);
-    await mkdir(this.store.assetsDir, { recursive: true });
+    checkProject();
+    const target = join(importDir, `${hash}${ext}`);
+    await mkdir(importDir, { recursive: true });
     const existed = await access(target).then(() => true, () => false);
     if (!existed) await copyFile(sourcePath, target);
 
-    const doc = this.store.doc;
+    checkProject();
+    const doc = importDoc;
     const known = doc.getAsset(hash);
     let asset: Asset;
     if (known) {
       asset = known;
     } else {
       const probe = await probeMedia(target);
+      checkProject();
       const fps = doc.fps;
       asset = {
         id: hash,

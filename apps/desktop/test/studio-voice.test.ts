@@ -1,3 +1,8 @@
+import { mkdtemp, writeFile, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { AssetManager } from '../src/main/assets.ts';
+import type { ProjectStore } from '../src/main/project-store.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ProjectDoc, StudioVoiceRequestSchema, StudioVoiceApplyRequestSchema, type StudioVoicePreview } from '@neon/core';
@@ -41,4 +46,22 @@ test('failed preview/apply leave all clip properties untouched', async () => {
   await assert.rejects(applyStudioVoice(ctx, preview, 0.75, paths, () => {}), /unavailable/);
   await assert.rejects(applyStudioVoice(ctx, preview, 2, paths, () => {}), /between/);
   assert.deepEqual(doc.toJSON().clips, before.clips);
+});
+
+
+test('switching projects during audition import cannot add files or metadata to the new project', async () => {
+  const first = new ProjectDoc(); first.ensureInitialized();
+  const next = new ProjectDoc(); next.ensureInitialized();
+  let current = first;
+  const dir = await mkdtemp(join(tmpdir(), 'neon-import-guard-'));
+  try {
+    const source = join(dir, 'source.wav'); await writeFile(source, 'fixture');
+    const manager = new AssetManager({ get doc() { return current; }, assetsDir: dir } as ProjectStore, 'test');
+    const pending = manager.import(source, { expectedProjectId: first.toJSON().meta.id });
+    current = next;
+    await assert.rejects(pending, /project changed/);
+    assert.equal(first.toJSON().assets.length, 0);
+    assert.equal(next.toJSON().assets.length, 0);
+    assert.deepEqual(await readdir(dir), ['source.wav']);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
