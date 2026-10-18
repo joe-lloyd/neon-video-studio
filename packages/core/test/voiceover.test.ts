@@ -82,3 +82,72 @@ test('a silent re-recording keeps the previous take and locked tracks cannot be 
   assert.throws(() => doc.placeVoiceOver({ assetId: 'b'.repeat(64), startFrame: 90, lineId: 'line-one' }), /locked/);
   assert.deepEqual(takes(doc), before);
 });
+
+test('moving a linked voice-over updates its script cue and undo restores both together', () => {
+  const doc = setup();
+  const [clip] = doc.placeVoiceOver({ assetId: 'a'.repeat(64), startFrame: 0, durationFrames: 300, speechRanges: [{ start: 100, end: 140 }, { start: 200, end: 250 }] });
+  const undo = createUndoManager(doc);
+  doc.moveClip(clip!.id, 300, undefined, ORIGIN_LOCAL);
+  assert.deepEqual(doc.getScript().sections[0]!.lines.map(l => l.placed), [
+    { startFrame: 300, durationFrames: 40 }, { startFrame: 180, durationFrames: 90 },
+  ]);
+  assert.equal(doc.getClip(clip!.id)?.startFrame, 300);
+  undo.undo();
+  assert.equal(doc.getClip(clip!.id)?.startFrame, 100);
+  assert.deepEqual(doc.getScript().sections[0]!.lines[0]!.placed, { startFrame: 90, durationFrames: 60 });
+  undo.redo();
+  assert.equal(doc.getClip(clip!.id)?.startFrame, 300);
+  assert.deepEqual(doc.getScript().sections[0]!.lines[0]!.placed, { startFrame: 300, durationFrames: 40 });
+});
+
+test('moving one piece of a split line uses all its pieces without moving the other audio', () => {
+  const doc = setup();
+  const [clip] = doc.placeVoiceOver({ assetId: 'a'.repeat(64), startFrame: 0, durationFrames: 300 });
+  const [left, right] = doc.splitClip(clip!.id, 120);
+  doc.moveClip(left.id, 30);
+  assert.deepEqual(doc.getScript().sections[0]!.lines[0]!.placed, { startFrame: 30, durationFrames: 120 });
+  assert.equal(doc.getClip(right.id)?.startFrame, 120);
+  const remaining = doc.getClip(right.id);
+  assert.ok(remaining && remaining.kind === 'audio');
+  assert.equal(remaining.trimBefore, 120);
+});
+
+test('group moves update every linked cue to the final clip positions and preserve gaps', () => {
+  const doc = setup();
+  const clips = doc.placeVoiceOver({ assetId: 'a'.repeat(64), startFrame: 0, durationFrames: 300 });
+  const [left, right] = doc.splitClip(clips[0]!.id, 120);
+  doc.trimClip(left.id, 'end', 110);
+  doc.moveClips([left.id, right.id, clips[1]!.id], 30);
+  assert.deepEqual(doc.getScript().sections[0]!.lines.map(l => l.placed), [
+    { startFrame: 120, durationFrames: 60 }, { startFrame: 210, durationFrames: 90 },
+  ]);
+  assert.deepEqual(doc.toJSON().clips.map(c => [c.startFrame, c.durationFrames]), [[120, 20], [150, 30], [210, 90]]);
+});
+
+test('script cues follow the resolved collision position and direct timing edits', () => {
+  const doc = setup();
+  const [clip] = doc.placeVoiceOver({ assetId: 'a'.repeat(64), startFrame: 0, durationFrames: 300 });
+  doc.moveClip(clip!.id, 240);
+  assert.equal(doc.getClip(clip!.id)?.startFrame, 270);
+  assert.deepEqual(doc.getScript().sections[0]!.lines[0]!.placed, { startFrame: 270, durationFrames: 60 });
+  doc.updateClip(clip!.id, { startFrame: 320, durationFrames: 45 });
+  assert.deepEqual(doc.getScript().sections[0]!.lines[0]!.placed, { startFrame: 320, durationFrames: 45 });
+});
+
+test('trimming linked audio updates the cue and source offset, while unrelated edits leave cues alone', () => {
+  const doc = setup();
+  const [clip] = doc.placeVoiceOver({ assetId: 'a'.repeat(64), startFrame: 0, durationFrames: 300 });
+  doc.trimClip(clip!.id, 'start', 100);
+  doc.trimClip(clip!.id, 'end', 140);
+  assert.deepEqual(doc.getScript().sections[0]!.lines[0]!.placed, { startFrame: 100, durationFrames: 40 });
+  const media = doc.getClip(clip!.id);
+  assert.ok(media && media.kind === 'audio');
+  assert.equal(media.trimBefore, 100);
+  doc.updateClip(clip!.id, { volume: .5 });
+  const track = doc.toJSON().tracks.find(t => t.name === 'VO')!;
+  const unrelated = doc.insertClip({ kind: 'audio', assetId: 'a'.repeat(64), trackId: track.id, startFrame: 400, durationFrames: 30, name: 'Hello there.', placement: 'overlap' });
+  doc.moveClip(unrelated.id, 450);
+  assert.deepEqual(doc.getScript().sections[0]!.lines.map(l => l.placed), [
+    { startFrame: 100, durationFrames: 40 }, { startFrame: 180, durationFrames: 90 },
+  ]);
+});
