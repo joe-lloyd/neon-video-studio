@@ -235,9 +235,11 @@ async function main(): Promise<void> {
     log('script set, notes add and notes reply round-trip through the app');
 
     const voice = cli<Clip>('api', 'POST', 'timeline/insert', JSON.stringify({ kind: 'audio', assetId, at: 45, duration: 30, scriptLineId: placed.id, placement: 'overlap' }));
+    cli('history', 'checkpoint');
     cli('timeline', 'move', voice.id, '--at', '90f');
     const movedLine = cli<ScriptJson>('script').sections[0]!.lines[1];
     assert(movedLine?.placed?.startFrame === 90 && movedLine.placed.durationFrames === 30, 'moving voice-over moves its script cue to 90 for 30 frames');
+    cli('history', 'checkpoint');
     cli('history', 'undo');
     const restoredLine = cli<ScriptJson>('script').sections[0]!.lines[1];
     const restoredVoice = cli<{ project: { clips: Clip[] } }>('state', 'dump').project.clips.find(c => c.id === voice.id);
