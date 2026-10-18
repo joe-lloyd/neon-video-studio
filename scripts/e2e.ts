@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { AssetUploadResponseSchema } from '../packages/core/src/schemas.ts';
 
 const { values: opts } = parseArgs({ options: { keep: { type: 'boolean', default: false }, 'no-render': { type: 'boolean', default: false } } });
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -131,6 +132,20 @@ async function main(): Promise<void> {
     assert(!existsSync(boot.path), 'project delete removed the folder');
     assert(!cli<RecentProject[]>('project', 'list').some((p) => p.path === boot.path), 'deleted project left the list');
     log('project list shows the boot project; project delete removes it and refuses the open one');
+
+    // Browser voice-over uses binary uploads. Exercise a body larger than a socket buffer on Windows.
+    const instance: unknown = JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8'));
+    assert(instance !== null && typeof instance === 'object' && 'port' in instance && 'token' in instance, 'instance file has connection details');
+    assert(typeof instance.port === 'number' && typeof instance.token === 'string', 'instance connection details have valid types');
+    const bytes = readFileSync(media);
+    const uploaded = await fetch(`http://127.0.0.1:${instance.port}/api/assets/upload?name=uploaded.mp4`, {
+      method: 'POST', headers: { Authorization: `Bearer ${instance.token}`, 'Content-Type': 'video/mp4' }, body: bytes,
+      signal: AbortSignal.timeout(15_000),
+    });
+    const { data: upload } = AssetUploadResponseSchema.parse(await uploaded.json());
+    const saved = await fetch(`http://127.0.0.1:${instance.port}/assets/${upload.asset.id}`);
+    assert(Buffer.from(await saved.arrayBuffer()).equals(bytes), 'large browser upload saves the exact media bytes');
+    log('large browser upload completes and preserves the source bytes');
 
     // A project folder carries a copy of each FX pack it uses, so it still opens with them once the
     // library copy is gone (another machine, a reinstall).

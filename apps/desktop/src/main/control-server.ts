@@ -245,7 +245,19 @@ async function start(ctx: MainContext, scope: Scope, hostname: string, port: num
             try {
               const file = joinPath(dir, name);
               // Stream the body to disk: remote CLIs upload whole screen recordings this way.
-              await Bun.write(file, new Response(req.body));
+              const writer = Bun.file(file).writer();
+              const reader = req.body?.getReader();
+              try {
+                if (reader) for (;;) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  writer.write(value);
+                  await writer.flush();
+                }
+              } finally {
+                reader?.releaseLock();
+                await writer.end();
+              }
               const result = await ctx.assets.import(file, {
                 insertAt: at === null ? undefined : /^\d+$/.test(at) ? Number(at) : parseTimecode(at, ctx.store.doc.fps),
                 trackId,
