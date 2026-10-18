@@ -51,9 +51,9 @@ Sources: `packages/ai/src/denoise.ts`, `packages/ai/src/enhance.ts`, and the [FF
 
 ## Studio Voice (local restoration)
 
-Select **one audio clip → AI tools → Studio Voice → Generate preview**. This runs VoiceFixer locally, including its neural vocoder, to restore speech affected by noise, reverberation, clipping and limited bandwidth. It can change voice texture and cannot guarantee a booth-quality result for every recording. It preserves your speech and timing rather than generating a replacement script or cloning another speaker. Detach video audio first; this first version handles one audio clip at a time.
+Select **one or more audio clips → AI tools → Studio Voice → Generate preview**. Click the **VO** row label to select the whole row. This runs VoiceFixer locally, including its neural vocoder, to restore speech affected by noise, reverberation, clipping and limited bandwidth. It can change voice texture and cannot guarantee a booth-quality result for every recording. It preserves your speech and timing rather than generating a replacement script or cloning another speaker. Detach video audio first. Studio Voice accepts multiple audio clips, restores each distinct source once, and applies only to the selected clips.
 
-Generation processes the full underlying source recording and adds lossless, mono 44.1 kHz audition assets without replacing clips. Compare **Original / Studio**, adjust **Studio blend**, then explicitly **Apply Studio Voice**. Both auditions are normalized to -16 LUFS with a -1.5 dBTP target; Original here means the un-restored, level-matched mono source. Both play on one audio clock. Applying renders the same blend into a new 24-bit WAV, preserving timeline position, duration, trim, speed, volume automation and script links. Other uses of that source are untouched. Reapplying the same preview uses its original audition files, so effects do not accumulate. Undo restores the preceding asset. A changed clip/project requires a fresh preview. Preview jobs live in the current app session.
+Generation processes the full underlying source recording and adds lossless, mono 44.1 kHz audition assets without replacing clips. Compare **Original / Studio**, adjust **Studio blend**, then explicitly **Apply Studio Voice**. Both auditions are normalized to -16 LUFS with a -1.5 dBTP target; Original here means the un-restored, level-matched mono source. Both play on one audio clock. For multiple selected clips, use the Audition clip selector to check individual lines; one blend value applies to the entire selection. Applying renders the same blend into a new 24-bit WAV, preserving timeline position, duration, trim, speed, volume automation and script links. Other uses of that source are untouched. All blends are prepared before the selected clips are updated together; failure, stale targets, or cancellation before that update cannot partially apply the selection. Disabled actions explain whether recording, another AI job, the selection, or model availability is blocking them. Reapplying the same preview uses its original audition files, so effects do not accumulate. Undo restores the preceding asset. A changed clip/project requires a fresh preview. Preview jobs live in the current app session.
 
 During voice recording, audition stops and playback/apply are disabled. The job's X cancels Python/FFmpeg processing and prevents later timeline application. Every inference stays on the computer; initial installation downloads packages and ~625 MB of model weights.
 
@@ -68,7 +68,8 @@ The installer uses an isolated `~/.neon-video/tools/studio-voice-runtime` enviro
 The same operations are exposed through the control API and generic CLI:
 
 ```sh
-neon-cli api POST /api/ai/studio-voice '{"clipId":"clip_…"}'
+neon-cli api POST /api/ai/studio-voice '{"clipIds":["clip_1","clip_2"]}'
+# A single clipId is also supported.
 # Wait for the returned job to finish, audition its dryAssetId/wetAssetId, then:
 neon-cli api POST /api/ai/studio-voice-apply '{"previewJobId":"ai_…","strength":0.75}'
 ```

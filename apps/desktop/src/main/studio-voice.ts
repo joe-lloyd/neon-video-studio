@@ -1,13 +1,14 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ORIGIN_API, type StudioVoicePreview, type Project } from '@neon/core';
+import { ORIGIN_API, type StudioVoicePreview, type StudioVoiceClipPreview, type Project } from '@neon/core';
 import { probe, runOrThrow, restoreStudioVoice, throwIfCancelled, type ToolPaths } from '@neon/ai';
+import { audioClipGroups } from './ai-audio-targets.ts';
 import type { MainContext } from './context.ts';
 
 type Progress = (fraction: number, message: string) => void;
 
-export function validateStudioTarget(project: Project, preview: StudioVoicePreview) {
+export function validateStudioTarget(project: Project, preview: StudioVoiceClipPreview) {
   const clip = project.clips.find(c => c.id === preview.clipId);
   if (project.meta.id !== preview.projectId || project.meta.fps !== preview.fps || !clip || clip.kind !== 'audio' ||
       ![preview.sourceAssetId, preview.appliedAssetId].includes(clip.assetId) ||
@@ -70,27 +71,75 @@ export async function generateStudioVoice(ctx: MainContext, clipId: string, path
   } finally { await rm(dir, { recursive: true, force: true }); }
 }
 
-export async function applyStudioVoice(ctx: MainContext, preview: StudioVoicePreview, strength: number, paths: ToolPaths, progress: Progress) {
+/** Validate all targets up front and restore each distinct source only once. */
+export async function generateStudioVoiceSelection(ctx: MainContext, clipIds: string[], paths: ToolPaths, progress: Progress, generate = generateStudioVoice): Promise<StudioVoicePreview> {
+  const project = ctx.store.doc.toJSON();
+  const groups = audioClipGroups(project, clipIds);
+  if (groups.some(group => group.some(clip => clip.kind !== 'audio'))) throw new Error('Select audio clips for Studio Voice. Detach video audio first.');
+  const clips: StudioVoiceClipPreview[] = [];
+  for (const [index, group] of groups.entries()) {
+    guardProject(ctx, project.meta.id);
+    const first = group[0]!;
+    const result = await generate(ctx, first.id, paths, (p, m) => progress((index + p) / groups.length, `Source ${index+1}/${groups.length} · ${m}`));
+    for (const clip of group) {
+      const preview = { ...result, clipId: clip.id, startFrame: clip.startFrame, durationFrames: clip.durationFrames, trimBefore: clip.trimBefore, speed: clip.speed ?? 1 };
+      validateStudioTarget(ctx.store.doc.toJSON(), preview);
+      clips.push(preview);
+    }
+  }
+  guardProject(ctx, project.meta.id);
+  clips.forEach(clip => validateStudioTarget(ctx.store.doc.toJSON(), clip));
+  return { ...clips[0]!, clips };
+}
+
+async function renderStudioMix(dry: string, wet: string, output: string, strength: number, paths: ToolPaths) {
+  await runOrThrow(paths.ffmpeg, ['-y', '-v', 'error', '-i', dry, '-i', wet, '-filter_complex', `[0:a]volume=${1-strength}[dry];[1:a]volume=${strength}[wet];[dry][wet]amix=inputs=2:normalize=0:duration=first[out]`, '-map', '[out]', '-c:a', 'pcm_s24le', output]);
+}
+
+/** Prepare every blend before committing the selected clips together. */
+export async function applyStudioVoice(ctx: MainContext, preview: StudioVoicePreview, strength: number, paths: ToolPaths, progress: Progress, mix = renderStudioMix) {
   if (!Number.isFinite(strength) || strength < 0 || strength > 1) throw new Error('Studio Voice strength must be between 0 and 1');
-  validateStudioTarget(ctx.store.doc.toJSON(), preview);
-  const dry = await ctx.assets.resolveFile(preview.dryAssetId);
-  const wet = await ctx.assets.resolveFile(preview.wetAssetId);
-  if (!dry || !wet) throw new Error('Audition files are unavailable. Generate a new preview.');
+  const clips = preview.clips ?? [preview];
+  if (!clips.length) throw new Error('Generate a Studio Voice preview first');
+  const validate = () => {
+    throwIfCancelled();
+    clips.forEach(clip => validateStudioTarget(ctx.store.doc.toJSON(), clip));
+  };
+  validate();
+  const groups = new Map<string, StudioVoiceClipPreview[]>();
+  for (const clip of clips) {
+    const key = JSON.stringify([clip.sourceAssetId, clip.dryAssetId, clip.wetAssetId]);
+    groups.set(key, [...(groups.get(key) ?? []), clip]);
+  }
   const dir = await mkdtemp(join(tmpdir(), 'neon-studio-mix-'));
   try {
-    progress(0.1, 'Rendering Studio Voice blend…');
-    const output = join(dir, `Studio Voice ${Math.round(strength * 100)} percent.wav`);
-    await runOrThrow(paths.ffmpeg, ['-y', '-v', 'error', '-i', dry, '-i', wet, '-filter_complex', `[0:a]volume=${1-strength}[dry];[1:a]volume=${strength}[wet];[dry][wet]amix=inputs=2:normalize=0:duration=first[out]`, '-map', '[out]', '-c:a', 'pcm_s24le', output]);
-    guardProject(ctx, preview.projectId);
-    validateStudioTarget(ctx.store.doc.toJSON(), preview);
+    const prepared: { clips: StudioVoiceClipPreview[]; output: string }[] = [];
+    for (const [index, group] of [...groups.values()].entries()) {
+      validate();
+      const first = group[0]!;
+      const dry = await ctx.assets.resolveFile(first.dryAssetId);
+      const wet = await ctx.assets.resolveFile(first.wetAssetId);
+      if (!dry || !wet) throw new Error('Audition files are unavailable. Generate a new preview.');
+      progress(0.1 + index/groups.size*0.65, `Rendering blend ${index+1}/${groups.size}…`);
+      const output = join(dir, `Studio Voice ${Math.round(strength * 100)} percent ${index+1}.wav`);
+      await mix(dry, wet, output, strength, paths);
+      prepared.push({ clips: group, output });
+    }
+    validate();
     await ctx.history.push();
-    const newAssetId = await importAudio(ctx, output, preview, `studio-voice:blend:${strength}`);
-    guardProject(ctx, preview.projectId);
-    validateStudioTarget(ctx.store.doc.toJSON(), preview);
-    ctx.store.doc.replaceClipAsset([preview.clipId], newAssetId, ORIGIN_API);
+    const appliedClips: { clipId: string; newAssetId: string }[] = [];
+    for (const item of prepared) {
+      validate();
+      const newAssetId = await importAudio(ctx, item.output, item.clips[0]!, `studio-voice:blend:${strength}`);
+      appliedClips.push(...item.clips.map(clip => ({ clipId: clip.clipId, newAssetId })));
+    }
+    validate();
+    ctx.store.doc.transact(() => {
+      for (const clip of appliedClips) ctx.store.doc.replaceClipAsset([clip.clipId], clip.newAssetId, ORIGIN_API);
+    }, ORIGIN_API);
     await ctx.store.flush();
     const status = await ctx.history.push();
     ctx.rpc?.send.historyChanged({ status });
-    return { newAssetId, clipId: preview.clipId, strength };
+    return { ...appliedClips[0]!, strength, appliedClips, clipsUpdated: appliedClips.length, assetsProcessed: groups.size };
   } finally { await rm(dir, { recursive: true, force: true }); }
 }

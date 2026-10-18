@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import type { StudioVoicePreview } from '@neon/core';
+import { useEffect, useRef, useState, useId } from 'react';
+import type { StudioVoicePreview, MediaClip } from '@neon/core';
 import { useEditor } from '../lib/context.ts';
 import { useSelector, useStoreValue } from '../lib/store.ts';
 
@@ -10,10 +10,32 @@ export function StudioVoice() {
   const jobs = useSelector(editor.ui, u => u.aiJobs);
   const caps = useSelector(editor.ui, u => u.aiCaps);
   const recording = useSelector(editor.ui, u => u.recording);
-  const clip = selection.length === 1 ? project.clips.find(c => c.id === selection[0] && c.kind === 'audio') : undefined;
-  const previewJob = jobs.find(j => j.op === 'studio-voice' && j.status === 'done' && (j.result as StudioVoicePreview | undefined)?.clipId === clip?.id && (j.result as StudioVoicePreview | undefined)?.projectId === project.meta.id);
-  const preview = previewJob?.result as StudioVoicePreview | undefined;
+  const selected = project.clips.filter(clip => selection.includes(clip.id));
+  const audioClips = selected.filter((clip): clip is MediaClip => clip.kind === 'audio');
+  const [auditionClipId, setAuditionClipId] = useState('');
+  const clip = audioClips.find(clip => clip.id === auditionClipId) ?? audioClips[0];
+  const previewJob = jobs.find(job => {
+    if (job.op !== 'studio-voice' || job.status !== 'done') return false;
+    const result = job.result as StudioVoicePreview | undefined;
+    if (!result || result.projectId !== project.meta.id) return false;
+    const targets = result.clips ?? [result];
+    return targets.length === selection.length && targets.every(target => selection.includes(target.clipId));
+  });
+  const batchPreview = previewJob?.result as StudioVoicePreview | undefined;
+  const preview = (batchPreview?.clips ?? (batchPreview ? [batchPreview] : [])).find(target => target.clipId === clip?.id);
+  const reasonId = useId();
   const busy = jobs.some(j => j.status === 'running' || j.status === 'queued');
+  const reason = recording ? 'Stop recording before generating or applying Studio Voice.'
+    : busy ? 'Another AI job is running or queued. Wait for it to finish, or cancel it in Jobs.'
+    : !selection.length ? 'Select one or more audio clips, or click the VO row label to select the whole row.'
+    : audioClips.length !== selection.length ? 'Studio Voice needs audio clips. Deselect video/text clips, or detach video audio first.'
+    : !caps ? 'Checking whether the local restoration model is ready…'
+    : !caps.studioVoice?.available ? 'The local restoration model is unavailable. Refresh engines to check the installation.' : '';
+  const previewChanged = batchPreview && (batchPreview.clips ?? [batchPreview]).some(target => {
+    const current = audioClips.find(clip => clip.id === target.clipId);
+    return !current || ![target.sourceAssetId, target.appliedAssetId].includes(current.assetId) || current.startFrame !== target.startFrame || current.durationFrames !== target.durationFrames || current.trimBefore !== target.trimBefore || (current.speed ?? 1) !== target.speed || project.meta.fps !== target.fps;
+  });
+  const applyReason = reason || (previewChanged ? 'Selected clips changed since this preview. Generate a new preview before applying.' : '');
   const [strength, setStrength] = useState(0.75);
   const [mode, setMode] = useState<'original' | 'studio'>('studio');
   const [playing, setPlaying] = useState(false);
@@ -48,14 +70,14 @@ export function StudioVoice() {
     try {
       const audio = context.current ??= new AudioContext();
       await audio.resume();
-      if (decoded.current?.id !== previewJob!.id) {
+      if (decoded.current?.id !== `${previewJob!.id}:${preview.clipId}`) {
         const buffers = await Promise.all([preview.dryAssetId, preview.wetAssetId].map(async id => {
           const response = await fetch(editor.assetUrl(id));
           if (!response.ok) throw new Error('Audition audio unavailable');
           return audio.decodeAudioData(await response.arrayBuffer());
         }));
         if (generation.current !== token) return;
-        decoded.current = { id: previewJob!.id, buffers };
+        decoded.current = { id: `${previewJob!.id}:${preview.clipId}`, buffers };
       }
       if (generation.current !== token || editor.ui.get().recording) return;
       const offset = preview.trimBefore / project.meta.fps;
@@ -77,21 +99,29 @@ export function StudioVoice() {
   return <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: 10, marginBottom: 12 }}>
     <b>Studio Voice · local AI restoration</b>
     <p className="hint">Reconstruct speech affected by noise, room echo, clipping or thin recordings. Audition before applying; AI can change voice texture.</p>
-    <p className="hint">{caps?.studioVoice?.available ? `VoiceFixer ready · ${caps.studioVoice.device === 'cuda' ? 'GPU' : 'CPU'} · audio stays on this computer` : 'Local model not installed. Run scripts/install-studio-voice.ps1, then refresh engines.'}</p>
-    {!clip ? <p className="hint">Select one audio clip. For video, detach its audio first.</p> : null}
-    <button className="btn sm cyan" disabled={!clip || busy || !!recording || !caps?.studioVoice?.available} onClick={() => { stop(); void editor.runAi('studio-voice', { clipId: clip!.id }); }}>Generate preview</button>
-    <p className="hint">Restores the entire source recording. Your edit stays unchanged until Apply.</p>
+    <p className="hint">{!caps ? 'Checking local restoration model…' : caps.studioVoice?.available ? `VoiceFixer ready · ${caps.studioVoice.device === 'cuda' ? 'GPU' : 'CPU'} · audio stays on this computer` : 'Local model not installed. Run scripts/install-studio-voice.ps1, then refresh engines.'}</p>
+    {reason ? <p id={reasonId} role="status" style={{ fontSize: 12, color: 'var(--text)' }}>{reason}</p> : <p className="hint">{audioClips.length} audio clip{audioClips.length === 1 ? '' : 's'} selected · {new Set(audioClips.map(clip => clip.assetId)).size} source recording(s)</p>}
+    <span title={reason || 'Restore the selected audio clips'}>
+      <button className="btn sm cyan" disabled={!!reason} aria-describedby={reason ? reasonId : undefined} onClick={() => { stop(); void editor.runAi('studio-voice', { clipIds: audioClips.map(clip => clip.id) }); }}>Generate {audioClips.length > 1 ? `${audioClips.length} previews` : 'preview'}</button>
+    </span>
+    <p className="hint">Processes each source once. Your edit stays unchanged until Apply.</p>
     {preview ? <>
+      {audioClips.length > 1 ? <label className="hint" style={{ display: 'block', marginTop: 8 }}>Audition clip
+        <select aria-label="Audition clip" className="select" value={clip?.id} onChange={event => { stop(); setAuditionClipId(event.target.value); }}>
+          {audioClips.map(clip => <option key={clip.id} value={clip.id}>{clip.name}</option>)}
+        </select>
+      </label> : null}
       <div className="row" style={{ gap: 6, marginTop: 8 }}>
         <button className={`btn sm ${mode === 'original' ? 'cyan' : 'ghost'}`} aria-pressed={mode === 'original'} onClick={() => setMode('original')}>Original</button>
         <button className={`btn sm ${mode === 'studio' ? 'cyan' : 'ghost'}`} aria-pressed={mode === 'studio'} onClick={() => setMode('studio')}>Studio</button>
-        <button className="btn sm" disabled={!!recording || busy} onClick={() => playing || loading ? stop() : void play()}>{loading ? 'Cancel audition loading' : playing ? 'Stop audition' : 'Play audition'}</button>
+        <button className="btn sm" disabled={!!recording || busy} title={recording || busy ? reason : 'Play the chosen clip'} aria-describedby={recording || busy ? reasonId : undefined} onClick={() => playing || loading ? stop() : void play()}>{loading ? 'Cancel audition loading' : playing ? 'Stop audition' : 'Play audition'}</button>
       </div>
       <label className="hint" style={{ display: 'block', marginTop: 8 }}>Studio blend · {Math.round(strength*100)}%
         <input aria-label="Studio blend" style={{ width: '100%' }} type="range" min={0} max={1} step={0.01} value={strength} onChange={e => { setStrength(Number(e.target.value)); setMode('studio'); }} />
       </label>
       <p className="hint">Original and Studio are loudness matched for comparison.</p>
-      <button className="btn sm magenta" disabled={busy || !!recording} onClick={() => { stop(); void editor.runAi('studio-voice-apply', { previewJobId: previewJob!.id, strength }); }}>Apply Studio Voice</button>
+      <button className="btn sm magenta" disabled={!!applyReason} title={applyReason || 'Apply this blend to all selected audio clips'} aria-describedby={applyReason ? `${reasonId}-apply` : undefined} onClick={() => { stop(); void editor.runAi('studio-voice-apply', { previewJobId: previewJob!.id, strength }); }}>Apply Studio Voice{audioClips.length > 1 ? ` to ${audioClips.length} clips` : ''}</button>
+      {applyReason ? <p id={`${reasonId}-apply`} role="status" style={{ fontSize: 12, color: 'var(--text)' }}>{applyReason}</p> : null}
       <p className="hint">Keeps clip timing and the original recording. Undo restores the previous audio.</p>
     </> : null}
   </div>;

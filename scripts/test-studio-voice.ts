@@ -7,8 +7,8 @@ import { createHash } from 'node:crypto';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { ProjectDoc } from '../packages/core/src/index.ts';
-import { probe, restoreStudioVoice, withAiCancellation } from '../packages/ai/src/index.ts';
-import { generateStudioVoice, applyStudioVoice } from '../apps/desktop/src/main/studio-voice.ts';
+import { probe, restoreStudioVoice, withAiCancellation, runOrThrow } from '../packages/ai/src/index.ts';
+import { generateStudioVoice, generateStudioVoiceSelection, applyStudioVoice } from '../apps/desktop/src/main/studio-voice.ts';
 import type { MainContext } from '../apps/desktop/src/main/context.ts';
 
 const input = process.argv[2];
@@ -51,6 +51,24 @@ try {
     preview.appliedAssetId = result.newAssetId;
   }
   assert.equal(checkpoints, 6);
+  // Three selected clips, two source recordings, plus an unselected overlapping use.
+  doc.replaceClipAsset([clip.id], asset.id);
+  const secondInput = join(dir, 'second-source.wav');
+  await runOrThrow(paths.ffmpeg, ['-y', '-v', 'error', '-i', input, '-af', 'volume=0.5', secondInput]);
+  const second = await importAsset(secondInput);
+  const shared = doc.insertClip({kind:'audio',assetId:asset.id,trackId:track.id,startFrame:120,durationFrames:30,trimBefore:30,placement:'overlap'});
+  const other = doc.insertClip({kind:'audio',assetId:second.asset.id,trackId:track.id,startFrame:160,durationFrames:45,trimBefore:5,placement:'overlap'});
+  const batchBefore = doc.toJSON().clips;
+  let restoredSources = 0;
+  const batch = await generateStudioVoiceSelection(ctx, [clip.id,shared.id,other.id], paths, (p,m)=>console.log(Math.round(p*100),m), async (...args)=>{restoredSources++;return generateStudioVoice(...args);});
+  assert.equal(restoredSources,2); assert.equal(batch.clips!.length,3);
+  assert.deepEqual(doc.toJSON().clips,batchBefore);
+  const batchResult = await applyStudioVoice(ctx,batch,0.6,paths,()=>{});
+  assert.equal(batchResult.assetsProcessed,2);assert.equal(batchResult.clipsUpdated,3);
+  const applied = new Map(batchResult.appliedClips.map(c=>[c.clipId,c.newAssetId]));
+  for(const c of batchBefore)assert.deepEqual(doc.getClip(c.id),applied.has(c.id)?{...c,assetId:applied.get(c.id)}:c);
+  console.log('PASS: three selected clips, two GPU restorations, shared source reuse, batch Apply, unselected overlapping audio unchanged.');
+
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(new Error('Test cancellation')), 250);
   try { await assert.rejects(withAiCancellation(abort.signal, () => restoreStudioVoice(input, join(dir, 'cancelled.wav'))), /Test cancellation/); }

@@ -66,10 +66,15 @@ export interface AiJob {
   log: string[];
 }
 
-export interface StudioVoicePreview {
+export interface StudioVoiceClipPreview {
   fps: number; projectId: string; clipId: string; sourceAssetId: string; dryAssetId: string; wetAssetId: string;
   startFrame: number; durationFrames: number; trimBefore: number; speed: number;
   appliedAssetId?: string;
+}
+
+export interface StudioVoicePreview extends StudioVoiceClipPreview {
+  /** Selected clips, sharing audition assets when they use the same source. */
+  clips?: StudioVoiceClipPreview[];
 }
 
 export interface AiCapabilities {

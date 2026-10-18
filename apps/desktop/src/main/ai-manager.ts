@@ -61,7 +61,7 @@ import {
   type Segment,
   type ToolPaths,
 } from '@neon/ai';
-import { generateStudioVoice, applyStudioVoice } from './studio-voice.ts';
+import { generateStudioVoice, generateStudioVoiceSelection, applyStudioVoice } from './studio-voice.ts';
 import { audioClipGroups } from './ai-audio-targets.ts';
 import type { MainContext } from './context.ts';
 
@@ -314,14 +314,16 @@ export class AiManager {
 
   private async runOp(job: AiJob, params: Params): Promise<unknown> {
     throwIfCancelled();
-    if (params.clipIds !== undefined) {
+    if (params.clipIds !== undefined && job.op !== 'studio-voice') {
       if (job.op !== 'enhance' && job.op !== 'denoise') throw new Error('Multiple clip targets are supported by Enhance voice and Denoise');
       return this.opAudioBatch(job, params);
     }
     switch (job.op) {
       case 'studio-voice': {
         const request = StudioVoiceRequestSchema.parse(params);
-        return generateStudioVoice(this.ctx, request.clipId, await this.paths(), (p, m) => this.progress(job, p, m));
+        const paths = await this.paths();
+        const progress = (p: number, m: string) => this.progress(job, p, m);
+        return request.clipIds ? generateStudioVoiceSelection(this.ctx, request.clipIds, paths, progress) : generateStudioVoice(this.ctx, request.clipId!, paths, progress);
       }
       case 'studio-voice-apply': {
         const request = StudioVoiceApplyRequestSchema.parse(params);
@@ -329,7 +331,8 @@ export class AiManager {
         if (!previewJob || previewJob.op !== 'studio-voice' || previewJob.status !== 'done' || !previewJob.result) throw new Error('Generate a Studio Voice preview first');
         const preview = previewJob.result as StudioVoicePreview;
         const result = await applyStudioVoice(this.ctx, preview, request.strength, await this.paths(), (p, m) => this.progress(job, p, m));
-        this.update(previewJob, { result: { ...preview, appliedAssetId: result.newAssetId } });
+        const applied = new Map(result.appliedClips.map(clip => [clip.clipId, clip.newAssetId]));
+        this.update(previewJob, { result: { ...preview, appliedAssetId: applied.get(preview.clipId), ...(preview.clips ? { clips: preview.clips.map(clip => ({ ...clip, appliedAssetId: applied.get(clip.clipId) })) } : {}) } });
         return result;
       }
       case 'transcribe':
@@ -899,7 +902,7 @@ function summarize(op: AiOperation, result: unknown): string {
     case 'denoise':
       return `Denoised with ${String(r.engine)} → new asset ${String(r.newAssetId).slice(0, 8)}…`;
     case 'studio-voice': return 'Studio Voice preview ready — audition, then Apply';
-    case 'studio-voice-apply': return 'Studio Voice blend applied';
+    case 'studio-voice-apply': return `Studio Voice blend applied to ${String(r.clipsUpdated)} clip(s)`;
     case 'enhance':
       return `Voice enhanced to ${String(r.lufs)} LUFS → new asset ${String(r.newAssetId).slice(0, 8)}…`;
     case 'rip':

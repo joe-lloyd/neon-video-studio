@@ -99,7 +99,7 @@ export function AiPanel() {
               {asset?.hasAlpha ? ' · alpha' : ''}
             </p>
 
-            {selectedMedia.length > 1 ? <p className="hint">Denoise and Enhance voice apply to all {selectedMedia.length} selected clips. Other tools below apply to the first clip: {media.name}.</p> : null}
+            {selectedMedia.length > 1 ? <p className="hint">Denoise and Enhance voice apply to all {selectedMedia.length} selected clips. Studio Voice supports selected audio clips. Other tools below apply to the first clip: {media.name}.</p> : null}
             <StudioVoice />
             <Section icon={Mic} title="Voice clean-up" tone="cyan">
               <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
