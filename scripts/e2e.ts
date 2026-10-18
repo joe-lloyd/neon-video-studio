@@ -277,6 +277,42 @@ async function main(): Promise<void> {
       assert(sheetPng.bytes > 50_000, `sheet has picture content (${sheetPng.bytes} bytes)`);
       log(`sheet ${sheet.path} (${sheetPng.width}×${sheetPng.height}, ${sheet.frames.length} frames)`);
     }
+
+    // A track selection can contain multiple source recordings and split uses of one source.
+    // Exercise real enhancement through the public batch API, without changing the render fixture.
+    cli('project', 'new', '--name', 'AI batch', '--fps', '30');
+    const [source] = cli<{ asset: { id: string }; clip: Clip }[]>('assets', 'import', media, '--at', '0');
+    assert(source, 'batch source imported');
+    const tone = join(home, 'voice.wav');
+    const generated = spawnSync(tool('ffmpeg'), ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=220:duration=2', tone], { encoding: 'utf8' });
+    assert(generated.status === 0, `batch audio fixture: ${generated.stderr}`);
+    const [audio] = cli<{ asset: { id: string } }[]>('assets', 'import', tone);
+    assert(audio, 'second batch source imported');
+    const batchClips = [
+      cli<Clip>('api', 'POST', 'timeline/insert', JSON.stringify({ kind: 'audio', assetId: source.asset.id, at: 0, duration: 30, placement: 'overlap' })),
+      cli<Clip>('api', 'POST', 'timeline/insert', JSON.stringify({ kind: 'audio', assetId: source.asset.id, at: 45, duration: 30, trim: 30, placement: 'overlap' })),
+      cli<Clip>('api', 'POST', 'timeline/insert', JSON.stringify({ kind: 'audio', assetId: audio.asset.id, at: 90, duration: 30, placement: 'overlap' })),
+    ];
+    const batchBefore = cli<{ project: { clips: Record<string, unknown>[] } }>('state', 'dump').project;
+    const batch = cli<{ id: string }>('api', 'POST', 'ai/enhance', JSON.stringify({ clipIds: batchClips.map(c => c.id), denoise: false }));
+    const completed = await until('batch voice enhancement', () => {
+      const job = cli<{ status: string; error?: string; result?: { clipsUpdated: number; assetsProcessed: number } }>('ai', 'job', batch.id);
+      if (job.status === 'failed') throw new Error(`batch enhancement failed: ${job.error}`);
+      return job.status === 'done' ? job : false;
+    }, 90_000);
+    assert(completed.result?.clipsUpdated === 3 && completed.result.assetsProcessed === 2, 'three selected clips processed across two sources');
+    const batchAfter = cli<{ project: { clips: Record<string, unknown>[] } }>('state', 'dump').project;
+    for (const before of batchBefore.clips) {
+      const after = batchAfter.clips.find(c => c.id === before.id);
+      assert(after, 'batch processing preserves every clip');
+      if (batchClips.some(c => c.id === before.id)) {
+        const { assetId: oldAsset, ...oldTiming } = before;
+        const { assetId: newAsset, ...newTiming } = after;
+        assert(newAsset !== oldAsset && canonical(oldTiming) === canonical(newTiming), 'enhancement replaces only the asset, preserving timing and clip settings');
+      } else assert(canonical(before) === canonical(after), 'unselected clips sharing the source are unchanged');
+    }
+    assert(batchAfter.clips.find(c => c.id === batchClips[0]!.id)?.assetId === batchAfter.clips.find(c => c.id === batchClips[1]!.id)?.assetId, 'split source clips reuse the same enhanced asset');
+    log('batch enhancement processes all selected clips once per source and preserves unselected clips and timing');
   } finally {
     try {
       cli('stop');

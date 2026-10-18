@@ -298,6 +298,9 @@ input, select, textarea { user-select: text; }
 .track-header button { border: none; background: transparent; padding: 2px; display: grid; place-items: center; opacity: 0.6; }
 .track-header button:hover { opacity: 1; }
 .track-header button.on { opacity: 1; }
+.track-header.selected { background: rgba(0, 240, 255, 0.09); }
+.track-header button.tname { display: block; text-align: left; opacity: 1; cursor: pointer; }
+.track-header button.tname:focus-visible { outline: 1px solid var(--cyan); border-radius: 3px; }
 .lane {
   position: relative;
   border-bottom: 1px solid var(--border-subtle);

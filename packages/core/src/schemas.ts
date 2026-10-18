@@ -275,6 +275,7 @@ export const AiBreathsRequestSchema = AiTargetSchema.extend({
   apply: z.boolean().default(true),
 });
 export const AiDenoiseRequestSchema = AiTargetSchema.extend({
+  clipIds: z.array(z.string()).min(1).optional(),
   engine: z.enum(['auto', 'rnnoise', 'afftdn', 'deepfilter']).default('auto'),
   strength: z.number().min(0).max(1).default(0.7),
 });
@@ -539,6 +540,7 @@ export const UiControlRequestSchema = z.object({
 });
 
 export const AiEnhanceRequestSchema = AiTargetSchema.extend({
+  clipIds: z.array(z.string()).min(1).optional(),
   /** Target integrated loudness (EBU R128). */
   lufs: z.number().min(-36).max(-8).default(-16),
   denoise: z.boolean().default(true),

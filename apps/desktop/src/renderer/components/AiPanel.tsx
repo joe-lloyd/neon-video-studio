@@ -14,7 +14,11 @@ export function AiPanel() {
   const selection = useSelector(editor.ui, (u) => u.selection);
   const caps = useSelector(editor.ui, (u) => u.aiCaps);
   const jobs = useSelector(editor.ui, (u) => u.aiJobs);
-  const clip = project.clips.find((c) => c.id === selection[0]);
+  const selectedMedia = selection.flatMap(id => {
+    const clip = project.clips.find(c => c.id === id);
+    return clip && (clip.kind === 'audio' || clip.kind === 'video') ? [clip] : [];
+  });
+  const clip = selectedMedia[0] ?? project.clips.find(c => c.id === selection[0]);
   const media = clip && clip.kind !== 'component' ? (clip as MediaClip) : null;
   const asset = media ? project.assets.find((a) => a.id === media.assetId) : undefined;
   const transcript = media ? editor.transcriptForAsset(media.assetId) : undefined;
@@ -32,6 +36,8 @@ export function AiPanel() {
 
   const target = media ? { clipId: media.id } : null;
   const run = (op: Parameters<typeof editor.runAi>[0], params: Record<string, unknown>) => void editor.runAi(op, { ...(target ?? {}), ...params });
+  const runAudio = (op: 'enhance' | 'denoise', params: Record<string, unknown>) => void editor.runAi(op,
+    selectedMedia.length > 1 ? { clipIds: selectedMedia.map(c => c.id), ...params } : { ...target, ...params });
   const hasSpeechEngine = caps?.whisper.available ?? false;
   const hasVision = caps?.vision.available ?? false;
 
@@ -85,13 +91,14 @@ export function AiPanel() {
         ) : (
           <>
             <p className="hint" style={{ marginBottom: 8 }}>
-              <b style={{ color: 'var(--text)' }}>{media.name}</b> · {asset?.kind}
+              <b style={{ color: 'var(--text)' }}>{selectedMedia.length > 1 ? `${selectedMedia.length} audio/video clips selected` : media.name}</b> · {asset?.kind}
               {transcript ? ` · ${transcript.words.length} words transcribed` : ' · not transcribed yet'}
               {media.volumeKeyframes?.length ? ' · volume automation' : ''}
               {media.reframe ? ` · reframed (${media.reframe.mode})` : ''}
               {asset?.hasAlpha ? ' · alpha' : ''}
             </p>
 
+            {selectedMedia.length > 1 ? <p className="hint">Denoise and Enhance voice apply to all {selectedMedia.length} selected clips. Other tools below apply to the first clip: {media.name}.</p> : null}
             <Section icon={Mic} title="Voice clean-up" tone="cyan">
               <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                 <button className="btn sm cyan" disabled={busy || !hasSpeechEngine} title={hasSpeechEngine ? '' : 'Install whisper.cpp (see engines)'} onClick={() => run('fillers', { apply: true })}>
@@ -115,8 +122,8 @@ export function AiPanel() {
                 {media.volumeKeyframes?.length ? <button className="btn sm ghost" onClick={() => editor.updateClip(media.id, { volumeKeyframes: null })}>clear</button> : null}
               </div>
               <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                <button className="btn sm cyan" disabled={busy} onClick={() => run('denoise', { engine })}>
-                  <NeonIcon icon={Brain} size={13} tone="cyan" /> Denoise
+                <button className="btn sm cyan" disabled={busy} onClick={() => runAudio('denoise', { engine })}>
+                  <NeonIcon icon={Brain} size={13} tone="cyan" /> Denoise{selectedMedia.length > 1 ? ` ${selectedMedia.length} clips` : ''}
                 </button>
                 <select className="select" style={{ width: 'auto', padding: '2px 6px' }} value={engine} onChange={(e) => setEngine(e.target.value)}>
                   <option value="auto">auto</option>
@@ -126,8 +133,8 @@ export function AiPanel() {
                 </select>
               </div>
               <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                <button className="btn sm cyan" disabled={busy} title="High-pass → de-ess → compress → loudness normalise to -16 LUFS" onClick={() => run('enhance', { lufs: -16 })}>
-                  <NeonIcon icon={AudioLines} size={13} tone="cyan" glow={2} /> Enhance voice
+                <button className="btn sm cyan" disabled={busy} title="High-pass → de-ess → compress → loudness normalise to -16 LUFS" onClick={() => runAudio('enhance', { lufs: -16 })}>
+                  <NeonIcon icon={AudioLines} size={13} tone="cyan" glow={2} /> Enhance voice{selectedMedia.length > 1 ? ` · ${selectedMedia.length} clips` : ''}
                 </button>
                 <span className="hint">clarity + broadcast loudness</span>
               </div>
