@@ -1,3 +1,4 @@
+import { aiAbortSignal } from './exec.ts';
 /**
  * B-roll suggestions: find concepts in the transcript and match them to the project's media library.
  * Offline heuristic (keyword overlap) always works; Claude (optional) picks semantically better matches.
@@ -117,7 +118,7 @@ export async function matchAssetsWithClaude(
     model: opts.model ?? 'claude-opus-5',
     max_tokens: 4000,
     messages: [{ role: 'user', content: prompt }],
-  });
+  }, { signal: aiAbortSignal() });
   if (response.stop_reason === 'refusal') {
     opts.onLog?.('Claude declined the request; using heuristic matches');
     return [];

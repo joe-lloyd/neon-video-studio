@@ -1,5 +1,6 @@
 /** Audio analysis on raw PCM — an energy-based voice activity detector that needs no ML runtime. */
 import { spawn } from 'node:child_process';
+import { throwIfCancelled, watchAiProcess } from './exec.ts';
 
 export interface Pcm {
   samples: Float32Array;
@@ -9,13 +10,16 @@ export interface Pcm {
 
 export async function decodePcm(ffmpeg: string, file: string, sampleRate = 16000): Promise<Pcm> {
   return new Promise((resolve, reject) => {
-    const child = spawn(ffmpeg, ['-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', String(sampleRate), '-f', 'f32le', '-'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    throwIfCancelled();
+    const child = spawn(ffmpeg, ['-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', String(sampleRate), '-f', 'f32le', '-'], { detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const signal = watchAiProcess(child);
     const chunks: Buffer[] = [];
     let err = '';
     child.stdout.on('data', (c: Buffer) => chunks.push(c));
     child.stderr.on('data', (c: Buffer) => (err += c.toString()));
     child.on('error', reject);
     child.on('close', (code) => {
+      if (signal?.aborted) return reject(signal.reason);
       if (code !== 0) return reject(new Error(`ffmpeg decode failed: ${err.trim().slice(-300)}`));
       const buf = Buffer.concat(chunks);
       const samples = new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.byteLength / 4));

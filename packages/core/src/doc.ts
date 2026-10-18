@@ -280,7 +280,7 @@ export class ProjectDoc {
   // ---- tracks --------------------------------------------------------------------------
 
   private createTrack(kind: TrackKind, name: string, order: number): Track {
-    const track: Track = { id: newId('trk'), name, kind, order, muted: false, locked: false, hidden: false };
+    const track: Track = { id: newId('trk'), name, kind, order, muted: false, volume: 1, locked: false, hidden: false };
     this.tracks.set(track.id, mapFrom(track));
     return track;
   }
@@ -319,6 +319,7 @@ export class ProjectDoc {
   updateTrack(id: string, patch: Partial<Omit<Track, 'id' | 'kind'>>, origin?: unknown): void {
     const m = this.tracks.get(id);
     if (!m) throw new Error(`Track ${id} not found`);
+    if (patch.volume !== undefined && (!Number.isFinite(patch.volume) || patch.volume < 0 || patch.volume > 2)) throw new Error('Track volume must be between 0 and 2');
     this.transact(() => {
       for (const [k, v] of Object.entries(patch)) if (v !== undefined) m.set(k, v);
       this.touch();

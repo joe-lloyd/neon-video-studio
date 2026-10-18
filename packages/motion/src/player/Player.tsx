@@ -1,3 +1,4 @@
+import { resumePreviewAudio } from './audio-gain.ts';
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { CompositionRoot, type Environment, type MediaRegistry } from '../context.tsx';
 import { CompositionErrorBoundary, useFit } from './Stage.tsx';
@@ -161,6 +162,7 @@ function PlayerInner<P extends Record<string, unknown>>(
   );
 
   const play = useCallback(() => {
+    resumePreviewAudio();
     if (playingRef.current) return;
     const { lastFrame: end } = settings.current;
     if (frameRef.current >= end && !settings.current.loop) showFrame(0);

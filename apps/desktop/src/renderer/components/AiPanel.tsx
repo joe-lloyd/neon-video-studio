@@ -199,7 +199,7 @@ export function AiPanel() {
             <div className="progress"><div style={{ width: `${Math.round(job.progress * 100)}%` }} /></div>
             <div className="row between hint">
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{job.message}</span>
-              {job.status === 'running' || job.status === 'queued' ? <button className="btn sm ghost" onClick={() => void editor.cancelAi(job.id)}><NeonIcon icon={X} size={12} tone="red" /></button> : null}
+              {job.status === 'running' || job.status === 'queued' ? <button className="btn sm ghost" title="Cancel job" aria-label={`Cancel ${job.op} job`} disabled={job.message === 'Cancelling…'} onClick={() => void editor.cancelAi(job.id)}><NeonIcon icon={X} size={12} tone="red" /></button> : null}
             </div>
             {job.status === 'done' && job.op === 'broll' ? <BrollResult job={job} /> : null}
           </div>

@@ -286,6 +286,8 @@ input, select, textarea { user-select: text; }
 .tl-lanes-inner { position: relative; min-width: 100%; }
 .track-header {
   display: flex;
+  flex-wrap: wrap;
+  align-content: center;
   align-items: center;
   gap: 4px;
   padding: 0 6px 0 10px;
@@ -639,3 +641,7 @@ button.link { padding: 0; border: 0; background: none; color: var(--cyan); font:
 .prompter-body .cue-record { margin-top: 6px; gap: 6px; }
 .prompter-body .cue-record .rec-dot { width: 6px; height: 6px; }
 .prompter-overlay > .btn { align-self: flex-start; }
+
+.track-volume { flex: 0 0 100%; display: flex; align-items: center; gap: 5px; height: 18px; padding-left: 12px; box-sizing: border-box; cursor: pointer; }
+.track-volume input { flex: 1; min-width: 0; width: 0; height: 12px; margin: 0; accent-color: var(--cyan); cursor: ew-resize; }
+.track-volume output { width: 32px; text-align: right; font: 10px var(--mono); color: var(--muted); }

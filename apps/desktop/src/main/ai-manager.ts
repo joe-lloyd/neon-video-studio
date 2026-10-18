@@ -23,6 +23,9 @@ import {
 } from '@neon/core';
 import {
   DEFAULT_FILLERS,
+  withAiCancellation,
+  throwIfCancelled,
+  aiAbortSignal,
   SETUP_HINTS,
   enhanceVoice,
   ensureFfmpeg,
@@ -73,6 +76,7 @@ export class AiManager {
   private readonly jobs = new Map<string, AiJob>();
   private queue: { job: AiJob; params: Params }[] = [];
   private active = false;
+  private readonly controllers = new Map<string, AbortController>();
   private audioBatchProgress: { start: number; span: number; label: string } | null = null;
   private tools: { paths: ToolPaths; capabilities: AiCapabilities } | null = null;
   private readonly ctx: MainContext;
@@ -104,10 +108,11 @@ export class AiManager {
     if (!job) return undefined;
     if (job.status === 'queued') {
       this.queue = this.queue.filter((q) => q.job.id !== id);
-      this.update(job, { status: 'cancelled', finishedAt: new Date().toISOString() });
+      this.controllers.delete(id);
+      this.update(job, { status: 'cancelled', message: 'Cancelled', finishedAt: new Date().toISOString() });
     } else if (job.status === 'running') {
-      job.log.push('cancel requested — will stop after the current step');
-      (job as AiJob & { cancelRequested?: boolean }).cancelRequested = true;
+      this.controllers.get(id)?.abort();
+      this.update(job, { message: 'Cancelling…' });
     }
     return job;
   }
@@ -124,6 +129,7 @@ export class AiManager {
       startedAt: new Date().toISOString(),
       log: [],
     };
+    this.controllers.set(job.id, new AbortController());
     this.jobs.set(job.id, job);
     this.queue.push({ job, params });
     this.update(job, {});
@@ -139,6 +145,7 @@ export class AiManager {
   }
 
   private progress(job: AiJob, progress: number, message?: string): void {
+    if (aiAbortSignal()?.aborted) return;
     const batch = this.audioBatchProgress;
     if (batch) {
       progress = batch.start + progress * batch.span;
@@ -160,14 +167,17 @@ export class AiManager {
     const { job, params } = next;
     this.update(job, { status: 'running', message: 'Starting…' });
     try {
-      const result = await this.runOp(job, params);
-      this.update(job, { status: (result as { cancelled?: boolean })?.cancelled ? 'cancelled' : 'done', progress: 1, message: summarize(job.op, result), result, finishedAt: new Date().toISOString() });
+      const result = await withAiCancellation(this.controllers.get(job.id)!.signal, () => this.runOp(job, params));
+      this.controllers.get(job.id)!.signal.throwIfAborted();
+      this.update(job, { status: 'done', progress: 1, message: summarize(job.op, result), result, finishedAt: new Date().toISOString() });
       this.ctx.events.activity('ai', `ai.${job.op}`, summarize(job.op, result), { clipIds: Array.isArray(params.clipIds) ? params.clipIds as string[] : job.clipId ? [job.clipId] : undefined, assetIds: job.assetId ? [job.assetId] : undefined, jobId: job.id });
     } catch (err) {
-      const message = (err as Error).message;
-      this.update(job, { status: 'failed', error: message, message: `Failed: ${message}`, finishedAt: new Date().toISOString() });
-      this.ctx.events.activity('ai', `ai.${job.op}.failed`, `${job.op} failed: ${message}`, { jobId: job.id });
+      const cancelled = this.controllers.get(job.id)?.signal.aborted;
+      const message = cancelled ? 'Cancelled' : (err as Error).message;
+      this.update(job, { status: cancelled ? 'cancelled' : 'failed', error: cancelled ? undefined : message, message: cancelled ? 'Cancelled' : `Failed: ${message}`, finishedAt: new Date().toISOString() });
+      this.ctx.events.activity('ai', `ai.${job.op}.${cancelled ? 'cancelled' : 'failed'}`, cancelled ? `${job.op} cancelled` : `${job.op} failed: ${message}`, { jobId: job.id });
     } finally {
+      this.controllers.delete(job.id);
       this.active = false;
       void this.pump();
     }
@@ -233,6 +243,7 @@ export class AiManager {
       const kfs = dipKeyframes(clip.volumeKeyframes, segments, clip, doc.fps, 0);
       // Skip clips the segments never touch (their envelope is unchanged apart from a seed point).
       if (kfs.some((k) => k.gain === 0)) {
+        throwIfCancelled();
         doc.updateClip(clip.id, { volumeKeyframes: kfs }, ORIGIN_API);
         updated += 1;
       }
@@ -275,6 +286,7 @@ export class AiManager {
       force,
       onLog: (line) => this.log(job, line),
     });
+    throwIfCancelled();
     markFillers(transcript.words);
     doc.setTranscript(transcript, ORIGIN_API);
     return transcript;
@@ -282,11 +294,14 @@ export class AiManager {
 
   private async importDerived(job: AiJob, source: Asset, file: string, processing: string[], extra: Partial<Asset> = {}): Promise<Asset> {
     this.progress(job, 0.95, 'Importing result into the project');
+    throwIfCancelled();
     const result = await this.ctx.assets.import(file, { origin: ORIGIN_API });
+    throwIfCancelled();
     this.ctx.store.doc.updateAsset(result.asset.id, { derivedFrom: source.id, processing: [...(source.processing ?? []), ...processing], ...extra }, ORIGIN_API);
     // Audio timing is unchanged by these operations, so the transcript carries over.
     const transcript = this.ctx.store.doc.getTranscript(source.id);
     if (transcript && !this.ctx.store.doc.getTranscript(result.asset.id)) {
+      throwIfCancelled();
       this.ctx.store.doc.setTranscript({ ...transcript, assetId: result.asset.id }, ORIGIN_API);
     }
     return this.ctx.store.doc.getAsset(result.asset.id) ?? result.asset;
@@ -295,6 +310,7 @@ export class AiManager {
   // ---- operations ------------------------------------------------------------------------
 
   private async runOp(job: AiJob, params: Params): Promise<unknown> {
+    throwIfCancelled();
     if (params.clipIds !== undefined) {
       if (job.op !== 'enhance' && job.op !== 'denoise') throw new Error('Multiple clip targets are supported by Enhance voice and Denoise');
       return this.opAudioBatch(job, params);
@@ -337,7 +353,7 @@ export class AiManager {
     const groups = audioClipGroups(this.ctx.store.doc.toJSON(), params.clipIds);
     const results: { clipsUpdated: number; newAssetId: string }[] = [];
     for (const [i, clips] of groups.entries()) {
-      if ((job as AiJob & { cancelRequested?: boolean }).cancelRequested) break;
+      throwIfCancelled();
       this.audioBatchProgress = { start: i / groups.length, span: 1 / groups.length, label: `Source ${i + 1}/${groups.length}` };
       try {
         const target = { ...params, clipIds: clips.map(c => c.id) };
@@ -348,7 +364,7 @@ export class AiManager {
         this.audioBatchProgress = null;
       }
     }
-    return { batch: true, cancelled: Boolean((job as AiJob & { cancelRequested?: boolean }).cancelRequested),
+    return { batch: true,
       clipsUpdated: results.reduce((n, r) => n + r.clipsUpdated, 0), assetsProcessed: results.length, results };
   }
 
@@ -365,6 +381,7 @@ export class AiManager {
     this.progress(job, 0.7, 'Finding disfluencies');
     const words = transcript.words.map((w) => ({ ...w }));
     const flagged = markFillers(words, list);
+    throwIfCancelled();
     this.ctx.store.doc.setTranscript({ ...transcript, words }, ORIGIN_API);
     const segments = fillerRanges(words, Number(params.padMs ?? 40));
     if (params.mute) {
@@ -375,6 +392,7 @@ export class AiManager {
     let removedFrames = 0;
     if (params.apply && ranges.length) {
       this.progress(job, 0.9, `Cutting ${ranges.length} range(s) from the timeline`);
+      throwIfCancelled();
       removedFrames = this.ctx.store.doc.cutRanges(ranges, { ripple: true, crossfadeFrames: 2 }, ORIGIN_API).removedFrames;
     }
     return { fillers: flagged.length, words: flagged.map((i) => words[i]!.w), segments, ranges, removedFrames, applied: Boolean(params.apply) };
@@ -393,6 +411,7 @@ export class AiManager {
     let removedFrames = 0;
     if (params.apply && ranges.length) {
       this.progress(job, 0.9, `Trimming ${ranges.length} pause(s)`);
+      throwIfCancelled();
       removedFrames = this.ctx.store.doc.cutRanges(ranges, { ripple: true, crossfadeFrames: 2 }, ORIGIN_API).removedFrames;
     }
     return { silences: plan.silences.length, cuts: plan.cuts, ranges, removedFrames, noiseFloorDb: plan.noiseFloorDb, thresholdDb: plan.thresholdDb, applied: Boolean(params.apply) };
@@ -403,12 +422,14 @@ export class AiManager {
     const paths = await this.paths();
     this.progress(job, 0.2, 'Listening for breaths and mouth noise');
     const analysis = await analyseBreaths(paths.ffmpeg, target.file);
+    throwIfCancelled();
     const fps = this.ctx.store.doc.fps;
     const reductionDb = Number(params.reductionDb ?? 15);
     let applied = 0;
     if (params.apply !== false) {
       const gain = Math.pow(10, -Math.abs(reductionDb) / 20);
       for (const clip of analysis.breaths.length ? target.clips : []) {
+        throwIfCancelled();
         this.ctx.store.doc.updateClip(clip.id, { volumeKeyframes: dipKeyframes(clip.volumeKeyframes, analysis.breaths, clip, fps, gain) }, ORIGIN_API);
         applied++;
       }
@@ -436,6 +457,7 @@ export class AiManager {
         onProgress: (p) => this.progress(job, 0.1 + p * 0.8),
       });
       const asset = await this.importDerived(job, target.asset, out, [`denoise:${r.engine}`]);
+      throwIfCancelled();
       if (target.clips.length) this.ctx.store.doc.replaceClipAsset(target.clips.map((c) => c.id), asset.id, ORIGIN_API);
       return { engine: r.engine, filter: r.filter, newAssetId: asset.id, clipsUpdated: target.clips.length };
     } finally {
@@ -463,6 +485,7 @@ export class AiManager {
         onProgress: (p) => this.progress(job, 0.1 + p * 0.8),
       });
       const asset = await this.importDerived(job, target.asset, out, [`enhance:${Number(params.lufs ?? -16)}LUFS`]);
+      throwIfCancelled();
       if (target.clips.length) this.ctx.store.doc.replaceClipAsset(target.clips.map((c) => c.id), asset.id, ORIGIN_API);
       return { filter: r.filter, lufs: Number(params.lufs ?? -16), newAssetId: asset.id, clipsUpdated: target.clips.length };
     } finally {
@@ -574,6 +597,7 @@ export class AiManager {
         onLog: (line) => this.log(job, line),
       });
       this.progress(job, 0.95, 'Importing into the project');
+      throwIfCancelled();
       const imported = await this.ctx.assets.import(result.file, {
         insertAt: params.at !== undefined ? Number(params.at) : undefined,
         origin: ORIGIN_API,
@@ -597,6 +621,7 @@ export class AiManager {
           ? await chromaMatte(target.file, out, { paths, color: String(params.color ?? '0x00FF00'), similarity: Number(params.similarity ?? 0.3), blend: Number(params.blend ?? 0.1), onProgress: (p) => this.progress(job, 0.1 + p * 0.8, 'Keying') })
           : await personMatte(target.file, out, { paths, quality: (params.quality as 'fast' | 'balanced' | 'accurate') ?? 'balanced', onProgress: (p, m) => this.progress(job, 0.05 + p * 0.88, m) });
       const asset = await this.importDerived(job, target.asset, out, [`matte:${mode}`], { hasAlpha: true });
+      throwIfCancelled();
       if (target.clips.length) this.ctx.store.doc.replaceClipAsset(target.clips.map((c) => c.id), asset.id, ORIGIN_API);
       return { mode: r.mode, frames: r.frames, newAssetId: asset.id, clipsUpdated: target.clips.length };
     } finally {
@@ -613,6 +638,7 @@ export class AiManager {
     const fps = this.ctx.store.doc.fps;
     const mode = result.detectedRatio > 0.2 ? 'face-track' : 'center';
     for (const clip of target.clips) {
+      throwIfCancelled();
       this.ctx.store.doc.updateClip(clip.id, { reframe: reframeFromTrack(result.track, clip, fps, aspect, mode), fit: 'cover' }, ORIGIN_API);
     }
     let resized: { width: number; height: number } | null = null;
@@ -621,6 +647,7 @@ export class AiManager {
       const height = Math.max(meta.width, meta.height);
       const width = Math.round((height * aspect) / 2) * 2;
       resized = { width, height };
+      throwIfCancelled();
       this.ctx.store.doc.updateMeta(resized, ORIGIN_API);
     }
     return { mode, detectedRatio: result.detectedRatio, samples: result.track.length, aspect, clipsUpdated: target.clips.length, resized };
@@ -677,13 +704,16 @@ export class AiManager {
     if (params.apply && suggestions.length) {
       this.progress(job, 0.9, `Placing ${suggestions.length} B-roll clip(s)`);
       const durationFrames = Math.round(Number(params.durationSeconds ?? 3) * fps);
+      throwIfCancelled();
       const videoTrack = doc.toJSON().tracks.find((t) => t.name === 'B-ROLL') ?? doc.addTrack('video', 'B-ROLL', ORIGIN_API);
+      throwIfCancelled();
       const overlayTrack = doc.toJSON().tracks.find((t) => t.name === 'B-ROLL IMG') ?? doc.addTrack('overlay', 'B-ROLL IMG', ORIGIN_API);
       for (const s of suggestions) {
         const asset = project.assets.find((a) => a.id === s.assetId);
         if (!asset) continue;
         const startFrame = Math.round(s.startS * fps);
         const length = Math.max(fps, Math.min(durationFrames, Math.round((s.endS - s.startS) * fps)));
+        throwIfCancelled();
         doc.insertClip(
           { kind: asset.kind, assetId: asset.id, startFrame, durationFrames: length, trackId: asset.kind === 'image' ? overlayTrack.id : videoTrack.id, placement: 'free', name: `B-roll: ${s.keyword || asset.name}` },
           ORIGIN_API,
@@ -765,12 +795,14 @@ export class AiManager {
       const family = new Set(target.clips.map((c) => c.assetId));
       for (const { action, range } of steps) {
         if (action.kind === 'cut') {
+          throwIfCancelled();
           removedFrames += doc.cutRanges([range], { ripple: true, crossfadeFrames: 2 }, ORIGIN_API).removedFrames;
           continue;
         }
         const piece = doc.toJSON().clips.find((c): c is MediaClip => c.kind !== 'component' && family.has(c.assetId) && c.startFrame <= range.start && range.start < c.startFrame + c.durationFrames);
         if (!piece) continue;
         const before = doc.durationFrames();
+        throwIfCancelled();
         doc.setClipSpeed(piece.id, action.rate, range, ORIGIN_API);
         removedFrames += before - doc.durationFrames();
       }
@@ -830,6 +862,7 @@ export class AiManager {
 
     const ranges = this.timelineRanges(segments, target.clips);
     this.progress(job, 0.5, 'Cutting words from the timeline');
+    throwIfCancelled();
     const r = this.ctx.store.doc.cutRanges(ranges, { ripple: true, crossfadeFrames: 2 }, ORIGIN_API);
     return { mode, words: text, segments, ranges, ...r };
   }
