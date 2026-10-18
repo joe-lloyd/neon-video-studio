@@ -15,6 +15,7 @@ export function PrompterView() {
   const { project } = useStoreValue(editor.project);
   const frame = useStoreValue(editor.playhead).frame;
   const recording = useSelector(editor.ui, (u) => u.recording);
+  const selected = useSelector(editor.ui, (u) => u.voiceOverLineId);
   const fps = project.meta.fps;
   const cues = useMemo(() => scriptCues(project.script), [project.script]);
   const { current, next, framesToNext } = cueStateAt(cues, frame);
@@ -45,12 +46,18 @@ export function PrompterView() {
 
   const tight = cues.filter((c) => cueIsTight(c, fps)).length;
   const countIn = recording && current === -1 && framesToNext !== null && framesToNext <= COUNT_IN * fps ? Math.ceil(framesToNext / fps) : null;
+  const voTracks = new Set(project.tracks.filter(t => t.name === 'VO' && t.kind === 'audio').map(t => t.id));
+  const unsplit = project.clips.some(c => c.kind === 'audio' && voTracks.has(c.trackId) && !c.scriptLineId);
 
   return (
     <div className="panel-body prompter-body" ref={listRef}>
       <p className="hint" style={{ marginBottom: 8 }}>
-        {cues.length} lines{tight ? ` · ${tight} tight` : ''} · click = jump · double-click = edit
+        {cues.length} lines{tight ? ` · ${tight} tight` : ''} · click = select · double-click = edit
       </p>
+      <div className="row" style={{ flexWrap: 'wrap', gap: 6 }}>
+        <button className="btn sm ghost" disabled={!!recording} onClick={() => { editor.ui.set({ voiceOverLineId: null }); void editor.startVoiceOver(); }}>Record from playhead</button>
+        {unsplit ? <button className="btn sm ghost" disabled={!!recording} onClick={() => editor.splitExistingVoiceOver()}>Split existing takes</button> : null}
+      </div>
       {cues.map((cue, i) => {
         const state = i === current ? ' now' : i === next && current === -1 ? ' next' : cue.startFrame + cue.durationFrames <= frame ? ' done' : '';
         return (
@@ -60,7 +67,7 @@ export function PrompterView() {
                 <i /> next line in {countIn}
               </div>
             ) : null}
-            <div className={`cue${state}`} data-cue={cue.id} onClick={() => editor.seek(cue.startFrame)} onDoubleClick={() => setEditing(cue.id)}>
+            <div className={`cue${state}${selected === cue.id ? ' selected' : ''}`} data-cue={cue.id} onClick={() => editor.selectVoiceOverLine(cue.id)} onDoubleClick={() => { if (!recording) setEditing(cue.id); }}>
               <div className="cue-meta">
                 <span>{framesToTimecode(cue.startFrame, fps)}</span>
                 <span className={cueIsTight(cue, fps) ? 'tight' : ''} title={cueIsTight(cue, fps) ? 'More words than this line has time for' : undefined}>
@@ -68,6 +75,9 @@ export function PrompterView() {
                 </span>
               </div>
               {editing === cue.id ? <CueEditor cue={cue} onDone={() => setEditing(null)} /> : <div className="cue-text">{cue.text}</div>}
+              <button className="btn sm ghost cue-record" disabled={!!recording} onClick={e => { e.stopPropagation(); editor.selectVoiceOverLine(cue.id); void editor.startVoiceOver(cue.id); }}>
+                <span className="rec-dot" /> {project.clips.some(c => c.kind === 'audio' && c.scriptLineId === cue.id) ? 'Re-record line' : 'Record line'}
+              </button>
             </div>
           </div>
         );
@@ -123,6 +133,15 @@ export function PrompterOverlay() {
   const previous = current > 0 ? cues[current - 1] : next > 0 ? cues[next - 1] : undefined;
   const left = now ? 1 - (frame - now.startFrame) / now.durationFrames : 0;
   const countIn = !now && framesToNext !== null && framesToNext <= COUNT_IN * fps ? Math.ceil(framesToNext / fps) : null;
+  const target = cues.find(c => c.id === recording.lineId);
+
+  if (recording.phase !== 'recording') return (
+    <div className="prompter-overlay" role="status" aria-live="polite">
+      <div className="line wait">{recording.phase === 'countdown' ? <span className="count">{recording.remaining}</span> : recording.phase === 'starting' ? 'Opening microphone…' : 'Saving take…'}</div>
+      {target ? <div className="line now">{target.text}</div> : null}
+      {recording.phase !== 'finishing' ? <button className="btn ghost" onClick={() => editor.stopVoiceOver()}>Cancel</button> : null}
+    </div>
+  );
 
   return (
     <div className="prompter-overlay">
@@ -141,6 +160,7 @@ export function PrompterOverlay() {
         <div className="line wait">{countIn !== null ? <span className="count">{countIn}</span> : 'pause'}</div>
       )}
       {upcoming ? <div className="line upcoming">{upcoming.text}</div> : null}
+      <button className="btn ghost" onClick={() => editor.stopVoiceOver()}>Stop and save</button>
     </div>
   );
 }

@@ -464,3 +464,20 @@ neon-cli captions srt --out final.srt
 
 # Exit codes: 0 success · 1 any error (with --json the error object is on stdout).
 ```
+
+### Voice-over line takes
+
+`record stop` saves a recording as separate clips for the placed script
+lines. The original audio stays in the media library. Quiet edges are
+trimmed without shifting the graphics or removing pauses inside a line.
+
+```bash
+neon-cli record stop --line 4.2         # replace only this line's previous audio
+neon-cli record split <clip>           # split an older take using the script's timing
+neon-cli record cancel                 # discard a live take, keep previous takes
+```
+
+`POST /api/record/place` takes `{assetId, at?, lineId?, trimBefore?}` to apply
+the same placement and speech detection to imported audio. `lineId` is a
+script-line id. Recorded clips store that id in `scriptLineId` so reordering
+or renaming a line does not lose its take.

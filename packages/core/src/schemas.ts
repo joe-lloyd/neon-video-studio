@@ -77,6 +77,7 @@ export const ClipSpeedSchema = z.number().min(0.1).max(16);
 
 export const MediaClipSchema = ClipBaseSchema.extend({
   kind: z.enum(['video', 'audio', 'image']),
+  scriptLineId: z.string().min(1).optional(),
   assetId: z.string(),
   trimBefore: z.number().int().nonnegative(),
   volume: z.number().min(0).max(2),
@@ -204,6 +205,7 @@ export const InsertClipRequestSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.enum(['video', 'audio', 'image']),
     assetId: z.string().min(1),
+    scriptLineId: z.string().min(1).optional(),
     at: TimeExpr.optional(),
     duration: TimeExpr.optional(),
     trimBefore: TimeExpr.optional(),
@@ -219,6 +221,7 @@ export const UpdateClipRequestSchema = z.object({
   id: z.string().min(1),
   patch: z.object({
     name: z.string().optional(),
+    scriptLineId: z.string().min(1).optional(),
     startFrame: TimeExpr.optional(),
     durationFrames: TimeExpr.optional(),
     trimBefore: TimeExpr.optional(),
@@ -566,7 +569,11 @@ export const IdRequestSchema = z.object({ id: z.string().min(1) });
 export const RecordStopRequestSchema = z.object({
   /** Where the take lands on the VO track. */
   at: TimeExpr.optional(),
+  lineId: z.string().min(1).optional(),
+  trimBefore: TimeExpr.optional(),
 });
+export const RecordPlaceRequestSchema = RecordStopRequestSchema.extend({ assetId: z.string().min(1) });
+export const AssetUploadResponseSchema = z.object({ ok: z.literal(true), data: z.object({ asset: AssetSchema }) });
 
 export const BatchOpSchema = z.object({
   route: z.string().regex(/^\/api\//, 'route must start with /api/').describe('A POST control route, e.g. /api/timeline/insert'),
