@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { CLIP_COLORS, framesToTimecode, snapFrame, sortClips, sortTracks, trackKindForClip, type Clip, type Track, type TrackKind } from '@neon/core';
 import { Eye, EyeOff, Lock, NeonIcon, Plus, Trash2, Unlock, Volume2, VolumeX } from '@neon/icon-kit';
 import { useEditor } from '../lib/context.ts';
@@ -368,10 +368,17 @@ export function Timeline() {
 
 function TrackHeader({ track }: { track: Track }) {
   const editor = useEditor();
+  const { project } = useStoreValue(editor.project);
+  const selection = useSelector(editor.ui, u => u.selection);
+  const clips = project.clips.filter(c => c.trackId === track.id);
+  const selected = clips.length > 0 && clips.every(c => selection.includes(c.id));
+  const select = (e: ReactMouseEvent) => editor.selectTrack(track.id, e.shiftKey || e.metaKey || e.ctrlKey);
   return (
-    <div className="track-header" style={{ height: ROW_H }}>
+    <div className={`track-header${selected ? ' selected' : ''}`} style={{ height: ROW_H }} onClick={e => {
+      if (!(e.target as HTMLElement).closest('button')) select(e);
+    }}>
       <span className="kind" style={{ background: TRACK_COLOR[track.kind], boxShadow: `0 0 6px ${TRACK_COLOR[track.kind]}` }} />
-      <span className="tname" title={track.id}>{track.name}</span>
+      <button className="tname" title={`Select all clips on ${track.name}`} aria-label={`Select all clips on ${track.name}`} aria-pressed={selected} onClick={select}>{track.name}</button>
       {track.kind !== 'overlay' ? (
         <button title={track.muted ? 'Unmute' : 'Mute'} className={track.muted ? 'on' : ''} onClick={() => editor.updateTrack(track.id, { muted: !track.muted })}>
           <NeonIcon icon={track.muted ? VolumeX : Volume2} size={13} tone={track.muted ? 'red' : 'muted'} />

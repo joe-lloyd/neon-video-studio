@@ -56,6 +56,7 @@ import {
   type Segment,
   type ToolPaths,
 } from '@neon/ai';
+import { audioClipGroups } from './ai-audio-targets.ts';
 import type { MainContext } from './context.ts';
 
 type Params = Record<string, unknown>;
@@ -72,6 +73,7 @@ export class AiManager {
   private readonly jobs = new Map<string, AiJob>();
   private queue: { job: AiJob; params: Params }[] = [];
   private active = false;
+  private audioBatchProgress: { start: number; span: number; label: string } | null = null;
   private tools: { paths: ToolPaths; capabilities: AiCapabilities } | null = null;
   private readonly ctx: MainContext;
 
@@ -137,6 +139,11 @@ export class AiManager {
   }
 
   private progress(job: AiJob, progress: number, message?: string): void {
+    const batch = this.audioBatchProgress;
+    if (batch) {
+      progress = batch.start + progress * batch.span;
+      if (message) message = `${batch.label} · ${message}`;
+    }
     this.update(job, { progress: Math.max(job.progress, Math.min(0.99, progress)), ...(message ? { message } : {}) });
   }
 
@@ -154,8 +161,8 @@ export class AiManager {
     this.update(job, { status: 'running', message: 'Starting…' });
     try {
       const result = await this.runOp(job, params);
-      this.update(job, { status: 'done', progress: 1, message: summarize(job.op, result), result, finishedAt: new Date().toISOString() });
-      this.ctx.events.activity('ai', `ai.${job.op}`, summarize(job.op, result), { clipIds: job.clipId ? [job.clipId] : undefined, assetIds: job.assetId ? [job.assetId] : undefined, jobId: job.id });
+      this.update(job, { status: (result as { cancelled?: boolean })?.cancelled ? 'cancelled' : 'done', progress: 1, message: summarize(job.op, result), result, finishedAt: new Date().toISOString() });
+      this.ctx.events.activity('ai', `ai.${job.op}`, summarize(job.op, result), { clipIds: Array.isArray(params.clipIds) ? params.clipIds as string[] : job.clipId ? [job.clipId] : undefined, assetIds: job.assetId ? [job.assetId] : undefined, jobId: job.id });
     } catch (err) {
       const message = (err as Error).message;
       this.update(job, { status: 'failed', error: message, message: `Failed: ${message}`, finishedAt: new Date().toISOString() });
@@ -173,7 +180,12 @@ export class AiManager {
     const project = doc.toJSON();
     let asset: Asset | undefined;
     let clips: MediaClip[] = [];
-    if (typeof params.clipId === 'string') {
+    if (params.clipIds !== undefined) {
+      const groups = audioClipGroups(project, params.clipIds);
+      if (groups.length !== 1) throw new Error('Resolve one audio source at a time');
+      clips = groups[0]!;
+      asset = project.assets.find(a => a.id === clips[0]!.assetId);
+    } else if (typeof params.clipId === 'string') {
       const clip = project.clips.find((c) => c.id === params.clipId);
       if (!clip) throw new Error(`Clip ${params.clipId} not found`);
       if (clip.kind === 'component') throw new Error('AI audio/video features need a media clip, not a template');
@@ -187,7 +199,7 @@ export class AiManager {
       throw new Error('Specify clipId or assetId');
     }
     if (!asset) throw new Error('Asset not found in project');
-    if (typeof params.clipId !== 'string') {
+    if (typeof params.clipId !== 'string' && params.clipIds === undefined) {
       // Include clips that show a derivative of this asset (denoised / matted copies) and,
       // when the reference IS a derivative, clips of its source — the family shares timing.
       const family = new Set<string>([asset.id]);
@@ -283,6 +295,10 @@ export class AiManager {
   // ---- operations ------------------------------------------------------------------------
 
   private async runOp(job: AiJob, params: Params): Promise<unknown> {
+    if (params.clipIds !== undefined) {
+      if (job.op !== 'enhance' && job.op !== 'denoise') throw new Error('Multiple clip targets are supported by Enhance voice and Denoise');
+      return this.opAudioBatch(job, params);
+    }
     switch (job.op) {
       case 'transcribe':
         return this.opTranscribe(job, params);
@@ -315,6 +331,25 @@ export class AiManager {
       default:
         throw new Error(`Unknown AI operation ${String(job.op)}`);
     }
+  }
+
+  private async opAudioBatch(job: AiJob, params: Params) {
+    const groups = audioClipGroups(this.ctx.store.doc.toJSON(), params.clipIds);
+    const results: { clipsUpdated: number; newAssetId: string }[] = [];
+    for (const [i, clips] of groups.entries()) {
+      if ((job as AiJob & { cancelRequested?: boolean }).cancelRequested) break;
+      this.audioBatchProgress = { start: i / groups.length, span: 1 / groups.length, label: `Source ${i + 1}/${groups.length}` };
+      try {
+        const target = { ...params, clipIds: clips.map(c => c.id) };
+        results.push(job.op === 'enhance' ? await this.opEnhance(job, target) : await this.opDenoise(job, target));
+      } catch (err) {
+        throw new Error(`${(err as Error).message} (${results.length}/${groups.length} sources completed)`);
+      } finally {
+        this.audioBatchProgress = null;
+      }
+    }
+    return { batch: true, cancelled: Boolean((job as AiJob & { cancelRequested?: boolean }).cancelRequested),
+      clipsUpdated: results.reduce((n, r) => n + r.clipsUpdated, 0), assetsProcessed: results.length, results };
   }
 
   private async opTranscribe(job: AiJob, params: Params) {
@@ -802,6 +837,7 @@ export class AiManager {
 
 function summarize(op: AiOperation, result: unknown): string {
   const r = (result ?? {}) as Record<string, unknown>;
+  if (r.batch) return `${r.cancelled ? 'Stopped after processing' : op === 'enhance' ? 'Enhanced' : 'Denoised'} ${String(r.clipsUpdated)} clips across ${String(r.assetsProcessed)} sources`;
   switch (op) {
     case 'transcribe':
       return `Transcribed ${String(r.words)} words (${String(r.fillers)} fillers)`;

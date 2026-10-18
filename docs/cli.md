@@ -481,3 +481,22 @@ neon-cli record cancel                 # discard a live take, keep previous take
 the same placement and speech detection to imported audio. `lineId` is a
 script-line id. Recorded clips store that id in `scriptLineId` so reordering
 or renaming a line does not lose its take.
+
+### Process a selection of voice clips
+
+Click a track label (VO, A1, V1, etc.) to select every clip on that row. Shift/Ctrl/Command-click
+adds that row to the selection. In the AI panel, **Enhance voice** and **Denoise** process all
+selected audio/video clips as one job. Other AI tools target the first clip, as indicated in the panel.
+Clips sharing one source recording reuse one processed copy, while unselected clips keep their audio.
+Clip positions, source trims, durations, and script links are preserved.
+
+The same selection can be submitted through the API/CLI using exact clip IDs:
+
+```sh
+neon-cli api POST /api/ai/enhance '{"clipIds":["clip_first","clip_second"],"lufs":-16}'
+neon-cli api POST /api/ai/denoise '{"clipIds":["clip_first","clip_second"],"engine":"auto"}'
+```
+
+The response is one queued AI job. Its result reports `clipsUpdated`, `assetsProcessed`, and
+per-source `results`. Cancellation stops after the current source; sources already completed keep
+their processed audio. A processing failure reports how many sources completed.
