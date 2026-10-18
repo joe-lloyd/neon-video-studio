@@ -25,7 +25,7 @@ function guardProject(ctx: MainContext, projectId: string) {
 
 async function importAudio(ctx: MainContext, file: string, preview: Pick<StudioVoicePreview, 'projectId' | 'sourceAssetId'>, processing: string) {
   guardProject(ctx, preview.projectId);
-  const result = await ctx.assets.import(file, { origin: ORIGIN_API });
+  const result = await ctx.assets.import(file, { origin: ORIGIN_API, expectedProjectId: preview.projectId });
   guardProject(ctx, preview.projectId);
   const doc = ctx.store.doc;
   const source = doc.getAsset(preview.sourceAssetId);
