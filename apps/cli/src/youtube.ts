@@ -76,7 +76,9 @@ export function youtubeUploadBody(file: string | undefined, flags: YouTubeFlags,
     embeddable: flags.embed === false ? false : undefined,
     notifySubscribers: flags.notify === false ? false : undefined,
     playlistId: flags.playlist,
-    thumbnail: flags.thumbnail === undefined ? undefined : io.appPath(flags.thumbnail),
+    // `--thumbnail project` uses the project's thumbnail (neon-cli thumbnail …); anything else is a file.
+    thumbnail: flags.thumbnail === undefined || flags.thumbnail === 'project' ? undefined : io.appPath(flags.thumbnail),
+    projectThumbnail: flags.thumbnail === 'project' ? true : undefined,
   };
   const metadata: Record<string, unknown> = { ...fromFile, ...Object.fromEntries(Object.entries(picked).filter(([, v]) => v !== undefined)) };
   if (!metadata.title) throw new ApiError('USAGE', 'youtube upload needs --title (or "title" in --metadata)');

@@ -20,6 +20,10 @@ import {
   type Track,
   type TrackKind,
   type Script,
+  type Thumbnail,
+  type ThumbnailBackground,
+  type ThumbnailLayer,
+  type ClipTransform,
   type ScriptCue,
   type ScriptLine,
   type ScriptNote,
@@ -81,6 +85,8 @@ const TRACK_SECTION_RANK: Record<TrackKind, number> = { video: 0, audio: 1, over
  *   tracks : Y.Map<trackId, Y.Map<scalar>>
  *   clips  : Y.Map<clipId,  Y.Map<scalar | Y.Map(props)>>
  *   assets : Y.Map<sha256,  Y.Map<scalar>>
+ *   thumbnail       : Y.Map { background }
+ *   thumbnailLayers : Y.Map<layerId, Y.Map<scalar>>
  */
 export class ProjectDoc {
   readonly doc: Y.Doc;
@@ -92,6 +98,9 @@ export class ProjectDoc {
   readonly sections: Y.Map<YMap>;
   readonly lines: Y.Map<YMap>;
   readonly notes: Y.Map<YMap>;
+  /** Thumbnail background under the key "background". */
+  readonly thumbnail: YMap;
+  readonly thumbnailLayers: Y.Map<YMap>;
 
   private snapshot: Project | null = null;
   private txDepth = 0;
@@ -107,6 +116,8 @@ export class ProjectDoc {
     this.sections = doc.getMap('scriptSections');
     this.lines = doc.getMap('scriptLines');
     this.notes = doc.getMap('scriptNotes');
+    this.thumbnail = doc.getMap('thumbnail');
+    this.thumbnailLayers = doc.getMap('thumbnailLayers');
     doc.on('update', () => {
       this.snapshot = null;
       if (this.listeners.size === 0) return;
@@ -148,7 +159,8 @@ export class ProjectDoc {
       for (const key of [...this.clips.keys()]) this.clips.delete(key);
       for (const key of [...this.assets.keys()]) this.assets.delete(key);
       for (const key of [...this.transcripts.keys()]) this.transcripts.delete(key);
-      for (const map of [this.sections, this.lines, this.notes]) for (const key of [...map.keys()]) map.delete(key);
+      for (const map of [this.sections, this.lines, this.notes, this.thumbnailLayers]) for (const key of [...map.keys()]) map.delete(key);
+      this.thumbnail.delete('background');
       for (const [k, v] of Object.entries(project.meta)) this.meta.set(k, v);
       for (const track of project.tracks) this.tracks.set(track.id, mapFrom(track));
       for (const asset of project.assets) this.assets.set(asset.id, mapFrom(asset));
@@ -158,6 +170,10 @@ export class ProjectDoc {
       for (const row of rows.sections) this.sections.set(row.id, mapFrom(row));
       for (const row of rows.lines) this.lines.set(row.id, mapFrom(row));
       for (const note of project.script.notes) this.notes.set(note.id, mapFrom(note));
+      if (project.thumbnail) {
+        this.thumbnail.set('background', project.thumbnail.background);
+        for (const layer of project.thumbnail.layers) this.thumbnailLayers.set(layer.id, mapFrom(layer));
+      }
     }, ORIGIN_SYSTEM);
   }
 
@@ -177,6 +193,10 @@ export class ProjectDoc {
       syncCollection(this.sections, rows.sections, (r) => r.id, mapFrom, (m) => m.toJSON());
       syncCollection(this.lines, rows.lines, (r) => r.id, mapFrom, (m) => m.toJSON());
       syncCollection(this.notes, project.script.notes, (n) => n.id, mapFrom, (m) => m.toJSON());
+      const thumb = project.thumbnail;
+      if (!thumb) this.thumbnail.delete('background');
+      else if (stableStringify(this.thumbnail.get('background')) !== stableStringify(thumb.background)) this.thumbnail.set('background', thumb.background);
+      syncCollection(this.thumbnailLayers, thumb?.layers ?? [], (l) => l.id, mapFrom, (m) => m.toJSON());
     }, origin);
   }
 
@@ -215,6 +235,81 @@ export class ProjectDoc {
     return result;
   }
 
+  // ---- thumbnail -----------------------------------------------------------------------
+
+  private readThumbnail(): Thumbnail {
+    const background = (this.thumbnail.get('background') as ThumbnailBackground | undefined) ?? { kind: 'frame', frame: 0 };
+    const layers = [...this.thumbnailLayers.values()].map((m) => m.toJSON() as ThumbnailLayer).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+    return { background, layers };
+  }
+
+  getThumbnail(): Thumbnail {
+    return this.toJSON().thumbnail ?? this.readThumbnail();
+  }
+
+  setThumbnailBackground(background: ThumbnailBackground, origin: unknown = ORIGIN_LOCAL): Thumbnail {
+    this.transact(() => this.thumbnail.set('background', background), origin);
+    return this.getThumbnail();
+  }
+
+  /** Add a layer on top. Component props are validated and defaulted like timeline clips. */
+  addThumbnailLayer(
+    input: ({ kind: 'component'; componentName: string; props: Record<string, unknown> } | { kind: 'image'; assetId: string }) & { name?: string; transform: ClipTransform },
+    origin: unknown = ORIGIN_LOCAL,
+  ): ThumbnailLayer {
+    const layers = this.readThumbnail().layers;
+    const order = layers.length ? layers[layers.length - 1]!.order + 1 : 0;
+    const id = newId('thumb');
+    let layer: ThumbnailLayer;
+    if (input.kind === 'component') {
+      const template = getTemplate(input.componentName);
+      layer = { id, kind: 'component', name: input.name ?? template.label, order, transform: input.transform, componentName: input.componentName, props: resolveTemplateProps(input.componentName, input.props) };
+    } else {
+      const asset = this.getAsset(input.assetId);
+      if (!asset) throw new Error(`Asset ${input.assetId} not found`);
+      if (asset.kind !== 'image') throw new Error(`Asset “${asset.name}” is ${asset.kind}; thumbnail layers take images`);
+      layer = { id, kind: 'image', name: input.name ?? asset.name, order, transform: input.transform, assetId: asset.id };
+    }
+    this.transact(() => this.thumbnailLayers.set(id, mapFrom(layer)), origin);
+    return layer;
+  }
+
+  updateThumbnailLayer(id: string, patch: { name?: string; props?: Record<string, unknown>; transform?: Partial<ClipTransform> }, origin: unknown = ORIGIN_LOCAL): ThumbnailLayer {
+    const current = this.thumbnailLayers.get(id)?.toJSON() as ThumbnailLayer | undefined;
+    if (!current) throw new Error(`Thumbnail layer ${id} not found`);
+    if (patch.props && current.kind !== 'component') throw new Error('Only component layers have props');
+    const next: ThumbnailLayer =
+      current.kind === 'component'
+        ? { ...current, name: patch.name ?? current.name, transform: { ...current.transform, ...patch.transform }, props: patch.props ? resolveTemplateProps(current.componentName, { ...current.props, ...patch.props }) : current.props }
+        : { ...current, name: patch.name ?? current.name, transform: { ...current.transform, ...patch.transform } };
+    this.transact(() => this.thumbnailLayers.set(id, mapFrom(next)), origin);
+    return next;
+  }
+
+  removeThumbnailLayers(ids: string[], origin: unknown = ORIGIN_LOCAL): string[] {
+    const missing = ids.filter((id) => !this.thumbnailLayers.has(id));
+    if (missing.length) throw new Error(`Thumbnail layer ${missing.join(', ')} not found`);
+    this.transact(() => {
+      for (const id of ids) this.thumbnailLayers.delete(id);
+    }, origin);
+    return ids;
+  }
+
+  /** Move a layer to `index` (0 = bottom) and renumber the stack. */
+  moveThumbnailLayer(id: string, index: number, origin: unknown = ORIGIN_LOCAL): Thumbnail {
+    const layers = this.readThumbnail().layers;
+    const from = layers.findIndex((l) => l.id === id);
+    if (from < 0) throw new Error(`Thumbnail layer ${id} not found`);
+    const [moving] = layers.splice(from, 1);
+    layers.splice(Math.min(index, layers.length), 0, moving!);
+    this.transact(() => {
+      layers.forEach((l, order) => {
+        if (l.order !== order) this.thumbnailLayers.get(l.id)?.set('order', order);
+      });
+    }, origin);
+    return this.getThumbnail();
+  }
+
   // ---- reads ---------------------------------------------------------------------------
 
   toJSON(): Project {
@@ -227,7 +322,7 @@ export class ProjectDoc {
       .map((m) => m.toJSON() as Asset)
       .sort((a, b) => a.importedAt.localeCompare(b.importedAt) || a.name.localeCompare(b.name));
     const transcripts = [...this.transcripts.values()].map((m) => m.toJSON() as Transcript);
-    const project: Project = { meta, tracks, clips, assets, transcripts, script: this.readScript() };
+    const project: Project = { meta, tracks, clips, assets, transcripts, script: this.readScript(), thumbnail: this.readThumbnail() };
     if (this.txDepth === 0) this.snapshot = project;
     return project;
   }
@@ -1226,7 +1321,7 @@ function mapToClip(m: YMap): Clip {
 
 /** UndoManager scoped to a single peer's own edits. */
 export function createUndoManager(project: ProjectDoc, trackedOrigins: unknown[] = [ORIGIN_LOCAL]): Y.UndoManager {
-  return new Y.UndoManager([project.tracks, project.clips, project.assets, project.meta, project.transcripts, project.sections, project.lines, project.notes], {
+  return new Y.UndoManager([project.tracks, project.clips, project.assets, project.meta, project.transcripts, project.sections, project.lines, project.notes, project.thumbnail, project.thumbnailLayers], {
     trackedOrigins: new Set(trackedOrigins),
     captureTimeout: 300,
   });
