@@ -325,6 +325,44 @@ runtime** (render worker + compositions + bundler, published with every release)
 `renderRuntimeDir` in `~/.neon-video/settings.json` or the `NEON_RENDER_RUNTIME_DIR` env var;
 running from a source checkout keeps using the repo directly.
 
+## Publishing to YouTube
+
+Sign in once, then upload a finished file or let the app render the timeline and upload the
+result as one job. The app keeps the Google sign-in in `~/.neon-video/youtube.json` (mode 600);
+the CLI and the Render panel only talk to the control API.
+
+```bash
+neon-cli youtube login                       # Google's consent page opens on the app machine
+neon-cli youtube status                      # signed-in channel and recent uploads
+neon-cli youtube upload --title "Neon in 60 seconds" --no-kids --privacy unlisted \
+  --description-file notes.md --tags "video editor,typescript" --ai-content --playlist PL123
+neon-cli youtube upload demo.mp4 --title "Demo" --no-kids --thumbnail thumb.png
+neon-cli youtube upload --metadata meta.json --preset 1080p30 --from 0:10 --to 2:00 --no-wait
+neon-cli youtube job <id> · youtube cancel <id> · youtube categories · youtube logout
+```
+
+- YouTube requires `--kids` or `--no-kids` on every upload. `--ai-content` sets YouTube's
+  "altered or synthetic content" disclosure.
+- `--publish-at 2026-11-01T09:00:00Z` schedules a release. It needs `--privacy private`, the
+  default; the video goes public at that time.
+- `--metadata meta.json` takes the fields of `POST /api/youtube/upload`'s `metadata`
+  (`neon-cli schema` prints them); flags win over the file.
+- Without a file, `upload` renders the timeline with `--preset/--from/--to`, then uploads it.
+- A thumbnail or playlist that fails does not fail the upload; it shows up as a warning on the
+  job. Custom thumbnails need a phone-verified channel (youtube.com/verify).
+
+**Google's limits.** Uploads through a Google Cloud project that has not passed YouTube's API
+audit are locked to private; the job warns when that happens, and you change it in YouTube
+Studio. While the OAuth consent screen is in "Testing", only its test users can sign in and the
+sign-in lasts 7 days; the app then asks you to sign in again. The YouTube Data API has a free
+daily quota and no billing.
+
+**Your own OAuth client.** Release builds include one. From source, create a Google Cloud
+project, enable YouTube Data API v3, add a "Desktop app" OAuth client, then either run
+`neon-cli youtube client --client-id ID --client-secret SECRET` or set
+`NEON_YOUTUBE_CLIENT_ID` / `NEON_YOUTUBE_CLIENT_SECRET`. `youtube client --reset` goes back to
+the built-in one.
+
 ## Stills and contact sheets (see your edit)
 
 An agent edits blind unless it looks. These commands render PNGs of the timeline, so after an
