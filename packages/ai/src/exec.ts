@@ -1,4 +1,45 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const cancellation = new AsyncLocalStorage<AbortSignal>();
+
+/** Carry one job's cancellation through every nested analysis/subprocess without global state. */
+export function withAiCancellation<T>(signal: AbortSignal, work: () => T): T {
+  return cancellation.run(signal, work);
+}
+
+export function aiAbortSignal(): AbortSignal | undefined { return cancellation.getStore(); }
+export function throwIfCancelled(): void { aiAbortSignal()?.throwIfAborted(); }
+
+/** Kill the process tree and keep the caller waiting for exit/pipe closure before cleanup. */
+export function watchAiProcess(child: ChildProcess): AbortSignal | undefined {
+  const signal = aiAbortSignal();
+  if (!signal) return undefined;
+  let force: ReturnType<typeof setTimeout> | undefined;
+  const kill = (hard: boolean) => {
+    if (!child.pid) return;
+    if (process.platform !== 'win32') {
+      try { process.kill(-child.pid, hard ? 'SIGKILL' : 'SIGTERM'); return; } catch { /* already exited */ }
+    }
+    child.kill(hard ? 'SIGKILL' : 'SIGTERM');
+  };
+  const abort = () => {
+    if (process.platform === 'win32' && child.pid) {
+      const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+      killer.on('error', () => kill(true));
+      killer.on('close', code => { if (code !== 0) kill(true); });
+    } else kill(false);
+    force = setTimeout(() => kill(true), 1000);
+    force.unref();
+  };
+  signal.addEventListener('abort', abort, { once: true });
+  child.once('close', () => {
+    signal.removeEventListener('abort', abort);
+    if (force) clearTimeout(force);
+  });
+  if (signal.aborted) abort();
+  return signal;
+}
 
 export interface RunResult {
   code: number;
@@ -13,7 +54,9 @@ export function run(
   opts: { onStderr?: (line: string) => void; onStdout?: (line: string) => void; cwd?: string; maxBuffer?: number; env?: Record<string, string> } = {},
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], cwd: opts.cwd, env: opts.env ? { ...process.env, ...opts.env } : undefined });
+    throwIfCancelled();
+    const child = spawn(cmd, args, { detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], cwd: opts.cwd, env: opts.env ? { ...process.env, ...opts.env } : undefined });
+    const signal = watchAiProcess(child);
     let stdout = '';
     let stderr = '';
     let errBuf = '';
@@ -45,7 +88,10 @@ export function run(
         }
       }
     });
-    child.on('close', (code) => resolve({ code: code ?? -1, stdout, stderr }));
+    child.on('close', (code) => {
+      if (signal?.aborted) reject(signal.reason);
+      else resolve({ code: code ?? -1, stdout, stderr });
+    });
   });
 }
 

@@ -1,3 +1,4 @@
+import { setMediaGain, releaseMediaGain } from './player/audio-gain.ts';
 import React, { forwardRef, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { cancelRender, continueRender, delayRender } from './delay-render.ts';
 import { useCurrentFrame, useEnvironment, useIsFrozen, useVideoConfig, type AudioFrameEntry } from './context.tsx';
@@ -170,9 +171,9 @@ function usePlayerSync(el: React.RefObject<HTMLMediaElement | null>, timing: Med
   useEffect(() => {
     const media = el.current;
     if (!media) return;
-    const volume = Math.min(1, timing.volume * env.volume);
-    media.volume = Math.max(0, volume);
+    const volume = Math.max(0, timing.volume * env.volume);
     media.muted = env.mode !== 'player' || env.muted || opts.muted || volume <= 0;
+    setMediaGain(media, media.muted ? 0 : volume);
     if (media.playbackRate !== timing.playbackRate) media.playbackRate = timing.playbackRate;
     const drift = Math.abs(media.currentTime - timing.mediaTime);
     if (!active) {
@@ -191,6 +192,11 @@ function usePlayerSync(el: React.RefObject<HTMLMediaElement | null>, timing: Med
       });
     }
   });
+
+  useEffect(() => {
+    const media = el.current;
+    return media ? () => releaseMediaGain(media) : undefined;
+  }, [el, timing.inRange, env.mode]);
 
   useEffect(() => {
     const media = el.current;
@@ -247,6 +253,7 @@ export function Video({ style, className, pauseWhenBuffering = false, transparen
     <video
       {...(domProps as React.VideoHTMLAttributes<HTMLVideoElement>)}
       ref={ref}
+      crossOrigin="anonymous"
       src={timing.src}
       className={className}
       style={style}
@@ -275,5 +282,5 @@ export function Audio({ pauseWhenBuffering = false, onError, ...props }: AudioPr
   useRenderAudio(timing, !props.muted);
   usePlayerSync(ref, timing, { muted: Boolean(props.muted), pauseWhenBuffering });
   if (!timing.inRange || env.mode !== 'player') return null;
-  return <audio ref={ref} src={timing.src} preload="auto" onError={() => onError?.(new Error(`Could not load audio ${timing.src}`))} />;
+  return <audio ref={ref} crossOrigin="anonymous" src={timing.src} preload="auto" onError={() => onError?.(new Error(`Could not load audio ${timing.src}`))} />;
 }

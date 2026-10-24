@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { cueIsTight, cueStateAt, framesToTimecode, scriptCues, type ScriptCue } from '@neon/core';
 import { useEditor } from '../lib/context.ts';
 import { useSelector, useStoreValue } from '../lib/store.ts';
@@ -22,10 +22,12 @@ export function PrompterView() {
   const [editing, setEditing] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
+  const positioned = useRef(false);
   const focus = current !== -1 ? current : next;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (focus === -1) return;
-    listRef.current?.querySelector(`[data-cue="${cues[focus]!.id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    listRef.current?.querySelector(`[data-cue="${cues[focus]!.id}"]`)?.scrollIntoView({ block: 'center', behavior: positioned.current ? 'smooth' : 'instant' });
+    positioned.current = true;
   }, [focus, cues]);
 
   if (cues.length === 0) {
@@ -128,39 +130,38 @@ export function PrompterOverlay() {
 
   const fps = project.meta.fps;
   const { current, next, framesToNext } = cueStateAt(cues, frame);
-  const now = current !== -1 ? cues[current]! : null;
-  const upcoming = current !== -1 ? cues[current + 1] : next !== -1 ? cues[next] : undefined;
-  const previous = current > 0 ? cues[current - 1] : next > 0 ? cues[next - 1] : undefined;
-  const left = now ? 1 - (frame - now.startFrame) / now.durationFrames : 0;
-  const countIn = !now && framesToNext !== null && framesToNext <= COUNT_IN * fps ? Math.ceil(framesToNext / fps) : null;
-  const target = cues.find(c => c.id === recording.lineId);
-
-  if (recording.phase !== 'recording') return (
-    <div className="prompter-overlay" role="status" aria-live="polite">
-      <div className="line wait">{recording.phase === 'countdown' ? <span className="count">{recording.remaining}</span> : recording.phase === 'starting' ? 'Opening microphone…' : 'Saving take…'}</div>
-      {target ? <div className="line now">{target.text}</div> : null}
-      {recording.phase !== 'finishing' ? <button className="btn ghost" onClick={() => editor.stopVoiceOver()}>Cancel</button> : null}
-    </div>
-  );
+  // Keep the target in the same reading slot through count-in, mic startup and saving.
+  // In continuous mode show the next line during gaps, so its arrival doesn't move the text.
+  const targetIndex = cues.findIndex(c => c.id === recording.lineId);
+  const readingIndex = targetIndex !== -1 ? targetIndex : current !== -1 ? current : next;
+  const reading = cues[readingIndex];
+  const upcoming = readingIndex !== -1 ? cues[readingIndex + 1] : undefined;
+  const active = reading && frame >= reading.startFrame && frame < reading.startFrame + reading.durationFrames;
+  const left = active ? 1 - (frame - reading.startFrame) / reading.durationFrames : 0;
+  const countIn = current === -1 && framesToNext !== null && framesToNext <= COUNT_IN * fps ? Math.ceil(framesToNext / fps) : null;
+  const status = recording.phase === 'countdown' ? String(recording.remaining)
+    : recording.phase === 'starting' ? 'Opening microphone…'
+    : recording.phase === 'finishing' ? 'Saving take…'
+    : targetIndex !== -1 ? 'Recording · stop when finished' : active ? 'Read now' : countIn !== null ? String(countIn) : 'pause';
 
   return (
     <div className="prompter-overlay">
       <button className="prompter-hide" onClick={() => editor.ui.set({ prompterHidden: true })} title="Hide the prompter (the Script tab keeps following)">
         hide
       </button>
-      {previous ? <div className="line done">{previous.text}</div> : null}
-      {now ? (
-        <>
-          <div className="line now">{now.text}</div>
-          <div className="bar">
-            <i style={{ width: `${Math.max(0, Math.min(1, left)) * 100}%` }} />
-          </div>
-        </>
-      ) : (
-        <div className="line wait">{countIn !== null ? <span className="count">{countIn}</span> : 'pause'}</div>
-      )}
-      {upcoming ? <div className="line upcoming">{upcoming.text}</div> : null}
-      <button className="btn ghost" onClick={() => editor.stopVoiceOver()}>Stop and save</button>
+      <div className="prompter-status" role="status" aria-live="polite">{status}</div>
+      <div className="prompter-reading">
+        <div key={reading?.id ?? 'end'} className="line now">{reading?.text ?? 'End of script'}</div>
+      </div>
+      <div className="bar" style={{ visibility: targetIndex !== -1 ? 'hidden' : 'visible' }}>
+        <i style={{ width: `${Math.max(0, Math.min(1, left)) * 100}%` }} />
+      </div>
+      <div className="prompter-upcoming">
+        {upcoming ? <div key={upcoming.id} className="line upcoming">{upcoming.text}</div> : null}
+      </div>
+      <button className="btn ghost" disabled={recording.phase === 'finishing'} onClick={() => editor.stopVoiceOver()}>
+        {recording.phase === 'recording' ? 'Stop and save' : recording.phase === 'finishing' ? 'Saving…' : 'Cancel'}
+      </button>
     </div>
   );
 }

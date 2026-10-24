@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Player, type PlayerRef } from '@neon/motion/player';
 import { TimelineComposition, type TimelineProps } from '@neon/compositions/composition';
 import { useEditor } from '../lib/context.ts';
@@ -13,7 +13,10 @@ export function Preview() {
   const editor = useEditor();
   const kbd = kbdFor(editor.bridge.bootstrap.platform);
   const { project, durationFrames, ready } = useStoreValue(editor.project);
-  const previewMuted = useStoreValue(editor.ui).previewMuted;
+  const { previewMuted, recording } = useStoreValue(editor.ui);
+  // Silence every timeline source for the entire take, including count-in and mic startup.
+  // Keep the user's mute preference intact so playback resumes normally after saving/cancelling.
+  const playbackMuted = previewMuted || recording !== null;
   const { frame, playing } = useStoreValue(editor.playhead);
   const proxies = useStoreValue(editor.proxies);
   const [safe, setSafe] = useState(false);
@@ -69,12 +72,12 @@ export function Preview() {
     };
   }, [editor, ready, playerMounted]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const player = playerRef.current;
     if (!player) return;
-    if (previewMuted) player.mute();
+    if (playbackMuted) player.mute();
     else player.unmute();
-  }, [previewMuted, playerMounted]);
+  }, [playbackMuted, playerMounted]);
 
   // WKWebView does not fetch <video> data until a seek happens, so the very first frame stays
   // black until the user scrubs. Nudge the player once media is available or changes.
@@ -112,6 +115,7 @@ export function Preview() {
             compositionWidth={project.meta.width}
             compositionHeight={project.meta.height}
             style={{ width: '100%', height: '100%' }}
+            initiallyMuted={playbackMuted}
             clickToPlay={false}
             doubleClickToFullscreen
             spaceKeyToPlayOrPause={false}

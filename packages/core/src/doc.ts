@@ -280,7 +280,7 @@ export class ProjectDoc {
   // ---- tracks --------------------------------------------------------------------------
 
   private createTrack(kind: TrackKind, name: string, order: number): Track {
-    const track: Track = { id: newId('trk'), name, kind, order, muted: false, locked: false, hidden: false };
+    const track: Track = { id: newId('trk'), name, kind, order, muted: false, volume: 1, locked: false, hidden: false };
     this.tracks.set(track.id, mapFrom(track));
     return track;
   }
@@ -319,6 +319,7 @@ export class ProjectDoc {
   updateTrack(id: string, patch: Partial<Omit<Track, 'id' | 'kind'>>, origin?: unknown): void {
     const m = this.tracks.get(id);
     if (!m) throw new Error(`Track ${id} not found`);
+    if (patch.volume !== undefined && (!Number.isFinite(patch.volume) || patch.volume < 0 || patch.volume > 2)) throw new Error('Track volume must be between 0 and 2');
     this.transact(() => {
       for (const [k, v] of Object.entries(patch)) if (v !== undefined) m.set(k, v);
       this.touch();
@@ -447,10 +448,10 @@ export class ProjectDoc {
     const line = input.lineId ? cues.find(c => c.id === input.lineId) : undefined;
     if (input.lineId && !line) throw new Error('Place the script line on the timeline before recording it');
     const startFrame = line?.startFrame ?? input.startFrame;
-    const endFrame = startFrame + Math.min(durationFrames, line?.durationFrames ?? durationFrames);
+    const endFrame = startFrame + durationFrames;
     const segments = (line ? [line] : cues).flatMap(cue => {
       let start = Math.max(startFrame, cue.startFrame);
-      let end = Math.min(endFrame, cue.startFrame + cue.durationFrames);
+      let end = line ? endFrame : Math.min(endFrame, cue.startFrame + cue.durationFrames);
       if (input.speechRanges) {
         const speech = input.speechRanges.map(r => ({ start: startFrame + r.start - trimBefore, end: startFrame + r.end - trimBefore })).filter(r => r.start < end && r.end > start);
         if (!speech.length) return [];
@@ -468,7 +469,13 @@ export class ProjectDoc {
       if (!segments.length) return [this.insertClip({ kind: 'audio', assetId: asset.id, trackId: lane.id, startFrame, durationFrames, trimBefore, placement: 'overlap' }, origin)];
       const replaced = new Set(segments.map(s => s.cue.id));
       this.removeClips(this.toJSON().clips.filter(c => c.kind === 'audio' && c.trackId === lane.id && c.scriptLineId && replaced.has(c.scriptLineId)).map(c => c.id), origin);
-      return segments.map(({ cue, start, end }) => this.insertClip({ kind: 'audio', assetId: asset.id, trackId: lane.id, startFrame: start, durationFrames: end - start, trimBefore: trimBefore + start - startFrame, scriptLineId: cue.id, name: cue.text, placement: 'overlap' }, origin));
+      const clips = segments.map(({ cue, start, end }) => this.insertClip({ kind: 'audio', assetId: asset.id, trackId: lane.id, startFrame: start, durationFrames: end - start, trimBefore: trimBefore + start - startFrame, scriptLineId: cue.id, name: cue.text, placement: 'overlap' }, origin));
+      // A single-line take defines its own timing; the previous cue is only its starting point.
+      if (line) {
+        const segment = segments[0]!;
+        this.updateLine(line.id, { placed: { startFrame: segment.start, durationFrames: segment.end - segment.start } }, origin);
+      }
+      return clips;
     }, origin);
   }
 

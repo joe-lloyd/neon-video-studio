@@ -449,7 +449,7 @@ export class Editor {
       return;
     }
     const target = { id: newId('take'), startFrame: cue?.startFrame ?? this.playhead.get().frame, lineId,
-      endFrame: cue ? cue.startFrame + cue.durationFrames : cues.at(-1) ? cues.at(-1)!.startFrame + cues.at(-1)!.durationFrames : undefined };
+      endFrame: cue ? undefined : cues.at(-1) ? cues.at(-1)!.startFrame + cues.at(-1)!.durationFrames : undefined };
     if (target.endFrame !== undefined && target.endFrame <= target.startFrame) {
       this.toast('error', 'Move the playhead before the last script line to record');
       return;
@@ -735,7 +735,7 @@ export class Editor {
     try {
       const job = await this.bridge.request('aiRun', { op, params });
       this.upsertAiJob(job);
-      this.noteUiAction(`ai.${op}`, `Started AI ${op}`, typeof params.clipId === 'string' ? [params.clipId] : undefined);
+      this.noteUiAction(`ai.${op}`, `Started AI ${op}`, Array.isArray(params.clipIds) ? params.clipIds as string[] : typeof params.clipId === 'string' ? [params.clipId] : undefined);
       return job;
     } catch (err) {
       this.toast('error', (err as Error).message);
@@ -850,6 +850,10 @@ export class Editor {
       const others = u.renders.filter((r) => r.id !== job.id);
       return { renders: [job, ...others].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 20) };
     });
+  }
+
+  selectTrack(trackId: string, additive = false): void {
+    this.select(this.project.get().project.clips.filter(c => c.trackId === trackId).map(c => c.id), additive);
   }
 
   select(ids: string[], additive = false): void {
