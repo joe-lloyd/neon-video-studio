@@ -9,6 +9,15 @@ import { basename } from 'node:path';
 import {
   ZodError,
   API_ROUTES,
+  THUMBNAIL_WIDTH,
+  ThumbnailAddLayerRequestSchema,
+  ThumbnailBackgroundRequestSchema,
+  ThumbnailMoveLayerRequestSchema,
+  ThumbnailRenderRequestSchema,
+  ThumbnailUpdateLayerRequestSchema,
+  newLayerTransform,
+  thumbnailProject,
+  type StillResult,
   YouTubeClientRequestSchema,
   YouTubeLoginRequestSchema,
   YouTubeUploadRequestSchema,
@@ -284,7 +293,7 @@ async function start(ctx: MainContext, scope: Scope, hostname: string, port: num
           }
           const body = req.method === 'POST' ? ((await req.json().catch(() => ({}))) as unknown) : {};
           // Stills answer when the PNG exists; a first-run bundle can outlast the idle timeout.
-          if (path === API_ROUTES.renderStill || path === API_ROUTES.renderSheet) srv.timeout(req, 0);
+          if (path === API_ROUTES.renderStill || path === API_ROUTES.renderSheet || path === API_ROUTES.thumbnailRender || path === API_ROUTES.youtubeUpload) srv.timeout(req, 0);
           const result = await handleApi(ctx, req.method, path, body);
           if (req.method === 'POST') recordActivity(ctx, path, body, result);
           return ok(result);
@@ -401,6 +410,14 @@ export async function buildStatus(ctx: MainContext): Promise<AppStatus> {
     proxies: ctx.proxies.status(),
     capabilities: { ffprobe: await ffprobeAvailable(), node: true, renderRuntime: process.env.NEON_RENDER_RUNTIME === 'node' ? 'node' : `bun ${Bun.version} (bundled)` },
   };
+}
+
+/** Render the thumbnail as a 1280x720 PNG (default <NEON_HOME>/stills/<project>-thumbnail.png). */
+function renderThumbnail(ctx: MainContext, output?: string): Promise<StillResult> {
+  const { project, frame } = thumbnailProject(ctx.store.toJSON());
+  if (project.clips.length === 0) throw new Error('The thumbnail is empty: add a layer, or use a frame of a timeline that has clips');
+  const name = `${project.meta.name.replace(/[^a-zA-Z0-9-_]+/g, '-')}-thumbnail.png`;
+  return ctx.renders.capture({ kind: 'still', frame, width: THUMBNAIL_WIDTH }, output, { project, defaultName: name });
 }
 
 async function handleApi(ctx: MainContext, method: string, path: string, body: unknown): Promise<unknown> {
@@ -566,7 +583,10 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     return ctx.youtube.auth();
   }
   if (key === `POST ${API_ROUTES.youtubeUpload}`) {
-    const job = await ctx.youtube.upload(YouTubeUploadRequestSchema.parse(body));
+    const req = YouTubeUploadRequestSchema.parse(body);
+    // The project's thumbnail is rendered now, so the upload job gets a finished PNG.
+    const metadata = req.metadata.projectThumbnail ? { ...req.metadata, thumbnail: (await renderThumbnail(ctx)).path } : req.metadata;
+    const job = await ctx.youtube.upload({ ...req, metadata });
     ctx.events.activity('youtube', 'youtube.upload', `Uploading “${job.title}” to YouTube (${job.privacy})${job.renderJobId ? ' after rendering the timeline' : ''}`, { jobId: job.id });
     return job;
   }
@@ -578,6 +598,30 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     if (!job) throw new HttpError(404, 'NOT_FOUND', `YouTube upload ${id} not found`);
     return job;
   }
+
+  // Thumbnail (see @neon/core thumbnail.ts): edits go through ProjectDoc like timeline edits.
+  if (key === `GET ${API_ROUTES.thumbnail}`) return doc.getThumbnail();
+  if (key === `POST ${API_ROUTES.thumbnailBackground}`) {
+    const req = ThumbnailBackgroundRequestSchema.parse(body);
+    return doc.setThumbnailBackground('color' in req ? { kind: 'color', color: req.color } : { kind: 'frame', frame: parseTimecode(req.at, fps) }, ORIGIN_API);
+  }
+  if (key === `POST ${API_ROUTES.thumbnailLayerAdd}`) {
+    const req = ThumbnailAddLayerRequestSchema.parse(body);
+    const transform = newLayerTransform(req.transform);
+    return req.kind === 'component'
+      ? doc.addThumbnailLayer({ kind: 'component', componentName: req.componentName, props: req.props, name: req.name, transform }, ORIGIN_API)
+      : doc.addThumbnailLayer({ kind: 'image', assetId: req.assetId, name: req.name, transform }, ORIGIN_API);
+  }
+  if (key === `POST ${API_ROUTES.thumbnailLayerUpdate}`) {
+    const req = ThumbnailUpdateLayerRequestSchema.parse(body);
+    return doc.updateThumbnailLayer(req.id, req.patch, ORIGIN_API);
+  }
+  if (key === `POST ${API_ROUTES.thumbnailLayerRemove}`) return { removed: doc.removeThumbnailLayers(RemoveClipRequestSchema.parse(body).ids, ORIGIN_API) };
+  if (key === `POST ${API_ROUTES.thumbnailLayerMove}`) {
+    const req = ThumbnailMoveLayerRequestSchema.parse(body);
+    return doc.moveThumbnailLayer(req.id, req.index, ORIGIN_API);
+  }
+  if (key === `POST ${API_ROUTES.thumbnailRender}`) return renderThumbnail(ctx, ThumbnailRenderRequestSchema.parse(body).output);
 
   // Dynamic render routes.
   const renderMatch = /^(GET|POST) \/api\/render\/([^/]+)(\/cancel)?$/.exec(key);
@@ -1002,6 +1046,18 @@ function recordActivity(ctx: MainContext, path: string, body: unknown, result: u
     }
     case API_ROUTES.timelineRemove:
       ctx.events.activity('cli', 'timeline.remove', `Removed ${(b.ids as string[] | undefined)?.length ?? 0} clip(s)`, { clipIds: (b.ids as string[]) ?? [] });
+      break;
+    case API_ROUTES.thumbnailLayerAdd:
+    case API_ROUTES.thumbnailLayerUpdate:
+      ctx.events.activity('cli', path === API_ROUTES.thumbnailLayerAdd ? 'thumbnail.add' : 'thumbnail.update', `Thumbnail: ${path === API_ROUTES.thumbnailLayerAdd ? 'added' : 'updated'} layer “${String(r.name)}”`);
+      break;
+    case API_ROUTES.thumbnailLayerRemove:
+    case API_ROUTES.thumbnailLayerMove:
+    case API_ROUTES.thumbnailBackground:
+      ctx.events.activity('cli', `thumbnail.${path.split('/').pop()}`, `Thumbnail: ${path === API_ROUTES.thumbnailBackground ? 'background changed' : path === API_ROUTES.thumbnailLayerMove ? 'layer moved' : 'layer removed'}`);
+      break;
+    case API_ROUTES.thumbnailRender:
+      ctx.events.activity('cli', 'thumbnail.render', `Rendered the thumbnail → ${String(r.path)}`);
       break;
     case API_ROUTES.scriptSet:
       ctx.events.activity('cli', 'script.set', `Wrote the script: ${(b.sections as unknown[] | undefined)?.length ?? 0} section(s)`);

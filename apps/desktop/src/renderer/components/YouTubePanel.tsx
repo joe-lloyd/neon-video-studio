@@ -40,6 +40,7 @@ export function YouTubePublish() {
   const [aiContent, setAiContent] = useState(false);
   const [playlistId, setPlaylistId] = useState('');
   const [thumbnail, setThumbnail] = useState('');
+  const [useProjectThumbnail, setUseProjectThumbnail] = useState((project.thumbnail?.layers.length ?? 0) > 0);
   const [preset, setPreset] = useState('project');
   const [file, setFile] = useState('');
 
@@ -78,7 +79,8 @@ export function YouTubePublish() {
         madeForKids,
         containsSyntheticMedia: aiContent,
         playlistId: playlistId.trim() || undefined,
-        thumbnail: thumbnail.trim() || undefined,
+        thumbnail: useProjectThumbnail ? undefined : thumbnail.trim() || undefined,
+        projectThumbnail: useProjectThumbnail,
       },
     };
     run(api('POST', '/api/youtube/upload', body));
@@ -138,7 +140,8 @@ export function YouTubePublish() {
           </div>
           <label className="hint row" style={{ marginBottom: 8 }}><input type="checkbox" checked={aiContent} onChange={(e) => setAiContent(e.target.checked)} /> Realistic AI-generated or altered content</label>
           <div className="field"><label>Playlist ID (optional)</label><input className="input mono" value={playlistId} onChange={(e) => setPlaylistId(e.target.value)} placeholder="PL…" /></div>
-          <div className="field"><label>Thumbnail .png/.jpg (optional)</label><input className="input mono" value={thumbnail} onChange={(e) => setThumbnail(e.target.value)} placeholder="/path/to/thumbnail.png" /></div>
+          <label className="hint row" style={{ marginBottom: 8 }}><input type="checkbox" checked={useProjectThumbnail} onChange={(e) => setUseProjectThumbnail(e.target.checked)} /> Use the project thumbnail (Thumb tab)</label>
+          {!useProjectThumbnail ? <div className="field"><label>Thumbnail .png/.jpg (optional)</label><input className="input mono" value={thumbnail} onChange={(e) => setThumbnail(e.target.value)} placeholder="/path/to/thumbnail.png" /></div> : null}
           <div className="row" style={{ gap: 8 }}>
             <div className="field" style={{ flex: 1 }}>
               <label>Render preset</label>

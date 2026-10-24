@@ -62,7 +62,10 @@ export const YouTubeMetadataSchema = z
     playlistId: z.string().min(1).optional(),
     /** PNG or JPEG custom thumbnail (absolute or relative to the project). Needs a verified channel. */
     thumbnail: z.string().min(1).optional(),
+    /** Render the project's thumbnail (see thumbnail.ts) and use it. */
+    projectThumbnail: z.boolean().default(false),
   })
+  .refine((m) => !(m.projectThumbnail && m.thumbnail), { path: ['thumbnail'], message: 'pass thumbnail (a file) or projectThumbnail, not both' })
   .refine((m) => m.publishAt === undefined || m.privacy === 'private', { path: ['publishAt'], message: 'a scheduled video must be uploaded as private (it goes public at publishAt)' });
 export type YouTubeMetadata = z.infer<typeof YouTubeMetadataSchema>;
 export type YouTubeMetadataInput = z.input<typeof YouTubeMetadataSchema>;

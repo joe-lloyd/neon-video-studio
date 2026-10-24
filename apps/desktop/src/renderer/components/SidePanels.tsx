@@ -45,6 +45,7 @@ import { AiPanel } from './AiPanel.tsx';
 import { FxPanel } from './FxPanel.tsx';
 import { ScriptPanel } from './ScriptPanel.tsx';
 import { YouTubePublish } from './YouTubePanel.tsx';
+import { ThumbnailPanel } from './ThumbnailPanel.tsx';
 import { useSelector, useStoreValue, type Panel } from '../lib/store.ts';
 
 const TABS: { id: Panel; label: string; icon: LucideIcon }[] = [
@@ -54,6 +55,7 @@ const TABS: { id: Panel; label: string; icon: LucideIcon }[] = [
   { id: 'peers', label: 'Room', icon: Users },
   { id: 'ai', label: 'AI', icon: Sparkles },
   { id: 'script', label: 'Script', icon: Type },
+  { id: 'thumbnail', label: 'Thumb', icon: ImageIcon },
   { id: 'renders', label: 'Render', icon: Download },
   { id: 'activity', label: 'Live', icon: Terminal },
 ];
@@ -104,6 +106,7 @@ export function SidePanels() {
         {panel === 'templates' ? <FxPanel /> : null}
         {panel === 'inspector' ? <InspectorPanel /> : null}
         {panel === 'peers' ? <PeersPanel /> : null}
+        {panel === 'thumbnail' ? <ThumbnailPanel /> : null}
         {panel === 'renders' ? <RendersPanel /> : null}
         {panel === 'activity' ? <ActivityPanel /> : null}
         {panel === 'ai' ? <AiPanel /> : null}
@@ -224,7 +227,7 @@ function TimecodeField({ label, frames, fps, onChange, min = 0 }: { label: strin
   );
 }
 
-interface SchemaProp {
+export interface SchemaProp {
   type?: string | string[];
   enum?: unknown[];
   description?: string;
@@ -233,7 +236,7 @@ interface SchemaProp {
   default?: unknown;
 }
 
-function PropField({ name, schema, value, onChange }: { name: string; schema: SchemaProp; value: unknown; onChange: (v: unknown) => void }) {
+export function PropField({ name, schema, value, onChange }: { name: string; schema: SchemaProp; value: unknown; onChange: (v: unknown) => void }) {
   const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
   const isColor = /color/i.test(name) && type === 'string';
   if (schema.enum) {

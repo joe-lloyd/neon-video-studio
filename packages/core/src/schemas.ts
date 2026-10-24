@@ -177,6 +177,21 @@ export const ScriptSchema = z.object({
 /** Neon 0.10 kept the script as bare timed cues; they load as one placed section. */
 const LegacyCueSchema = z.object({ id: z.string().min(1), startFrame: z.number().int().min(0), durationFrames: z.number().int().min(1), text: z.string() });
 
+const BackgroundSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('color'), color: z.string().min(1) }),
+  z.object({ kind: z.literal('frame'), frame: z.number().int().nonnegative() }),
+]);
+const LayerBaseShape = { id: z.string(), name: z.string(), order: z.number(), transform: ClipTransformSchema };
+export const ThumbnailSchema = z.object({
+  background: BackgroundSchema,
+  layers: z.array(
+    z.discriminatedUnion('kind', [
+      z.object({ ...LayerBaseShape, kind: z.literal('component'), componentName: z.string().min(1), props: z.record(z.string(), z.unknown()) }),
+      z.object({ ...LayerBaseShape, kind: z.literal('image'), assetId: z.string().min(1) }),
+    ]),
+  ),
+});
+
 export const ProjectSchema = z
   .object({
     meta: ProjectMetaSchema,
@@ -186,6 +201,7 @@ export const ProjectSchema = z
     transcripts: z.array(TranscriptSchema).default([]),
     script: ScriptSchema.optional(),
     cues: z.array(LegacyCueSchema).optional(),
+    thumbnail: ThumbnailSchema.optional(),
   })
   .transform(({ cues, script, ...project }) => ({ ...project, script: script ?? scriptFromCues(cues ?? []) }));
 
@@ -530,7 +546,7 @@ export const PreviewControlRequestSchema = z.object({
 });
 
 export const UiControlRequestSchema = z.object({
-  panel: z.enum(['assets', 'templates', 'inspector', 'peers', 'renders', 'activity', 'ai', 'script']).optional(),
+  panel: z.enum(['assets', 'templates', 'inspector', 'peers', 'renders', 'activity', 'ai', 'script', 'thumbnail']).optional(),
   /** Clip ids (or empty array to clear the selection). */
   select: z.array(z.string()).optional(),
   dialog: z.enum(['render', 'room', 'shortcuts', 'none']).optional(),

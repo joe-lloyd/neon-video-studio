@@ -132,7 +132,7 @@ export type DesktopRPC = {
       historyChanged: { status: HistoryStatus };
       /** Asset ids whose preview proxy is ready (see main/proxies.ts). */
       proxiesChanged: { ready: string[] };
-      uiControl: { panel?: 'assets' | 'templates' | 'inspector' | 'peers' | 'renders' | 'activity' | 'ai' | 'script'; select?: string[]; dialog?: 'render' | 'room' | 'shortcuts' | 'none'; view?: 'edit' | 'script' };
+      uiControl: { panel?: 'assets' | 'templates' | 'inspector' | 'peers' | 'renders' | 'activity' | 'ai' | 'script' | 'thumbnail'; select?: string[]; dialog?: 'render' | 'room' | 'shortcuts' | 'none'; view?: 'edit' | 'script' };
     };
   }>;
 };
