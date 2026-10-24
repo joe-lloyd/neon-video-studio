@@ -29,4 +29,5 @@ export const paths = {
   bundleCache: () => join(neonHome(), 'render-bundle'),
   renders: () => join(neonHome(), 'renders'),
   stills: () => join(neonHome(), 'stills'),
+  youtubeToken: () => join(neonHome(), 'youtube.json'),
 };

@@ -5,9 +5,11 @@
  *
  * Nothing here may import `electrobun/*` — headless runs on plain Bun.
  */
+import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
+import { parseTimecode } from '@neon/core';
 import { clearInstanceInfo, isProcessAlive, readInstanceInfo, writeInstanceInfo } from '@neon/core/node';
 import { registerAllPacks } from '@neon/compositions/packs';
 import { AssetManager } from './assets.ts';
@@ -28,6 +30,17 @@ import { HistoryStore } from './history.ts';
 import { ProxyCache } from './proxies.ts';
 import { WaveformCache } from './waveforms.ts';
 import { PackManager } from './packs.ts';
+import { YouTubeManager, type OAuthClient } from './youtube.ts';
+import { BUILT_IN_YOUTUBE_CLIENT } from './youtube-client.ts';
+
+/** Env beats settings beats the client built into release builds. */
+function youtubeClient(configured: OAuthClient | undefined): OAuthClient | null {
+  const envId = process.env.NEON_YOUTUBE_CLIENT_ID;
+  const envSecret = process.env.NEON_YOUTUBE_CLIENT_SECRET;
+  if (envId && envSecret) return { clientId: envId, clientSecret: envSecret };
+  if (configured) return configured;
+  return BUILT_IN_YOUTUBE_CLIENT.clientId && BUILT_IN_YOUTUBE_CLIENT.clientSecret ? BUILT_IN_YOUTUBE_CLIENT : null;
+}
 
 export const VERSION = '0.14.0';
 
@@ -73,7 +86,7 @@ export async function bootCore(opts: { headless: boolean }): Promise<Core> {
     isDev: false,
     headless: opts.headless,
     requestExit: null,
-  } as Omit<MainContext, 'assets' | 'capture' | 'renders' | 'sync' | 'room' | 'ai' | 'history' | 'waveforms' | 'proxies' | 'packs'> as MainContext;
+  } as Omit<MainContext, 'assets' | 'capture' | 'renders' | 'sync' | 'room' | 'ai' | 'history' | 'waveforms' | 'proxies' | 'packs' | 'youtube'> as MainContext;
   ctx.assets = new AssetManager(store, settings.peerId);
   ctx.capture = new ScreenRecorder(ctx);
   ctx.waveforms = new WaveformCache(ctx.assets);
@@ -104,6 +117,7 @@ export async function bootCore(opts: { headless: boolean }): Promise<Core> {
     onUpdate: (job) => {
       ctx.rpc?.send.renderUpdate({ job });
       ctx.events.emit({ type: 'render', job });
+      ctx.youtube.renderUpdated(job);
       if (job.status === 'done') {
         ctx.rpc?.send.toast({ kind: 'success', message: `Rendered ${basename(job.outputPath)}` });
         ctx.events.activity('render', 'render.done', `Rendered ${job.totalFrames} frames → ${job.outputPath}`, { jobId: job.id });
@@ -115,6 +129,37 @@ export async function bootCore(opts: { headless: boolean }): Promise<Core> {
       if (job.status === 'rendering' && job.renderedFrames === 0) ctx.events.activity('render', 'render.started', `Rendering ${job.totalFrames} frames (${job.presetId})`, { jobId: job.id });
     },
   });
+
+  ctx.youtube = new YouTubeManager({
+    tokenFile: paths.youtubeToken(),
+    client: () => youtubeClient(settings.youtubeClient),
+    openBrowser: (url) => {
+      // The consent page opens on the machine running the app: Google redirects to its loopback port.
+      const [cmd, args] = process.platform === 'darwin' ? ['open', [url]] : process.platform === 'win32' ? ['rundll32', ['url.dll,FileProtocolHandler', url]] : ['xdg-open', [url]];
+      spawn(cmd, args, { stdio: 'ignore', detached: true }).on('error', (err) => console.warn(`[youtube] could not open the browser: ${err.message}`)).unref();
+    },
+    render: (opts) => {
+      const fps = store.doc.fps;
+      const from = opts.from === undefined ? undefined : parseTimecode(opts.from, fps);
+      const to = opts.to === undefined ? undefined : parseTimecode(opts.to, fps);
+      const frameRange: [number, number] | null = from !== undefined || to !== undefined ? [from ?? 0, to ?? Math.max(0, store.doc.durationFrames() - 1)] : null;
+      return ctx.renders.startAndWait({ presetId: opts.presetId, frameRange });
+    },
+    cancelRender: (id) => void ctx.renders.cancel(id),
+    resolvePath: (p) => resolve(store.dir, p),
+    onUpdate: (job) => {
+      ctx.events.emit({ type: 'youtube', job });
+      if (job.status === 'done') {
+        ctx.rpc?.send.toast({ kind: 'success', message: `Uploaded “${job.title}” to YouTube` });
+        ctx.events.activity('youtube', 'youtube.done', `Uploaded “${job.title}” → ${job.url ?? ''}${job.warnings.length ? ` (${job.warnings.length} warning${job.warnings.length > 1 ? 's' : ''})` : ''}`, { jobId: job.id });
+      }
+      if (job.status === 'failed') {
+        ctx.rpc?.send.toast({ kind: 'error', message: `YouTube upload failed: ${job.error ?? 'unknown error'}` });
+        ctx.events.activity('youtube', 'youtube.failed', `YouTube upload failed: ${job.error ?? 'unknown error'}`, { jobId: job.id });
+      }
+    },
+  });
+  await ctx.youtube.load();
 
   const local = await startControlServer(ctx);
   ctx.localPort = local.port;
@@ -175,6 +220,7 @@ export async function bootCore(opts: { headless: boolean }): Promise<Core> {
     if (stopped) return;
     stopped = true;
     console.log('[main] shutting down');
+    ctx.youtube.shutdown();
     ctx.renders.cancelAll();
     void ctx.recorder.discard();
     void ctx.capture.cancel();

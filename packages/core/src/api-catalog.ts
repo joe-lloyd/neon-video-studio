@@ -60,6 +60,7 @@ import {
   UpdateMetaRequestSchema,
   UpdateTrackRequestSchema,
 } from './schemas.ts';
+import { YouTubeClientRequestSchema, YouTubeLoginRequestSchema, YouTubeUploadRequestSchema } from './youtube.ts';
 
 export type RouteSpec =
   /** JSON response, no body. */
@@ -78,6 +79,7 @@ const JOB = 'starts a background job that keeps editing after the batch ends';
 const PROJECT = 'switches or writes the project';
 const HISTORY = 'steps the edit history the batch relies on';
 const ROOM = 'changes the collaboration room';
+const YT = 'changes the YouTube account, not the project';
 const STILL = 'renders a picture rather than editing; run it after the batch';
 
 export const API_CATALOG: { readonly [K in ApiRouteKey]: RouteSpec } = {
@@ -168,6 +170,13 @@ export const API_CATALOG: { readonly [K in ApiRouteKey]: RouteSpec } = {
   captureState: { method: 'GET', summary: 'Screen recorder state' },
   files: { method: 'GET', summary: 'Download a file this app rendered (?path=…): renders, stills, sheets' },
   batch: { method: 'POST', summary: 'Run POST ops as one unit: all apply (one undo step) or the project is restored', body: BatchRequestSchema, notInBatch: 'batches do not nest' },
+  youtube: { method: 'GET', summary: 'YouTube sign-in state and upload jobs' },
+  youtubeLogin: { method: 'POST', summary: 'Start Google sign-in; returns the consent URL (opened in the browser unless open=false)', body: YouTubeLoginRequestSchema, notInBatch: YT },
+  youtubeLogout: { method: 'POST', summary: 'Forget and revoke the YouTube sign-in', body: null, notInBatch: YT },
+  youtubeClient: { method: 'POST', summary: 'Use your own Google Cloud OAuth client (Desktop app), or reset to the built-in one', body: YouTubeClientRequestSchema, notInBatch: YT },
+  youtubeUpload: { method: 'POST', summary: 'Upload a file, or render the timeline and upload it, with YouTube metadata; poll GET /api/youtube/uploads/:id', body: YouTubeUploadRequestSchema, notInBatch: JOB },
+  youtubeUploadJob: { method: 'GET', summary: 'One YouTube upload job' },
+  youtubeUploadCancel: { method: 'POST', summary: 'Cancel a YouTube upload (and its render)', body: null, notInBatch: JOB },
 };
 
 export interface CatalogEntry {

@@ -1,7 +1,8 @@
 /** Typed HTTP client for the desktop app's control API. */
 import { API_ROUTES, parseTimecode, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type CaptureDevices, type CaptureStartBody, type CaptureState, type ImportAssetResponse, type ListResponse, type RecentProject, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary, type SheetRequestInput, type StillRequestInput, type StillResult } from '@neon/core';
 import { isProcessAlive, readInstanceInfo } from '@neon/core/node';
-import type { Asset, BatchRequest, BatchResult, Clip, Project, Script, ScriptOp, Track } from '@neon/core';
+import type { Asset, BatchRequest, BatchResult, Clip, Project, Script, ScriptOp, Track, YouTubeAuth, YouTubeClientRequest, YouTubeState, YouTubeUploadJob } from '@neon/core';
+import type { YouTubeUploadBody } from './youtube.ts';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -103,6 +104,14 @@ export class NeonClient {
   /** Render one frame / a contact sheet to PNG; resolves when the file exists. */
   still = (body: StillRequestInput) => this.call<StillResult>('POST', API_ROUTES.renderStill, body);
   sheet = (body: SheetRequestInput) => this.call<StillResult>('POST', API_ROUTES.renderSheet, body);
+
+  youtube = () => this.call<YouTubeState>('GET', API_ROUTES.youtube);
+  youtubeLogin = (body: { open: boolean }) => this.call<{ authUrl: string }>('POST', API_ROUTES.youtubeLogin, body);
+  youtubeLogout = () => this.call<YouTubeAuth>('POST', API_ROUTES.youtubeLogout, {});
+  youtubeClient = (body: YouTubeClientRequest) => this.call<YouTubeAuth>('POST', API_ROUTES.youtubeClient, body);
+  youtubeUploadStart = (body: YouTubeUploadBody) => this.call<YouTubeUploadJob>('POST', API_ROUTES.youtubeUpload, body);
+  youtubeUpload = (id: string) => this.call<YouTubeUploadJob>('GET', API_ROUTES.youtubeUploadJob.replace(':id', encodeURIComponent(id)));
+  youtubeUploadCancel = (id: string) => this.call<YouTubeUploadJob>('POST', API_ROUTES.youtubeUploadCancel.replace(':id', encodeURIComponent(id)));
 
   roomHost = (password?: string) => this.call<RoomInfo>('POST', API_ROUTES.roomHost, { password });
   roomJoin = (body: Record<string, unknown>) => this.call<RoomInfo>('POST', API_ROUTES.roomJoin, body);
