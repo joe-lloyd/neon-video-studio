@@ -61,7 +61,7 @@ import {
   UpdateTrackRequestSchema,
 } from './schemas.ts';
 import { ThumbnailAddLayerRequestSchema, ThumbnailBackgroundRequestSchema, ThumbnailMoveLayerRequestSchema, ThumbnailRenderRequestSchema, ThumbnailUpdateLayerRequestSchema } from './thumbnail.ts';
-import { YouTubeClientRequestSchema, YouTubeLoginRequestSchema, YouTubeUploadRequestSchema } from './youtube.ts';
+import { YouTubeThumbnailRequestSchema, YouTubeClientRequestSchema, YouTubeLoginRequestSchema, YouTubeUploadRequestSchema } from './youtube.ts';
 
 export type RouteSpec =
   /** JSON response, no body. */
@@ -178,6 +178,8 @@ export const API_CATALOG: { readonly [K in ApiRouteKey]: RouteSpec } = {
   youtubeUpload: { method: 'POST', summary: 'Upload a file, or render the timeline and upload it, with YouTube metadata; poll GET /api/youtube/uploads/:id', body: YouTubeUploadRequestSchema, notInBatch: JOB },
   youtubeUploadJob: { method: 'GET', summary: 'One YouTube upload job' },
   youtubeUploadCancel: { method: 'POST', summary: 'Cancel a YouTube upload (and its render)', body: null, notInBatch: JOB },
+  youtubeVideos: { method: 'GET', summary: 'The signed-in channel\'s 50 latest uploads' },
+  youtubeThumbnail: { method: 'POST', summary: 'Set the thumbnail of a video already on YouTube (a file, or the project thumbnail)', body: YouTubeThumbnailRequestSchema, notInBatch: YT },
   thumbnail: { method: 'GET', summary: 'The video thumbnail: background and layers (bottom to top)' },
   thumbnailBackground: { method: 'POST', summary: 'Thumbnail background: a CSS colour, or a timeline frame', body: ThumbnailBackgroundRequestSchema },
   thumbnailLayerAdd: { method: 'POST', summary: 'Add a component (template / FX pack) or image layer on top; returns the layer', body: ThumbnailAddLayerRequestSchema },

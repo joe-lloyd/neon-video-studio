@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { RENDER_PRESETS, YOUTUBE_CATEGORIES, YouTubeCategoryIdSchema, type YouTubeCategoryId, type YouTubePrivacy, type YouTubeState, type YouTubeUploadJob, type YouTubeUploadRequestInput } from '@neon/core';
+import { RENDER_PRESETS, YOUTUBE_CATEGORIES, YouTubeCategoryIdSchema, type YouTubeCategoryId, type YouTubePrivacy, type YouTubeState, type YouTubeUploadJob, type YouTubeUploadRequestInput, type YouTubeVideo } from '@neon/core';
 import { AlertTriangle, Copy, Link, NeonIcon, Upload, X } from '@neon/icon-kit';
 import { useEditor } from '../lib/context.ts';
 import { useStoreValue } from '../lib/store.ts';
@@ -43,6 +43,8 @@ export function YouTubePublish() {
   const [useProjectThumbnail, setUseProjectThumbnail] = useState((project.thumbnail?.layers.length ?? 0) > 0);
   const [preset, setPreset] = useState('project');
   const [file, setFile] = useState('');
+  const [videos, setVideos] = useState<YouTubeVideo[] | null>(null);
+  const [settingThumb, setSettingThumb] = useState<string | null>(null);
 
   const pending = state?.auth.state === 'pending' || (state?.uploads ?? []).some(busy);
   useEffect(() => {
@@ -156,6 +158,28 @@ export function YouTubePublish() {
             <NeonIcon icon={Upload} size={14} tone="magenta" /> {file.trim() ? 'Upload to YouTube' : 'Render & upload to YouTube'}
           </button>
           {madeForKids === null ? <p className="hint" style={{ marginTop: 6 }}>Answer “made for kids” to upload.</p> : null}
+          <div className="panel-header" style={{ padding: '12px 0 6px' }}>
+            <span className="title">Your videos</span>
+            <button className="btn sm ghost" onClick={() => run(api<YouTubeVideo[]>('GET', '/api/youtube/videos').then(setVideos))}>{videos ? 'Refresh' : 'Show'}</button>
+          </div>
+          {videos?.length === 0 ? <div className="hint">No uploads yet.</div> : null}
+          {videos?.map((v) => (
+            <div key={v.id} className="list-item" style={{ cursor: 'default' }}>
+              <span style={{ flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={v.url}>{v.title}</span>
+              <span className="hint mono">{v.privacy}</span>
+              <button
+                className="btn sm"
+                disabled={settingThumb !== null}
+                title="Render the project thumbnail (Thumb tab) and set it on this video"
+                onClick={() => {
+                  setSettingThumb(v.id);
+                  run(api('POST', '/api/youtube/thumbnail', { video: v.id, projectThumbnail: true }).then(() => editor.toast('success', `Thumbnail set on “${v.title}”`)).finally(() => setSettingThumb(null)));
+                }}
+              >
+                {settingThumb === v.id ? 'Setting…' : 'Use project thumbnail'}
+              </button>
+            </div>
+          ))}
         </>
       ) : null}
       {error ? <p className="hint" style={{ color: 'var(--danger)', whiteSpace: 'pre-wrap' }}>{error}</p> : null}

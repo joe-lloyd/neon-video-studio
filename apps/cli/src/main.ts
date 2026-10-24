@@ -132,6 +132,8 @@ YOUTUBE (publish from the app · the app holds the Google sign-in · see docs/cl
       [--no-embed] [--no-notify] [--playlist ID] [--thumbnail f.png|project] [--metadata meta.json] [--preset ID --from T --to T] [--no-wait]
       Without a file: render the timeline, then upload it (one job). --ai-content = YouTube's altered/synthetic disclosure.
   youtube job <id> | youtube cancel <id>  One upload's progress, URL and warnings · cancel it (and its render)
+  youtube videos                          The channel's latest uploads (id, visibility, date, title)
+  youtube thumbnail <video> <file.png|project>   Set the thumbnail of a video already on YouTube (id or link)
   youtube categories                      Category ids for --category
   youtube client --client-id ID --client-secret S | youtube client --reset   Use your own Google Cloud OAuth client
 

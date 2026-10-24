@@ -89,6 +89,36 @@ export const YouTubeUploadRequestSchema = z.object({
 export type YouTubeUploadRequest = z.infer<typeof YouTubeUploadRequestSchema>;
 export type YouTubeUploadRequestInput = z.input<typeof YouTubeUploadRequestSchema>;
 
+/** A video id from an id, a youtu.be / watch / shorts link, or a YouTube Studio link; null if none. */
+export function youtubeVideoId(input: string): string | null {
+  const s = input.trim();
+  if (/^[\w-]{11}$/.test(s)) return s;
+  const match = /(?:youtu\.be\/|[?&]v=|\/shorts\/|\/video\/|\/embed\/)([\w-]{11})/.exec(s);
+  return match ? match[1]! : null;
+}
+
+/** Set the thumbnail of a video already on YouTube. */
+export const YouTubeThumbnailRequestSchema = z
+  .object({
+    video: z.string().min(1).describe('Video id or link'),
+    /** PNG or JPEG (absolute or relative to the project). */
+    thumbnail: z.string().min(1).optional(),
+    /** Render the project's thumbnail and use it. */
+    projectThumbnail: z.boolean().default(false),
+  })
+  .refine((r) => youtubeVideoId(r.video) !== null, { path: ['video'], message: 'not a YouTube video id or link' })
+  .refine((r) => r.projectThumbnail !== (r.thumbnail !== undefined), { path: ['thumbnail'], message: 'pass a thumbnail file or projectThumbnail (one of them)' });
+export type YouTubeThumbnailRequest = z.infer<typeof YouTubeThumbnailRequestSchema>;
+
+/** One of the signed-in channel's uploads (GET /api/youtube/videos). */
+export interface YouTubeVideo {
+  id: string;
+  title: string;
+  privacy: string;
+  publishedAt: string;
+  url: string;
+}
+
 export const YouTubeLoginRequestSchema = z.object({
   /** Open the consent page in the app machine's browser (default). False: just return the URL. */
   open: z.boolean().default(true),
