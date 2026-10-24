@@ -325,6 +325,28 @@ runtime** (render worker + compositions + bundler, published with every release)
 `renderRuntimeDir` in `~/.neon-video/settings.json` or the `NEON_RENDER_RUNTIME_DIR` env var;
 running from a source checkout keeps using the repo directly.
 
+## Thumbnails
+
+Each project has one video thumbnail, 1280×720. It is built like the timeline's FX: component
+layers from the built-in templates and FX packs, plus imported images, over a timeline frame or
+a solid colour. The Thumb tab shows it live; the CLI edits the same layers.
+
+```bash
+neon-cli thumbnail background --at 1:05             # the timeline at 1:05 under the layers
+neon-cli thumbnail background --color '#101018'     # or a solid colour
+neon-cli thumbnail add --component TitleCard --props '{"title":"Neon in 60s"}' --pos 0.5,0.4 --scale 0.9
+neon-cli thumbnail add --asset logo.png --pos 0.88,0.82 --scale 0.25
+neon-cli thumbnail                                  # background + layers, 0 = bottom
+neon-cli thumbnail update 1 --props '{"subtitle":"A local-first editor"}' --rotation -4
+neon-cli thumbnail move "Title Card" --to 1 · thumbnail remove <layer...>
+neon-cli thumbnail render --out thumb.png           # the PNG, to look at or upload
+neon-cli youtube upload --title "…" --no-kids --thumbnail project   # render it and set it on the video
+```
+
+`<layer>` is an id, an id prefix, a name, or the `#` from `thumbnail`. `--props` merge into the
+layer's current props and are checked against the template's schema (`neon-cli templates <Name>`).
+Layers are drawn a few seconds into their clip, so a template's entrance animation has finished.
+
 ## Publishing to YouTube
 
 Sign in once, then upload a finished file or let the app render the timeline and upload the
@@ -336,7 +358,7 @@ neon-cli youtube login                       # Google's consent page opens on th
 neon-cli youtube status                      # signed-in channel and recent uploads
 neon-cli youtube upload --title "Neon in 60 seconds" --no-kids --privacy unlisted \
   --description-file notes.md --tags "video editor,typescript" --ai-content --playlist PL123
-neon-cli youtube upload demo.mp4 --title "Demo" --no-kids --thumbnail thumb.png
+neon-cli youtube upload demo.mp4 --title "Demo" --no-kids --thumbnail thumb.png   # or --thumbnail project
 neon-cli youtube upload --metadata meta.json --preset 1080p30 --from 0:10 --to 2:00 --no-wait
 neon-cli youtube job <id> · youtube cancel <id> · youtube categories · youtube logout
 ```

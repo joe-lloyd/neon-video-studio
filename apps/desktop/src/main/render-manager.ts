@@ -83,11 +83,11 @@ export class RenderManager {
    * Render a still or contact sheet through the same queue and resolve when the PNG exists.
    * `output` is relative to the project; the default is <NEON_HOME>/stills/<project>-<tc>.png.
    */
-  capture(target: StillTarget, output?: string): Promise<StillResult> {
-    const project = this.deps.getProject();
+  capture(target: StillTarget, output?: string, opts: { project?: Project; defaultName?: string } = {}): Promise<StillResult> {
+    const project = opts.project ?? this.deps.getProject();
     if (project.clips.length === 0) throw new Error('Timeline is empty — nothing to capture');
     const frames = captureFrames(target);
-    const outputPath = output ? resolve(this.deps.projectDir(), output) : join(paths.stills(), stillFileName(project.meta.name, project.meta.fps, frames));
+    const outputPath = output ? resolve(this.deps.projectDir(), output) : join(paths.stills(), opts.defaultName ?? stillFileName(project.meta.name, project.meta.fps, frames));
     return new Promise((settle, reject) => {
       this.enqueue({ ...target, outputPath }, project, target.kind, (outcome) => {
         if (outcome.ok) settle({ path: outcome.result.outputPath, frames, width: outcome.result.width, height: outcome.result.height });
