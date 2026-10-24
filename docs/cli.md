@@ -361,6 +361,8 @@ neon-cli youtube upload --title "Neon in 60 seconds" --no-kids --privacy unliste
 neon-cli youtube upload demo.mp4 --title "Demo" --no-kids --thumbnail thumb.png   # or --thumbnail project
 neon-cli youtube upload --metadata meta.json --preset 1080p30 --from 0:10 --to 2:00 --no-wait
 neon-cli youtube job <id> · youtube cancel <id> · youtube categories · youtube logout
+neon-cli youtube videos                      # the channel's latest uploads
+neon-cli youtube thumbnail ZcgPzZ0oG0o project   # set the project thumbnail on a video already on YouTube
 ```
 
 - YouTube requires `--kids` or `--no-kids` on every upload. `--ai-content` sets YouTube's
@@ -370,6 +372,8 @@ neon-cli youtube job <id> · youtube cancel <id> · youtube categories · youtub
 - `--metadata meta.json` takes the fields of `POST /api/youtube/upload`'s `metadata`
   (`neon-cli schema` prints them); flags win over the file.
 - Without a file, `upload` renders the timeline with `--preset/--from/--to`, then uploads it.
+- `youtube thumbnail <video> <file.png|project>` takes an id or any YouTube link. In the app,
+  the Render panel's "Your videos" list has a "Use project thumbnail" button for each upload.
 - A thumbnail or playlist that fails does not fail the upload; it shows up as a warning on the
   job. Custom thumbnails need a phone-verified channel (youtube.com/verify).
 

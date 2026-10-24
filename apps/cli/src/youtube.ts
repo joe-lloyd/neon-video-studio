@@ -5,6 +5,7 @@
  *   youtube client --client-id ID --client-secret S | youtube client --reset
  *   youtube upload [<file.mp4>] --title T (--kids|--no-kids) [metadata flags] [--preset ID --from T --to T] [--no-wait]
  *   youtube job <id> | youtube cancel <id>
+ *   youtube videos | youtube thumbnail <video|link> <file.png|project>
  *
  * Without a file, upload renders the timeline first (one job). The app holds the Google tokens;
  * the CLI only talks to the control API.
@@ -180,6 +181,18 @@ export async function youtubeCommand(api: NeonClient, sub: string | undefined, r
       io.out(job, () => describeUpload(job));
       return;
     }
+    case 'videos': {
+      const videos = await api.youtubeVideos();
+      io.out(videos, () => (videos.length ? videos.map((v) => `${v.id}  ${v.privacy.padEnd(8)} ${v.publishedAt.slice(0, 10)}  ${v.title}`).join('\n') : 'No uploads on this channel yet'));
+      return;
+    }
+    case 'thumbnail': {
+      const [video, source] = rest;
+      if (!video || !source) throw new ApiError('USAGE', 'usage: neon-cli youtube thumbnail <video id|link> <file.png|project>   (project = the project thumbnail, see neon-cli thumbnail)');
+      const r = await api.youtubeThumbnail(source === 'project' ? { video, projectThumbnail: true } : { video, thumbnail: io.appPath(source) });
+      io.out(r, () => `Thumbnail set on ${r.url} (${r.thumbnail})`);
+      return;
+    }
     case 'job': {
       if (!rest[0]) throw new ApiError('USAGE', 'usage: neon-cli youtube job <id>');
       const job = await api.youtubeUpload(rest[0]);
@@ -193,6 +206,6 @@ export async function youtubeCommand(api: NeonClient, sub: string | undefined, r
       return;
     }
     default:
-      throw new ApiError('USAGE', `Unknown subcommand "youtube ${sub}" (status, login, logout, client, upload, job, cancel, categories)`);
+      throw new ApiError('USAGE', `Unknown subcommand "youtube ${sub}" (status, login, logout, client, upload, videos, thumbnail, job, cancel, categories)`);
   }
 }

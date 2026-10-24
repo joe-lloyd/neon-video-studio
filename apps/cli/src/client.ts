@@ -1,7 +1,7 @@
 /** Typed HTTP client for the desktop app's control API. */
 import { API_ROUTES, parseTimecode, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type CaptureDevices, type CaptureStartBody, type CaptureState, type ImportAssetResponse, type ListResponse, type RecentProject, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary, type SheetRequestInput, type StillRequestInput, type StillResult } from '@neon/core';
 import { isProcessAlive, readInstanceInfo } from '@neon/core/node';
-import type { Asset, BatchRequest, BatchResult, Clip, Project, Script, ScriptOp, Track, YouTubeAuth, YouTubeClientRequest, YouTubeState, YouTubeUploadJob, Thumbnail, ThumbnailLayer, ThumbnailAddLayerInput, ClipTransform } from '@neon/core';
+import type { Asset, BatchRequest, BatchResult, Clip, Project, Script, ScriptOp, Track, YouTubeAuth, YouTubeClientRequest, YouTubeState, YouTubeUploadJob, YouTubeVideo, Thumbnail, ThumbnailLayer, ThumbnailAddLayerInput, ClipTransform } from '@neon/core';
 import type { YouTubeUploadBody } from './youtube.ts';
 
 export class ApiError extends Error {
@@ -109,6 +109,8 @@ export class NeonClient {
   youtubeLogin = (body: { open: boolean }) => this.call<{ authUrl: string }>('POST', API_ROUTES.youtubeLogin, body);
   youtubeLogout = () => this.call<YouTubeAuth>('POST', API_ROUTES.youtubeLogout, {});
   youtubeClient = (body: YouTubeClientRequest) => this.call<YouTubeAuth>('POST', API_ROUTES.youtubeClient, body);
+  youtubeVideos = () => this.call<YouTubeVideo[]>('GET', API_ROUTES.youtubeVideos);
+  youtubeThumbnail = (body: { video: string; thumbnail?: string; projectThumbnail?: boolean }) => this.call<{ videoId: string; url: string; thumbnail: string }>('POST', API_ROUTES.youtubeThumbnail, body);
   youtubeUploadStart = (body: YouTubeUploadBody) => this.call<YouTubeUploadJob>('POST', API_ROUTES.youtubeUpload, body);
   youtubeUpload = (id: string) => this.call<YouTubeUploadJob>('GET', API_ROUTES.youtubeUploadJob.replace(':id', encodeURIComponent(id)));
   youtubeUploadCancel = (id: string) => this.call<YouTubeUploadJob>('POST', API_ROUTES.youtubeUploadCancel.replace(':id', encodeURIComponent(id)));
