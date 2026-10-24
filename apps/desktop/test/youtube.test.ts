@@ -23,6 +23,7 @@ async function fakeGoogle(opts: { failFirstChunk?: boolean; thumbnailStatus?: nu
     thumbnails: 0,
     playlistItems: [] as unknown[],
     revoked: [] as string[],
+    statusUpdates: [] as unknown[],
   };
   let failNext = opts.failFirstChunk ?? false;
   const body = (req: IncomingMessage) =>
@@ -91,6 +92,10 @@ async function fakeGoogle(opts: { failFirstChunk?: boolean; thumbnailStatus?: nu
     if (req.method === 'POST' && url.pathname === '/upload/thumbnails/set') {
       seen.thumbnails++;
       if ((opts.thumbnailStatus ?? 200) !== 200) return json(res, opts.thumbnailStatus ?? 403, { error: { message: 'The authenticated user doesnt have permissions to upload and set custom video thumbnails.', errors: [{ reason: 'forbidden' }] } });
+      return json(res, 200, {});
+    }
+    if (req.method === 'PUT' && url.pathname === '/api/videos' && url.search === '?part=status') {
+      seen.statusUpdates.push(JSON.parse(raw.toString()));
       return json(res, 200, {});
     }
     if (req.method === 'POST' && url.pathname === '/api/playlistItems') {
@@ -239,8 +244,9 @@ test('upload: metadata becomes the video resource, the file streams in resumable
     assert.equal(google.seen.uploadHeaders['x-upload-content-length'], String(video.length));
     assert.deepEqual(google.seen.videoResource, {
       snippet: { title: 'Neon Video Studio in 60 seconds', description: 'What it does.', tags: ['video editor', 'typescript'], categoryId: '28', defaultLanguage: 'en', defaultAudioLanguage: 'en' },
-      status: { privacyStatus: 'unlisted', selfDeclaredMadeForKids: false, containsSyntheticMedia: true, license: 'youtube', embeddable: true },
+      status: { privacyStatus: 'unlisted', selfDeclaredMadeForKids: false, containsSyntheticMedia: true },
     });
+    assert.deepEqual(google.seen.statusUpdates, [], 'default license and embedding need no follow-up update');
     assert.deepEqual(google.seen.playlistItems, [{ snippet: { playlistId: 'PL1', resourceId: { kind: 'youtube#video', videoId: 'vid123' } } }]);
     assert.equal(google.seen.thumbnails, 1);
     assert.deepEqual(done.warnings, [
@@ -273,7 +279,25 @@ test('upload: source "timeline" renders first, mirrors render progress, then upl
     const done = await finished(yt, job.id);
     assert.equal(done.status, 'done', done.error ?? '');
     assert.equal(done.filePath, out);
+    assert.deepEqual(google.seen.statusUpdates, []);
     assert.equal(google.seen.received.toString(), 'tiny video');
+  } finally {
+    await cleanup();
+    await google.close();
+  }
+});
+
+test('upload: a Creative Commons, non-embeddable video gets its license in a follow-up update, so the insert keeps its tags', async () => {
+  const google = await fakeGoogle();
+  const { yt, dir, cleanup } = await setup(google);
+  try {
+    await consent((await yt.login({ open: false })).authUrl, google);
+    await writeFile(join(dir, 'cc.mp4'), Buffer.from('cc video'));
+    const metadata = YouTubeMetadataSchema.parse({ title: 'CC', tags: ['a'], madeForKids: false, license: 'creativeCommon', embeddable: false });
+    const done = await finished(yt, (await yt.upload({ source: { kind: 'file', path: 'cc.mp4' }, metadata })).id);
+    assert.equal(done.status, 'done', done.error ?? '');
+    assert.deepEqual(google.seen.videoResource, { snippet: { title: 'CC', description: '', tags: ['a'], categoryId: '28' }, status: { privacyStatus: 'private', selfDeclaredMadeForKids: false, containsSyntheticMedia: false } });
+    assert.deepEqual(google.seen.statusUpdates, [{ id: 'vid123', status: { privacyStatus: 'private', selfDeclaredMadeForKids: false, containsSyntheticMedia: false, license: 'creativeCommon', embeddable: false } }]);
   } finally {
     await cleanup();
     await google.close();

@@ -145,7 +145,13 @@ export interface YouTubeState {
   uploads: YouTubeUploadJob[];
 }
 
-/** The YouTube Data API `video` resource for videos.insert (snippet + status parts). */
+/**
+ * The YouTube Data API `video` resource for videos.insert (snippet + status parts).
+ *
+ * license and embeddable are left out: YouTube silently drops the tags of an insert whose status
+ * carries them (seen 2026-10). videoStatusUpdate() sets them afterwards when they differ from
+ * YouTube's defaults.
+ */
 export function toVideoResource(m: YouTubeMetadata): { snippet: Record<string, unknown>; status: Record<string, unknown> } {
   return {
     snippet: {
@@ -160,10 +166,15 @@ export function toVideoResource(m: YouTubeMetadata): { snippet: Record<string, u
       ...(m.publishAt ? { publishAt: m.publishAt } : {}),
       selfDeclaredMadeForKids: m.madeForKids,
       containsSyntheticMedia: m.containsSyntheticMedia,
-      license: m.license,
-      embeddable: m.embeddable,
     },
   };
+}
+
+/** The videos.update body that applies license/embeddable after upload; null when both are YouTube's defaults. */
+export function videoStatusUpdate(videoId: string, m: YouTubeMetadata): { id: string; status: Record<string, unknown> } | null {
+  if (m.license === 'youtube' && m.embeddable) return null;
+  // videos.update replaces the whole status part, so resend what the insert set.
+  return { id: videoId, status: { ...toVideoResource(m).status, license: m.license, embeddable: m.embeddable } };
 }
 
 export function youtubeWatchUrl(videoId: string): string {

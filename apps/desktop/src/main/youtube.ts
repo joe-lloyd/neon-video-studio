@@ -14,6 +14,7 @@ import { z } from 'zod';
 import {
   newId,
   toVideoResource,
+  videoStatusUpdate,
   youtubeWatchUrl,
   type RenderJob,
   type YouTubeAuth,
@@ -427,6 +428,11 @@ export class YouTubeManager {
       const video = await this.uploadVideo(job, filePath, metadata, opts.signal);
       this.update(job, { status: 'finishing', videoId: video.id, url: youtubeWatchUrl(video.id), progress: 1 });
       const warnings = [...job.warnings];
+      const statusUpdate = videoStatusUpdate(video.id, metadata);
+      if (statusUpdate) {
+        const warning = await this.updateStatus(statusUpdate, opts.signal);
+        if (warning) warnings.push(warning);
+      }
       if (opts.thumbnail) {
         const warning = await this.setThumbnail(video.id, opts.thumbnail, opts.signal);
         if (warning) warnings.push(warning);
@@ -542,6 +548,18 @@ export class YouTubeManager {
     } catch (err) {
       if (signal.aborted) throw err;
       return `Setting the thumbnail failed: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+
+  private async updateStatus(body: { id: string; status: Record<string, unknown> }, signal: AbortSignal): Promise<string | null> {
+    try {
+      const res = await this.authed(`${this.endpoints.api}/videos?part=status`, { method: 'PUT', signal, headers: { 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify(body) });
+      if (!res.ok) return (await googleError(res, 'Setting the license and embedding')).message;
+      await res.body?.cancel();
+      return null;
+    } catch (err) {
+      if (signal.aborted) throw err;
+      return `Setting the license and embedding failed: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
