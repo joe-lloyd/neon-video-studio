@@ -42,7 +42,7 @@ function youtubeClient(configured: OAuthClient | undefined): OAuthClient | null 
   return BUILT_IN_YOUTUBE_CLIENT.clientId && BUILT_IN_YOUTUBE_CLIENT.clientSecret ? BUILT_IN_YOUTUBE_CLIENT : null;
 }
 
-export const VERSION = '0.15.0';
+export const VERSION = '0.16.0';
 
 export interface Core {
   ctx: MainContext;
