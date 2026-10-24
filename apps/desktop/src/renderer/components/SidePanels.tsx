@@ -44,6 +44,7 @@ import { kbdFor } from '../lib/kbd.ts';
 import { AiPanel } from './AiPanel.tsx';
 import { FxPanel } from './FxPanel.tsx';
 import { ScriptPanel } from './ScriptPanel.tsx';
+import { YouTubePublish } from './YouTubePanel.tsx';
 import { useSelector, useStoreValue, type Panel } from '../lib/store.ts';
 
 const TABS: { id: Panel; label: string; icon: LucideIcon }[] = [
@@ -617,6 +618,8 @@ function RendersPanel() {
         <RenderControls />
         <div className="panel-header" style={{ padding: '10px 0 6px' }}><span className="title">Jobs</span></div>
         <RenderJobs />
+        <div className="panel-header" style={{ padding: '14px 0 6px' }}><span className="title">YouTube</span></div>
+        <YouTubePublish />
       </div>
     </>
   );

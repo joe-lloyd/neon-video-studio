@@ -56,6 +56,19 @@ export class RenderManager {
   }
 
   start(opts: StartRenderOptions): RenderJob {
+    return this.startVideo(opts, () => undefined);
+  }
+
+  /** Start a video render and get a promise of the finished file (for render-then-upload). */
+  startAndWait(opts: StartRenderOptions): { job: RenderJob; finished: Promise<string> } {
+    let settle: Queued['settle'] = () => undefined;
+    const finished = new Promise<string>((resolve, reject) => {
+      settle = (outcome) => (outcome.ok ? resolve(outcome.result.outputPath) : reject(outcome.error));
+    });
+    return { job: this.startVideo(opts, (outcome) => settle(outcome)), finished };
+  }
+
+  private startVideo(opts: StartRenderOptions, settle: Queued['settle']): RenderJob {
     const project = this.deps.getProject();
     const preset = !opts.presetId || opts.presetId === 'project' ? projectPreset(project.meta) : getPreset(opts.presetId);
     if (project.clips.length === 0) throw new Error('Timeline is empty — nothing to render');
@@ -63,7 +76,7 @@ export class RenderManager {
     const outputPath = opts.outputPath
       ? resolve(this.deps.projectDir(), opts.outputPath)
       : join(paths.renders(), defaultName);
-    return this.enqueue({ kind: 'video', outputPath, preset, frameRange: opts.frameRange ?? null }, project, preset.id, () => undefined);
+    return this.enqueue({ kind: 'video', outputPath, preset, frameRange: opts.frameRange ?? null }, project, preset.id, settle);
   }
 
   /**

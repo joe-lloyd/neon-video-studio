@@ -18,12 +18,12 @@
   },
   "dependencies": {
     "@neon/ai": "workspace:*",
+    "@neon/compositions": "workspace:*",
     "@neon/core": "workspace:*",
     "@neon/fx-kit": "workspace:*",
     "@neon/icon-kit": "workspace:*",
     "@neon/motion": "workspace:*",
     "@neon/p2p": "workspace:*",
-    "@neon/compositions": "workspace:*",
     "@neon/render": "workspace:*",
     "lucide-react": "^1.0.0",
     "react": "^19.1.0",
@@ -31,7 +31,8 @@
     "y-protocols": "^1.0.6",
     "y-webrtc": "^10.3.0",
     "y-websocket": "^3.0.0",
-    "yjs": "^13.6.27"
+    "yjs": "^13.6.27",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",

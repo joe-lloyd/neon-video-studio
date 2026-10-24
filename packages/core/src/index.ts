@@ -15,3 +15,4 @@ export * from './api.ts';
 export * from './api-catalog.ts';
 export * from './batch.ts';
 export * from './theme.ts';
+export * from './youtube.ts';

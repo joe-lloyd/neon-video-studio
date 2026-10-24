@@ -9,6 +9,10 @@ import { basename } from 'node:path';
 import {
   ZodError,
   API_ROUTES,
+  YouTubeClientRequestSchema,
+  YouTubeLoginRequestSchema,
+  YouTubeUploadRequestSchema,
+  type YouTubeState,
   BatchRequestSchema,
   IdRequestSchema,
   checkBatchRoute,
@@ -87,6 +91,7 @@ import { WAVEFORM_RATE } from './waveforms.ts';
 import type { SignalSocket, SyncSocket } from '@neon/p2p/server';
 import { ffprobeAvailable } from './assets.ts';
 import type { MainContext } from './context.ts';
+import { saveSettings } from './settings.ts';
 import { sseFrame } from './events.ts';
 import { ProjectStore, deleteProject, recentProjects } from './project-store.ts';
 import { cancelCapture, startCapture, stopCapture } from './screen-recorder.ts';
@@ -542,6 +547,36 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
   if (key === `POST ${API_ROUTES.renderStill}` || key === `POST ${API_ROUTES.renderSheet}`) {
     const { target, output } = parseCapture(path === API_ROUTES.renderStill ? 'still' : 'sheet', body, fps, doc.durationFrames());
     return ctx.renders.capture(target, output);
+  }
+
+  // YouTube publishing (sign-in + upload jobs; see youtube.ts).
+  if (key === `GET ${API_ROUTES.youtube}`) return { auth: ctx.youtube.auth(), loginError: ctx.youtube.lastLoginError(), uploads: ctx.youtube.list() } satisfies YouTubeState;
+  if (key === `POST ${API_ROUTES.youtubeLogin}`) return ctx.youtube.login(YouTubeLoginRequestSchema.parse(body));
+  if (key === `POST ${API_ROUTES.youtubeLogout}`) {
+    const auth = await ctx.youtube.logout();
+    ctx.events.activity('youtube', 'youtube.logout', 'Signed out of YouTube');
+    return auth;
+  }
+  if (key === `POST ${API_ROUTES.youtubeClient}`) {
+    const req = YouTubeClientRequestSchema.parse(body);
+    if ('reset' in req) delete ctx.settings.youtubeClient;
+    else ctx.settings.youtubeClient = { clientId: req.clientId, clientSecret: req.clientSecret };
+    await saveSettings(ctx.settings);
+    ctx.events.activity('youtube', 'youtube.client', 'reset' in req ? 'YouTube: back to the built-in OAuth client' : 'YouTube: using your own OAuth client');
+    return ctx.youtube.auth();
+  }
+  if (key === `POST ${API_ROUTES.youtubeUpload}`) {
+    const job = await ctx.youtube.upload(YouTubeUploadRequestSchema.parse(body));
+    ctx.events.activity('youtube', 'youtube.upload', `Uploading “${job.title}” to YouTube (${job.privacy})${job.renderJobId ? ' after rendering the timeline' : ''}`, { jobId: job.id });
+    return job;
+  }
+  const youtubeMatch = /^(?:GET \/api\/youtube\/uploads\/([^/]+)|POST \/api\/youtube\/uploads\/([^/]+)\/cancel)$/.exec(key);
+  if (youtubeMatch) {
+    const cancelId = youtubeMatch[2];
+    const id = decodeURIComponent(cancelId ?? youtubeMatch[1]!);
+    const job = cancelId ? ctx.youtube.cancel(id) : ctx.youtube.get(id);
+    if (!job) throw new HttpError(404, 'NOT_FOUND', `YouTube upload ${id} not found`);
+    return job;
   }
 
   // Dynamic render routes.

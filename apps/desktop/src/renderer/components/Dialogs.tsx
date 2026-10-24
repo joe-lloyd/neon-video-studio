@@ -3,6 +3,7 @@ import { useEditor } from '../lib/context.ts';
 import { kbdFor, type Kbd } from '../lib/kbd.ts';
 import { useSelector } from '../lib/store.ts';
 import { RenderControls, RenderJobs } from './SidePanels.tsx';
+import { YouTubePublish } from './YouTubePanel.tsx';
 
 export function Dialogs() {
   const editor = useEditor();
@@ -18,6 +19,8 @@ export function Dialogs() {
             <RenderControls compact />
             <div className="panel-header" style={{ padding: '12px 0 6px' }}><span className="title">Jobs</span></div>
             <RenderJobs />
+            <div className="panel-header" style={{ padding: '14px 0 6px' }}><span className="title">YouTube</span></div>
+            <YouTubePublish />
           </>
         ) : null}
         {dialog === 'room' ? <JoinRoomForm onDone={close} /> : null}
