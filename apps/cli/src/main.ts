@@ -23,6 +23,7 @@ import { batchFailure, formatApplied, formatPlanCheck, loadPlan, readJsonArg } f
 import { formatTimeline, timelineView } from './timeline-view.ts';
 import { captionsCommand } from './captions.ts';
 import { captureCommand } from './capture.ts';
+import { youtubeCommand } from './youtube.ts';
 import { connectRemote, disconnectRemote, downloadOutput, launchRemote, remoteHost, uploadAsset } from './remote.ts';
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -111,6 +112,18 @@ AI (local engines: whisper.cpp, ffmpeg, Apple Vision; Claude optional for B-roll
   ai jobs | ai job <id> | ai cancel <id>
   preview play|pause|toggle|seek <T>      Drive the app's preview player (watch your edits play back)
   ui panel <media|fx|inspect|room|ai|script|render|live> | ui select <clip...> | ui select none | ui dialog <render|room|shortcuts|none> | ui view <edit|script>
+
+YOUTUBE (publish from the app · the app holds the Google sign-in · see docs/cli.md)
+  youtube [status]                        Signed-in channel and recent uploads
+  youtube login [--no-open]               Sign in with Google (consent page opens on the app machine)
+  youtube logout                          Forget the sign-in and revoke it at Google
+  youtube upload [<file.mp4>] --title T --kids|--no-kids [--description T|--description-file F] [--tags a,b] [--category 28]
+      [--privacy private|unlisted|public] [--publish-at ISO] [--ai-content] [--language en] [--license youtube|cc]
+      [--no-embed] [--no-notify] [--playlist ID] [--thumbnail f.png] [--metadata meta.json] [--preset ID --from T --to T] [--no-wait]
+      Without a file: render the timeline, then upload it (one job). --ai-content = YouTube's altered/synthetic disclosure.
+  youtube job <id> | youtube cancel <id>  One upload's progress, URL and warnings · cancel it (and its render)
+  youtube categories                      Category ids for --category
+  youtube client --client-id ID --client-secret S | youtube client --reset   Use your own Google Cloud OAuth client
 
 FX PACKS (folders with pack.json + index.tsx · installed to ~/.neon-video/packs · see docs/fx-packs.md)
   packs [list]                            Built-in, installed and example packs, with "in project" state
@@ -252,6 +265,26 @@ const { values: flags, positionals } = parseCli(() => parseArgs({
     'no-mic': { type: 'boolean' },
     cursor: { type: 'boolean' },
     countdown: { type: 'string' },
+    description: { type: 'string' },
+    'description-file': { type: 'string' },
+    tags: { type: 'string' },
+    category: { type: 'string' },
+    privacy: { type: 'string' },
+    'publish-at': { type: 'string' },
+    // No default: YouTube needs an explicit answer, so neither --kids nor --no-kids means "ask".
+    kids: { type: 'boolean' },
+    'ai-content': { type: 'boolean' },
+    language: { type: 'string' },
+    license: { type: 'string' },
+    embed: { type: 'boolean' },
+    notify: { type: 'boolean' },
+    playlist: { type: 'string' },
+    thumbnail: { type: 'string' },
+    metadata: { type: 'string' },
+    open: { type: 'boolean' },
+    'client-id': { type: 'string' },
+    'client-secret': { type: 'string' },
+    reset: { type: 'boolean', default: false },
   },
 }));
 
@@ -1029,6 +1062,9 @@ async function main(): Promise<void> {
 
     case 'capture':
       await captureCommand(api, sub, flags, { json, out });
+      return;
+    case 'youtube':
+      await youtubeCommand(api, sub, rest, flags, { json, out, appPath });
       return;
 
     case 'ai': {

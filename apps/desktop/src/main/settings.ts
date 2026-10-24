@@ -14,6 +14,8 @@ export interface Settings {
    * (downloaded automatically on first render). NEON_RENDER_RUNTIME_DIR beats this.
    */
   renderRuntimeDir?: string;
+  /** Your own Google OAuth client for YouTube uploads (`neon-cli youtube client`); beats the built-in one. */
+  youtubeClient?: { clientId: string; clientSecret: string };
 }
 
 function defaults(): Settings {
