@@ -298,6 +298,13 @@ export const API_ROUTES = {
   youtubeUpload: '/api/youtube/upload',
   youtubeUploadJob: '/api/youtube/uploads/:id',
   youtubeUploadCancel: '/api/youtube/uploads/:id/cancel',
+  thumbnail: '/api/thumbnail',
+  thumbnailBackground: '/api/thumbnail/background',
+  thumbnailLayerAdd: '/api/thumbnail/layers/add',
+  thumbnailLayerUpdate: '/api/thumbnail/layers/update',
+  thumbnailLayerRemove: '/api/thumbnail/layers/remove',
+  thumbnailLayerMove: '/api/thumbnail/layers/move',
+  thumbnailRender: '/api/thumbnail/render',
 } as const;
 
 export type ApiRouteKey = keyof typeof API_ROUTES;

@@ -56,7 +56,7 @@ export function createStore<T>(initial: T) {
   };
 }
 
-export type Panel = 'assets' | 'templates' | 'inspector' | 'peers' | 'renders' | 'activity' | 'ai' | 'script';
+export type Panel = 'assets' | 'templates' | 'inspector' | 'peers' | 'renders' | 'activity' | 'ai' | 'script' | 'thumbnail';
 export interface Toast {
   id: string;
   kind: 'info' | 'success' | 'error';

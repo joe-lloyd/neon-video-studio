@@ -261,7 +261,28 @@ export interface Project {
   transcripts: Transcript[];
   /** The plan for the video and its review notes. Empty until someone writes one. */
   script: Script;
+  /** The video's thumbnail (see thumbnail.ts). Absent in files from before v0.16. */
+  thumbnail?: Thumbnail;
 }
+
+/** Thumbnail background: a CSS colour, or the timeline seen at a frame. */
+export type ThumbnailBackground = { kind: 'color'; color: string } | { kind: 'frame'; frame: number };
+
+interface LayerBase {
+  id: string;
+  name: string;
+  /** Stacking: higher draws on top. */
+  order: number;
+  transform: ClipTransform;
+}
+export type ThumbnailLayer = (LayerBase & { kind: 'component'; componentName: string; props: Record<string, unknown> }) | (LayerBase & { kind: 'image'; assetId: string });
+
+export interface Thumbnail {
+  background: ThumbnailBackground;
+  /** Bottom to top. */
+  layers: ThumbnailLayer[];
+}
+
 
 /** Half-open frame range on the timeline [start, end). */
 export interface FrameRange {

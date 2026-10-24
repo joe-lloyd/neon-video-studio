@@ -24,6 +24,7 @@ import { formatTimeline, timelineView } from './timeline-view.ts';
 import { captionsCommand } from './captions.ts';
 import { captureCommand } from './capture.ts';
 import { youtubeCommand } from './youtube.ts';
+import { thumbnailCommand } from './thumbnail.ts';
 import { connectRemote, disconnectRemote, downloadOutput, launchRemote, remoteHost, uploadAsset } from './remote.ts';
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -111,7 +112,16 @@ AI (local engines: whisper.cpp, ffmpeg, Apple Vision; Claude optional for B-roll
   ai cut <asset> --words 3,7,12-15 [--audio-only]   Non-contiguous words; --audio-only mutes them in place
   ai jobs | ai job <id> | ai cancel <id>
   preview play|pause|toggle|seek <T>      Drive the app's preview player (watch your edits play back)
-  ui panel <media|fx|inspect|room|ai|script|render|live> | ui select <clip...> | ui select none | ui dialog <render|room|shortcuts|none> | ui view <edit|script>
+  ui panel <media|fx|inspect|room|ai|script|thumbnail|render|live> | ui select <clip...> | ui select none | ui dialog <render|room|shortcuts|none> | ui view <edit|script>
+
+THUMBNAIL (the video's thumbnail: template / FX-pack components and images over a timeline frame or a colour · 1280x720)
+  thumbnail [show]                        Background and layers (0 = bottom)
+  thumbnail add --component NAME [--props JSON] [--name N] [--pos x,y] [--scale S] [--rotation DEG]   Add a layer on top
+  thumbnail add --asset REF [--name N] [--pos x,y] [--scale S] [--rotation DEG]   An imported image as a layer
+  thumbnail update <layer> [--props JSON] [--name N] [--pos x,y] [--scale S] [--rotation DEG]   (props merge)
+  thumbnail move <layer> --to N | thumbnail remove <layer...>   <layer> = id, prefix, name or # from show
+  thumbnail background --color CSS | thumbnail background --at T   A colour, or the timeline at T under the layers
+  thumbnail render [--out f.png]          The PNG (default <NEON_HOME>/stills/<project>-thumbnail.png)
 
 YOUTUBE (publish from the app · the app holds the Google sign-in · see docs/cli.md)
   youtube [status]                        Signed-in channel and recent uploads
@@ -119,7 +129,7 @@ YOUTUBE (publish from the app · the app holds the Google sign-in · see docs/cl
   youtube logout                          Forget the sign-in and revoke it at Google
   youtube upload [<file.mp4>] --title T --kids|--no-kids [--description T|--description-file F] [--tags a,b] [--category 28]
       [--privacy private|unlisted|public] [--publish-at ISO] [--ai-content] [--language en] [--license youtube|cc]
-      [--no-embed] [--no-notify] [--playlist ID] [--thumbnail f.png] [--metadata meta.json] [--preset ID --from T --to T] [--no-wait]
+      [--no-embed] [--no-notify] [--playlist ID] [--thumbnail f.png|project] [--metadata meta.json] [--preset ID --from T --to T] [--no-wait]
       Without a file: render the timeline, then upload it (one job). --ai-content = YouTube's altered/synthetic disclosure.
   youtube job <id> | youtube cancel <id>  One upload's progress, URL and warnings · cancel it (and its render)
   youtube categories                      Category ids for --category
@@ -1066,6 +1076,9 @@ async function main(): Promise<void> {
     case 'youtube':
       await youtubeCommand(api, sub, rest, flags, { json, out, appPath });
       return;
+    case 'thumbnail':
+      await thumbnailCommand(api, sub, rest, flags, { json, out, appPath });
+      return;
 
     case 'ai': {
       await aiCommand(api, sub, rest);
@@ -1073,7 +1086,7 @@ async function main(): Promise<void> {
     }
 
     case 'ui': {
-      const panelAlias: Record<string, string> = { media: 'assets', assets: 'assets', fx: 'templates', templates: 'templates', inspect: 'inspector', inspector: 'inspector', room: 'peers', peers: 'peers', render: 'renders', renders: 'renders', live: 'activity', activity: 'activity', ai: 'ai', script: 'script' };
+      const panelAlias: Record<string, string> = { media: 'assets', assets: 'assets', fx: 'templates', templates: 'templates', inspect: 'inspector', inspector: 'inspector', room: 'peers', peers: 'peers', render: 'renders', renders: 'renders', live: 'activity', activity: 'activity', ai: 'ai', script: 'script', thumbnail: 'thumbnail', thumb: 'thumbnail' };
       if (sub === 'panel') {
         const panel = panelAlias[(rest[0] ?? '').toLowerCase()];
         if (!panel) throw usage('ui', 'panel');

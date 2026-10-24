@@ -60,6 +60,7 @@ import {
   UpdateMetaRequestSchema,
   UpdateTrackRequestSchema,
 } from './schemas.ts';
+import { ThumbnailAddLayerRequestSchema, ThumbnailBackgroundRequestSchema, ThumbnailMoveLayerRequestSchema, ThumbnailRenderRequestSchema, ThumbnailUpdateLayerRequestSchema } from './thumbnail.ts';
 import { YouTubeClientRequestSchema, YouTubeLoginRequestSchema, YouTubeUploadRequestSchema } from './youtube.ts';
 
 export type RouteSpec =
@@ -177,6 +178,13 @@ export const API_CATALOG: { readonly [K in ApiRouteKey]: RouteSpec } = {
   youtubeUpload: { method: 'POST', summary: 'Upload a file, or render the timeline and upload it, with YouTube metadata; poll GET /api/youtube/uploads/:id', body: YouTubeUploadRequestSchema, notInBatch: JOB },
   youtubeUploadJob: { method: 'GET', summary: 'One YouTube upload job' },
   youtubeUploadCancel: { method: 'POST', summary: 'Cancel a YouTube upload (and its render)', body: null, notInBatch: JOB },
+  thumbnail: { method: 'GET', summary: 'The video thumbnail: background and layers (bottom to top)' },
+  thumbnailBackground: { method: 'POST', summary: 'Thumbnail background: a CSS colour, or a timeline frame', body: ThumbnailBackgroundRequestSchema },
+  thumbnailLayerAdd: { method: 'POST', summary: 'Add a component (template / FX pack) or image layer on top; returns the layer', body: ThumbnailAddLayerRequestSchema },
+  thumbnailLayerUpdate: { method: 'POST', summary: 'Patch a thumbnail layer: name, props (merged), transform', body: ThumbnailUpdateLayerRequestSchema },
+  thumbnailLayerRemove: { method: 'POST', summary: 'Remove thumbnail layers by id', body: RemoveClipRequestSchema },
+  thumbnailLayerMove: { method: 'POST', summary: 'Move a thumbnail layer to an index (0 = bottom)', body: ThumbnailMoveLayerRequestSchema },
+  thumbnailRender: { method: 'POST', summary: 'Render the thumbnail to a 1280x720 PNG and wait for it', body: ThumbnailRenderRequestSchema, notInBatch: STILL },
 };
 
 export interface CatalogEntry {

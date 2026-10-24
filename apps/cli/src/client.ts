@@ -1,7 +1,7 @@
 /** Typed HTTP client for the desktop app's control API. */
 import { API_ROUTES, parseTimecode, type AiCapabilities, type AiJob, type ApiResult, type AppStatus, type CaptureDevices, type CaptureStartBody, type CaptureState, type ImportAssetResponse, type ListResponse, type RecentProject, type RenderJob, type RoomInfo, type StateResponse, type Transcript , type HistoryStatus, type PackSummary, type SheetRequestInput, type StillRequestInput, type StillResult } from '@neon/core';
 import { isProcessAlive, readInstanceInfo } from '@neon/core/node';
-import type { Asset, BatchRequest, BatchResult, Clip, Project, Script, ScriptOp, Track, YouTubeAuth, YouTubeClientRequest, YouTubeState, YouTubeUploadJob } from '@neon/core';
+import type { Asset, BatchRequest, BatchResult, Clip, Project, Script, ScriptOp, Track, YouTubeAuth, YouTubeClientRequest, YouTubeState, YouTubeUploadJob, Thumbnail, ThumbnailLayer, ThumbnailAddLayerInput, ClipTransform } from '@neon/core';
 import type { YouTubeUploadBody } from './youtube.ts';
 
 export class ApiError extends Error {
@@ -112,6 +112,14 @@ export class NeonClient {
   youtubeUploadStart = (body: YouTubeUploadBody) => this.call<YouTubeUploadJob>('POST', API_ROUTES.youtubeUpload, body);
   youtubeUpload = (id: string) => this.call<YouTubeUploadJob>('GET', API_ROUTES.youtubeUploadJob.replace(':id', encodeURIComponent(id)));
   youtubeUploadCancel = (id: string) => this.call<YouTubeUploadJob>('POST', API_ROUTES.youtubeUploadCancel.replace(':id', encodeURIComponent(id)));
+
+  thumbnail = () => this.call<Thumbnail>('GET', API_ROUTES.thumbnail);
+  thumbnailBackground = (body: { color: string } | { at: string }) => this.call<Thumbnail>('POST', API_ROUTES.thumbnailBackground, body);
+  thumbnailAdd = (body: ThumbnailAddLayerInput) => this.call<ThumbnailLayer>('POST', API_ROUTES.thumbnailLayerAdd, body);
+  thumbnailUpdate = (body: { id: string; patch: { name?: string; props?: Record<string, unknown>; transform?: Partial<ClipTransform> } }) => this.call<ThumbnailLayer>('POST', API_ROUTES.thumbnailLayerUpdate, body);
+  thumbnailRemove = (body: { ids: string[] }) => this.call<{ removed: string[] }>('POST', API_ROUTES.thumbnailLayerRemove, body);
+  thumbnailMove = (body: { id: string; index: number }) => this.call<Thumbnail>('POST', API_ROUTES.thumbnailLayerMove, body);
+  thumbnailRender = (body: { output?: string }) => this.call<StillResult>('POST', API_ROUTES.thumbnailRender, body);
 
   roomHost = (password?: string) => this.call<RoomInfo>('POST', API_ROUTES.roomHost, { password });
   roomJoin = (body: Record<string, unknown>) => this.call<RoomInfo>('POST', API_ROUTES.roomJoin, body);
