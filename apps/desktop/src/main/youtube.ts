@@ -22,6 +22,7 @@ import {
   type YouTubeMetadata,
   type YouTubeUploadJob,
   type YouTubeUploadRequest,
+  type YouTubeVideo,
 } from '@neon/core';
 
 export interface OAuthClient {
@@ -94,6 +95,12 @@ const ChannelListSchema = z.object({
 const VideoSchema = z.object({
   id: z.string(),
   status: z.object({ privacyStatus: z.string().optional(), uploadStatus: z.string().optional(), rejectionReason: z.string().optional() }).optional(),
+});
+
+const UploadsPlaylistSchema = z.object({ items: z.array(z.object({ contentDetails: z.object({ relatedPlaylists: z.object({ uploads: z.string() }) }) })).default([]) });
+const PlaylistItemsSchema = z.object({ items: z.array(z.object({ contentDetails: z.object({ videoId: z.string() }) })).default([]) });
+const VideoListSchema = z.object({
+  items: z.array(z.object({ id: z.string(), snippet: z.object({ title: z.string(), publishedAt: z.string() }), status: z.object({ privacyStatus: z.string() }) })).default([]),
 });
 
 const GoogleErrorSchema = z.object({
@@ -330,6 +337,33 @@ export class YouTubeManager {
     for (const id of [...this.running.keys()]) this.cancel(id);
   }
 
+  /** The channel's latest uploads, newest first (3 quota units). */
+  async videos(): Promise<YouTubeVideo[]> {
+    if (this.auth().state !== 'signed-in') throw new Error('Not signed in to YouTube — run `neon-cli youtube login`');
+    const get = async <T>(path: string, schema: z.ZodType<T>, what: string): Promise<T> => {
+      const res = await this.authed(`${this.endpoints.api}/${path}`, { method: 'GET' });
+      if (!res.ok) throw await googleError(res, what);
+      return schema.parse(await res.json());
+    };
+    const uploads = (await get('channels?part=contentDetails&mine=true', UploadsPlaylistSchema, 'Reading your channel')).items[0]?.contentDetails.relatedPlaylists.uploads;
+    if (!uploads) return [];
+    const ids = (await get(`playlistItems?part=contentDetails&maxResults=50&playlistId=${encodeURIComponent(uploads)}`, PlaylistItemsSchema, 'Listing your uploads')).items.map((i) => i.contentDetails.videoId);
+    if (ids.length === 0) return [];
+    const videos = (await get(`videos?part=snippet,status&id=${ids.join(',')}`, VideoListSchema, 'Reading your videos')).items;
+    return videos
+      .map((v) => ({ id: v.id, title: v.snippet.title, privacy: v.status.privacyStatus, publishedAt: v.snippet.publishedAt, url: youtubeWatchUrl(v.id) }))
+      .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
+  }
+
+  /** Set the thumbnail of a video already on YouTube; throws with Google's reason when it is refused. */
+  async setVideoThumbnail(videoId: string, path: string): Promise<{ videoId: string; url: string }> {
+    if (this.auth().state !== 'signed-in') throw new Error('Not signed in to YouTube — run `neon-cli youtube login`');
+    if (!THUMBNAIL_TYPES[extname(path).toLowerCase()]) throw new Error('thumbnail must be a .png or .jpg file');
+    await assertFile(path, 'thumbnail');
+    await this.postThumbnail(videoId, path, new AbortController().signal);
+    return { videoId, url: youtubeWatchUrl(videoId) };
+  }
+
   // ---- internals ------------------------------------------------------------------------
 
   private requireClient(): OAuthClient {
@@ -533,21 +567,29 @@ export class YouTubeManager {
     await raceAbort(new Promise((r) => setTimeout(r, ms)), signal);
   }
 
+  private async postThumbnail(videoId: string, path: string, signal: AbortSignal): Promise<void> {
+    const res = await this.authed(`${this.endpoints.upload}/thumbnails/set?videoId=${encodeURIComponent(videoId)}`, {
+      method: 'POST',
+      signal,
+      headers: { 'Content-Type': THUMBNAIL_TYPES[extname(path).toLowerCase()] ?? 'image/png' },
+      body: await readFile(path),
+    });
+    if (!res.ok) {
+      const err = await googleError(res, 'Setting the thumbnail');
+      throw new Error(res.status === 403 ? `${err.message} (custom thumbnails need a phone-verified channel: youtube.com/verify)` : err.message);
+    }
+    await res.body?.cancel();
+  }
+
+  /** During an upload a refused thumbnail is a warning, not a failed job. */
   private async setThumbnail(videoId: string, path: string, signal: AbortSignal): Promise<string | null> {
     try {
-      const bytes = await readFile(path);
-      const res = await this.authed(`${this.endpoints.upload}/thumbnails/set?videoId=${encodeURIComponent(videoId)}`, {
-        method: 'POST',
-        signal,
-        headers: { 'Content-Type': THUMBNAIL_TYPES[extname(path).toLowerCase()] ?? 'image/png' },
-        body: bytes,
-      });
-      if (!res.ok) return (await googleError(res, 'Setting the thumbnail')).message + ' (custom thumbnails need a phone-verified channel: youtube.com/verify)';
-      await res.body?.cancel();
+      await this.postThumbnail(videoId, path, signal);
       return null;
     } catch (err) {
       if (signal.aborted) throw err;
-      return `Setting the thumbnail failed: ${err instanceof Error ? err.message : String(err)}`;
+      const message = err instanceof Error ? err.message : String(err);
+      return message.startsWith('Setting the thumbnail') ? message : `Setting the thumbnail failed: ${message}`;
     }
   }
 

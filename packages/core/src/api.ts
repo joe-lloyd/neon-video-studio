@@ -298,6 +298,8 @@ export const API_ROUTES = {
   youtubeUpload: '/api/youtube/upload',
   youtubeUploadJob: '/api/youtube/uploads/:id',
   youtubeUploadCancel: '/api/youtube/uploads/:id/cancel',
+  youtubeVideos: '/api/youtube/videos',
+  youtubeThumbnail: '/api/youtube/thumbnail',
   thumbnail: '/api/thumbnail',
   thumbnailBackground: '/api/thumbnail/background',
   thumbnailLayerAdd: '/api/thumbnail/layers/add',

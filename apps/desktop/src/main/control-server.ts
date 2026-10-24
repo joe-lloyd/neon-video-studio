@@ -5,7 +5,7 @@
  *  lan   (0.0.0.0, only while hosting a room)     → /yjs?room= · /signaling?room= · /assets/:hash?room= · /room
  */
 import type { Server, ServerWebSocket } from 'bun';
-import { basename } from 'node:path';
+import { basename, resolve } from 'node:path';
 import {
   ZodError,
   API_ROUTES,
@@ -21,6 +21,8 @@ import {
   YouTubeClientRequestSchema,
   YouTubeLoginRequestSchema,
   YouTubeUploadRequestSchema,
+  YouTubeThumbnailRequestSchema,
+  youtubeVideoId,
   type YouTubeState,
   BatchRequestSchema,
   IdRequestSchema,
@@ -293,7 +295,7 @@ async function start(ctx: MainContext, scope: Scope, hostname: string, port: num
           }
           const body = req.method === 'POST' ? ((await req.json().catch(() => ({}))) as unknown) : {};
           // Stills answer when the PNG exists; a first-run bundle can outlast the idle timeout.
-          if (path === API_ROUTES.renderStill || path === API_ROUTES.renderSheet || path === API_ROUTES.thumbnailRender || path === API_ROUTES.youtubeUpload) srv.timeout(req, 0);
+          if (path === API_ROUTES.renderStill || path === API_ROUTES.renderSheet || path === API_ROUTES.thumbnailRender || path === API_ROUTES.youtubeUpload || path === API_ROUTES.youtubeThumbnail) srv.timeout(req, 0);
           const result = await handleApi(ctx, req.method, path, body);
           if (req.method === 'POST') recordActivity(ctx, path, body, result);
           return ok(result);
@@ -581,6 +583,16 @@ async function handleApi(ctx: MainContext, method: string, path: string, body: u
     await saveSettings(ctx.settings);
     ctx.events.activity('youtube', 'youtube.client', 'reset' in req ? 'YouTube: back to the built-in OAuth client' : 'YouTube: using your own OAuth client');
     return ctx.youtube.auth();
+  }
+  if (key === `GET ${API_ROUTES.youtubeVideos}`) return ctx.youtube.videos();
+  if (key === `POST ${API_ROUTES.youtubeThumbnail}`) {
+    const req = YouTubeThumbnailRequestSchema.parse(body);
+    const videoId = youtubeVideoId(req.video);
+    if (!videoId) throw new HttpError(400, 'VALIDATION', 'not a YouTube video id or link');
+    const path = req.projectThumbnail ? (await renderThumbnail(ctx)).path : resolve(ctx.store.dir, req.thumbnail ?? '');
+    const result = await ctx.youtube.setVideoThumbnail(videoId, path);
+    ctx.events.activity('youtube', 'youtube.thumbnail', `Set the thumbnail of ${result.url}`);
+    return { ...result, thumbnail: path };
   }
   if (key === `POST ${API_ROUTES.youtubeUpload}`) {
     const req = YouTubeUploadRequestSchema.parse(body);

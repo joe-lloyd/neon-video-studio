@@ -24,6 +24,7 @@ async function fakeGoogle(opts: { failFirstChunk?: boolean; thumbnailStatus?: nu
     playlistItems: [] as unknown[],
     revoked: [] as string[],
     statusUpdates: [] as unknown[],
+    thumbnailFor: [] as string[],
   };
   let failNext = opts.failFirstChunk ?? false;
   const body = (req: IncomingMessage) =>
@@ -55,6 +56,18 @@ async function fakeGoogle(opts: { failFirstChunk?: boolean; thumbnailStatus?: nu
       return json(res, 200, {});
     }
     if (req.headers.authorization !== 'Bearer at-1' && req.headers.authorization !== 'Bearer at-2') return json(res, 401, { error: { message: 'Invalid Credentials' } });
+    if (req.method === 'GET' && url.pathname === '/api/channels' && url.searchParams.get('part') === 'contentDetails') {
+      return json(res, 200, { items: [{ contentDetails: { relatedPlaylists: { uploads: 'UU123' } } }] });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/playlistItems' && url.searchParams.get('playlistId') === 'UU123') {
+      return json(res, 200, { items: [{ contentDetails: { videoId: 'old11111111' } }, { contentDetails: { videoId: 'new22222222' } }] });
+    }
+    if (req.method === 'GET' && url.pathname === '/api/videos' && url.searchParams.get('id') === 'old11111111,new22222222') {
+      return json(res, 200, { items: [
+        { id: 'old11111111', snippet: { title: 'Older', publishedAt: '2026-10-01T10:00:00Z' }, status: { privacyStatus: 'public' } },
+        { id: 'new22222222', snippet: { title: 'htmlify tutorial', publishedAt: '2026-10-20T10:00:00Z' }, status: { privacyStatus: 'unlisted' } },
+      ] });
+    }
     if (req.method === 'GET' && url.pathname === '/api/channels') {
       return json(res, 200, { items: [{ id: 'UC123', snippet: { title: 'Joe Lloyd Web Apps', customUrl: '@joelloydwebapps' } }] });
     }
@@ -91,6 +104,7 @@ async function fakeGoogle(opts: { failFirstChunk?: boolean; thumbnailStatus?: nu
     }
     if (req.method === 'POST' && url.pathname === '/upload/thumbnails/set') {
       seen.thumbnails++;
+      seen.thumbnailFor.push(url.searchParams.get('videoId') ?? '');
       if ((opts.thumbnailStatus ?? 200) !== 200) return json(res, opts.thumbnailStatus ?? 403, { error: { message: 'The authenticated user doesnt have permissions to upload and set custom video thumbnails.', errors: [{ reason: 'forbidden' }] } });
       return json(res, 200, {});
     }
@@ -313,6 +327,39 @@ test('upload: refused before any network call when signed out or a file is missi
     await consent((await yt.login({ open: false })).authUrl, google);
     await assert.rejects(yt.upload({ source: { kind: 'file', path: 'nope.mp4' }, metadata }), /video .*nope\.mp4 not found/);
     assert.equal(google.seen.uploadQuery, '');
+  } finally {
+    await cleanup();
+    await google.close();
+  }
+});
+
+test('existing videos: list the channel uploads newest first, and set a thumbnail on one', async () => {
+  const google = await fakeGoogle();
+  const { yt, dir, cleanup } = await setup(google);
+  try {
+    await assert.rejects(yt.videos(), /Not signed in/);
+    await consent((await yt.login({ open: false })).authUrl, google);
+    assert.deepEqual(await yt.videos(), [
+      { id: 'new22222222', title: 'htmlify tutorial', privacy: 'unlisted', publishedAt: '2026-10-20T10:00:00Z', url: 'https://youtu.be/new22222222' },
+      { id: 'old11111111', title: 'Older', privacy: 'public', publishedAt: '2026-10-01T10:00:00Z', url: 'https://youtu.be/old11111111' },
+    ]);
+    await writeFile(join(dir, 'thumb.png'), Buffer.from('png'));
+    assert.deepEqual(await yt.setVideoThumbnail('new22222222', join(dir, 'thumb.png')), { videoId: 'new22222222', url: 'https://youtu.be/new22222222' });
+    assert.deepEqual(google.seen.thumbnailFor, ['new22222222']);
+    await assert.rejects(yt.setVideoThumbnail('new22222222', join(dir, 'thumb.gif')), /must be a \.png or \.jpg/);
+  } finally {
+    await cleanup();
+    await google.close();
+  }
+});
+
+test('existing videos: a refused thumbnail says why', async () => {
+  const google = await fakeGoogle({ thumbnailStatus: 403 });
+  const { yt, dir, cleanup } = await setup(google);
+  try {
+    await consent((await yt.login({ open: false })).authUrl, google);
+    await writeFile(join(dir, 'thumb.png'), Buffer.from('png'));
+    await assert.rejects(yt.setVideoThumbnail('new22222222', join(dir, 'thumb.png')), /HTTP 403.*\(custom thumbnails need a phone-verified channel: youtube\.com\/verify\)/);
   } finally {
     await cleanup();
     await google.close();

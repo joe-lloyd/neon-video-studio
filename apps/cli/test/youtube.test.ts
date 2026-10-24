@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { YouTubeUploadRequestSchema } from '@neon/core';
+import { YouTubeUploadRequestSchema, youtubeVideoId } from '@neon/core';
 import { describeAuth, describeUpload, youtubeUploadBody } from '../src/youtube.ts';
 
 const io = { appPath: (p: string) => `/abs/${p}` };
@@ -41,4 +41,11 @@ test('status lines say where the video went and what needs attention', () => {
     describeUpload({ id: 'yt_2', status: 'uploading', title: 'Demo', privacy: 'private', renderJobId: null, filePath: '/a.mp4', progress: 0.5, bytesSent: 5 * 1024 * 1024, totalBytes: 10 * 1024 * 1024, videoId: null, url: null, warnings: [], error: null, startedAt: '', finishedAt: null }),
     `yt_2 “Demo” uploading [${'█'.repeat(15)}${'░'.repeat(15)}]  50.0% 5.0/10.0 MB`,
   );
+});
+
+test('video ids come from ids and every kind of YouTube link', () => {
+  for (const input of ['hN8Oma0a6G0', 'https://youtu.be/hN8Oma0a6G0', 'https://www.youtube.com/watch?v=hN8Oma0a6G0&t=3', 'https://studio.youtube.com/video/hN8Oma0a6G0/edit', 'https://www.youtube.com/shorts/hN8Oma0a6G0']) {
+    assert.equal(youtubeVideoId(input), 'hN8Oma0a6G0', input);
+  }
+  assert.equal(youtubeVideoId('https://example.com/nothing'), null);
 });
