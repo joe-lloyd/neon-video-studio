@@ -2,7 +2,7 @@
 /**
  * End-to-end test through the public CLI, on any OS: boots a headless app in a throwaway NEON_HOME,
  * waits for it to self-install ffmpeg, builds a project, edits it, renders it and checks the output,
- * then renders a still and a contact sheet and checks their PNG headers.
+ * then renders a still, a contact sheet and the thumbnail and checks their PNG headers.
  *
  *   node scripts/e2e.ts [--keep] [--no-render]
  *
@@ -276,6 +276,19 @@ async function main(): Promise<void> {
       assert(sheetPng.width === 960 && sheetPng.height === 410 && sheet.height === 410, `sheet 960×410, got ${sheetPng.width}×${sheetPng.height}`);
       assert(sheetPng.bytes > 50_000, `sheet has picture content (${sheetPng.bytes} bytes)`);
       log(`sheet ${sheet.path} (${sheetPng.width}×${sheetPng.height}, ${sheet.frames.length} frames)`);
+
+      // Thumbnail: a title over a timeline frame, edited and rendered through the CLI only.
+      const layer = cli<{ id: string }>('thumbnail', 'add', '--component', 'TitleCard', '--props', '{"title":"E2E thumbnail"}', '--scale', '0.8');
+      cli('thumbnail', 'update', layer.id, '--pos', '0.5,0.35');
+      cli('thumbnail', 'background', '--at', '1s');
+      const thumbState = cli<{ background: { kind: string; frame: number }; layers: { id: string; transform: { x: number; y: number; scale: number } }[] }>('thumbnail');
+      assert(thumbState.background.kind === 'frame' && thumbState.background.frame === 30, `thumbnail background at frame 30, got ${JSON.stringify(thumbState.background)}`);
+      assert(canonical(thumbState.layers[0]?.transform) === canonical({ x: 0.5, y: 0.35, scale: 0.8 }), `thumbnail layer placed, got ${JSON.stringify(thumbState.layers)}`);
+      const thumb = cli<Still>('thumbnail', 'render', '--out', join(home, 'thumbnail.png'));
+      const thumbPng = png(thumb.path);
+      assert(thumbPng.width === 1280 && thumbPng.height === 720, `thumbnail 1280×720, got ${thumbPng.width}×${thumbPng.height}`);
+      assert(thumbPng.bytes > 20_000, `thumbnail has picture content (${thumbPng.bytes} bytes)`);
+      log(`thumbnail ${thumb.path} (${thumbPng.width}×${thumbPng.height})`);
     }
   } finally {
     try {
