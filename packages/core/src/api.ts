@@ -1,5 +1,6 @@
 import type { Asset, Clip, Project, Track } from './types.ts';
 import type { CaptureRect, CaptureSource } from './schemas.ts';
+import type { YouTubeUploadJob } from './youtube.ts';
 
 /**
  * Control API shared by the desktop main process (server), the CLI and the renderer.
@@ -290,6 +291,13 @@ export const API_ROUTES = {
   recordCancel: '/api/record/cancel',
   recordState: '/api/record/state',
   batch: '/api/batch',
+  youtube: '/api/youtube',
+  youtubeLogin: '/api/youtube/login',
+  youtubeLogout: '/api/youtube/logout',
+  youtubeClient: '/api/youtube/client',
+  youtubeUpload: '/api/youtube/upload',
+  youtubeUploadJob: '/api/youtube/uploads/:id',
+  youtubeUploadCancel: '/api/youtube/uploads/:id/cancel',
 } as const;
 
 export type ApiRouteKey = keyof typeof API_ROUTES;
@@ -331,7 +339,7 @@ export type CaptureState =
   | { status: 'finishing'; startedAt: string };
 
 /** Who caused an action. */
-export type ActivitySource = 'cli' | 'ui' | 'peer' | 'render' | 'room' | 'system' | 'ai';
+export type ActivitySource = 'cli' | 'ui' | 'peer' | 'render' | 'room' | 'system' | 'ai' | 'youtube';
 
 /** One line in the live activity feed (shown in the app, streamed on /api/events, tailed by `neon-cli events`). */
 export interface ActivityEntry {
@@ -355,6 +363,7 @@ export type ServerEvent =
   | { type: 'project-changed'; durationFrames: number; clips: number; updatedAt: string }
   | { type: 'render'; job: RenderJob }
   | { type: 'ai'; job: AiJob }
+  | { type: 'youtube'; job: YouTubeUploadJob }
   | { type: 'room'; room: RoomInfo }
   | { type: 'project-opened'; path: string | null; name: string; projectId: string }
   | { type: 'heartbeat'; ts: number };

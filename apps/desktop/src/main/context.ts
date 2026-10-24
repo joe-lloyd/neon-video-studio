@@ -12,6 +12,7 @@ import type { HistoryStore } from './history.ts';
 import type { ProxyCache } from './proxies.ts';
 import type { WaveformCache } from './waveforms.ts';
 import type { PackManager } from './packs.ts';
+import type { YouTubeManager } from './youtube.ts';
 import type { DesktopRPC } from '../shared/rpc.ts';
 
 /** Minimal shape of the Electrobun RPC object we use from the main side. */
@@ -38,6 +39,7 @@ export interface MainContext {
   waveforms: WaveformCache;
   proxies: ProxyCache;
   packs: PackManager;
+  youtube: YouTubeManager;
   localPort: number;
   startedAt: number;
   rpc: MainRpc | null;
