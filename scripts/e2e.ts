@@ -149,14 +149,14 @@ async function main(): Promise<void> {
 
     // A project folder carries a copy of each FX pack it uses, so it still opens with them once the
     // library copy is gone (another machine, a reinstall).
-    cli('packs', 'install', join(ROOT, 'examples/packs/[removed]'));
-    await until('the project copy of [removed]', () => existsSync(join(open.path, 'packs', '[removed]', 'pack.json')), 15_000);
-    cli('packs', 'uninstall', '[removed]');
-    assert(!existsSync(join(home, 'packs', '[removed]')), 'packs uninstall removed the library copy');
+    cli('packs', 'install', join(ROOT, 'test/fixtures/plain-title'));
+    await until('the project copy of plain-title', () => existsSync(join(open.path, 'packs', 'plain-title', 'pack.json')), 15_000);
+    cli('packs', 'uninstall', 'plain-title');
+    assert(!existsSync(join(home, 'packs', 'plain-title')), 'packs uninstall removed the library copy');
     cli('project', 'open', open.path);
-    const carried = cli<PackSummary[]>('packs').find((p) => p.name === '[removed]');
-    assert(carried?.enabled && carried.status === 'ready' && carried.dir?.startsWith(open.path), `[removed] loads from the project after reopening: ${JSON.stringify(carried)}`);
-    const title = cli<Clip>('timeline', 'insert', '--component', 'RemovedComponent', '--at', '0', '--duration', '1s');
+    const carried = cli<PackSummary[]>('packs').find((p) => p.name === 'plain-title');
+    assert(carried?.enabled && carried.status === 'ready' && carried.dir?.startsWith(open.path), `plain-title loads from the project after reopening: ${JSON.stringify(carried)}`);
+    const title = cli<Clip>('timeline', 'insert', '--component', 'FixtureTitle', '--at', '0', '--duration', '1s');
     cli('timeline', 'remove', title.id);
     log('the project keeps its FX pack after the library copy is uninstalled');
 

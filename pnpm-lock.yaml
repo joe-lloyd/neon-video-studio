@@ -141,27 +141,6 @@ importers:
         specifier: ^7.1.0
         version: 7.3.6(@types/node@24.13.3)(terser@5.50.0)
 
-  examples/packs/[removed]:
-    devDependencies:
-      '@neon/core':
-        specifier: workspace:*
-        version: link:../../../packages/core
-      '@neon/fx-kit':
-        specifier: workspace:*
-        version: link:../../../packages/fx-kit
-      '@neon/motion':
-        specifier: workspace:*
-        version: link:../../../packages/motion
-      '@types/react':
-        specifier: ^19.1.0
-        version: 19.2.18
-      react:
-        specifier: ^19.1.0
-        version: 19.2.8
-      typescript:
-        specifier: ^5.9.0
-        version: 5.9.3
-
   packages/ai:
     dependencies:
       '@anthropic-ai/sdk':
