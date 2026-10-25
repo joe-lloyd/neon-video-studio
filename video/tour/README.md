@@ -15,6 +15,7 @@ Neon edit, the thumbnail, the YouTube files and the watch page. Adapted from the
 | `tools/publish.ts` | The thumbnail from Neon's Thumb feature, plus title, description, chapters, tags and captions. |
 | `tools/page.ts` | The watch page in `~/htmlify/videos/neon-video-studio-tour/`. |
 | `tools/sheet.mjs` | Contact sheet of one take, for checking it. |
+| `tools/check.mjs` | Contact sheet of the render: every chapter and every 20 seconds. |
 | `fx/neon-tour` | FX pack in Neon's look: title, chapter label, explainer stage, thumbnail. |
 | `stage/` | The terminal-and-app and two-machine pages that two takes are recorded in. |
 
@@ -30,6 +31,7 @@ node video/tour/tools/record.ts            # all takes; name takes to redo only 
 node video/tour/tools/neon.ts serve --detach
 node video/tour/tools/edit.ts --render     # ~/Videos/tours/neon-video-studio.neon → build/renders/
 node video/tour/tools/publish.ts           # build/thumbs/ and build/publish/
+node video/tour/tools/check.mjs            # look at it before publishing
 node video/tour/tools/page.ts
 ```
 
