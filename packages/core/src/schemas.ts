@@ -479,7 +479,7 @@ export const ImportAssetRequestSchema = z.object({
 });
 
 export const RenderRequestSchema = z.object({
-  output: z.string().min(1).describe('Output .mp4 path (absolute or relative to the project)'),
+  output: z.string().min(1).optional().describe('Output .mp4 path (absolute or relative to the project); default: a new file in <NEON_HOME>/renders'),
   preset: z.string().default('project'),
   /** Render a sub-range of the timeline. */
   from: TimeExpr.optional(),

@@ -1,6 +1,7 @@
 import type { Asset, Clip, Project, Track } from './types.ts';
 import type { CaptureRect, CaptureSource } from './schemas.ts';
 import type { YouTubeUploadJob } from './youtube.ts';
+import type { PackManifest } from './packs.ts';
 
 /**
  * Control API shared by the desktop main process (server), the CLI and the renderer.
@@ -153,6 +154,9 @@ export interface PackSummary {
   enabled: boolean;
   templates: string[];
   dir?: string;
+  /** Control-server path of the compiled browser bundle (installed + ready packs only). */
+  bundlePath?: string;
+  manifest: PackManifest | null;
 }
 
 /** Persisted edit-history position: `cursor` is the checkpoint matching the current document. */

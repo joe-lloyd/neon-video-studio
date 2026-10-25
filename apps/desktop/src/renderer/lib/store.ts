@@ -717,7 +717,10 @@ export class Editor {
   // ---- AI ------------------------------------------------------------------------------
 
   private upsertAiJob(job: AiJob): void {
+    // Browser mode re-sends every job on each poll; only a change of status is news.
+    const before = this.ui.get().aiJobs.find((j) => j.id === job.id)?.status;
     this.ui.set((u) => ({ aiJobs: [job, ...u.aiJobs.filter((j) => j.id !== job.id)].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 30) }));
+    if (job.status === before) return;
     if (job.status === 'done') this.toast('success', job.message);
     if (job.status === 'failed') this.toast('error', job.message);
   }

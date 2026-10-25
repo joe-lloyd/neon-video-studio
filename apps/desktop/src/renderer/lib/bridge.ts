@@ -3,7 +3,7 @@
  * browser (Vite dev without Electrobun) we fall back to the HTTP control API with a token
  * from the URL (?port=…&token=…) or localStorage.
  */
-import type { AiCapabilities, AiJob, AppStatus, ImportAssetResponse, RenderJob, RoomInfo } from '@neon/core';
+import type { AiCapabilities, AiJob, AppStatus, ActivityEntry, ImportAssetResponse, PackSummary, RenderJob, RoomInfo } from '@neon/core';
 import { newId } from '@neon/core';
 import type { Bootstrap, DesktopRPC, RoomState, WindowCommand } from '../../shared/rpc.ts';
 
@@ -125,8 +125,15 @@ async function httpBridge(): Promise<Bridge> {
   localStorage.setItem('neon:peerId', bootstrap.peerId);
   const handlers: MessageHandlers = {};
 
-  // Poll renders + room since we have no push channel in HTTP mode.
+  const listPacks = () => call<PackSummary[]>('GET', '/api/packs');
+
+  // No RPC push channel in HTTP mode: the Live panel follows the control API's event stream.
+  const events = new EventSource(`${base}/api/events?history=0&token=${encodeURIComponent(params.token)}`);
+  events.addEventListener('activity', (e) => handlers.activity?.({ entry: (JSON.parse(e.data) as { entry: ActivityEntry }).entry }));
+
+  // Poll renders, room and packs since we have no push channel in HTTP mode.
   let lastRenders = '';
+  let lastPacks = '';
   setInterval(async () => {
     try {
       const s = await call<AppStatus>('GET', '/api/status');
@@ -138,6 +145,12 @@ async function httpBridge(): Promise<Bridge> {
       handlers.proxiesChanged?.({ ready: s.proxies.ready });
       const aiJobs = await call<AiJob[]>('GET', '/api/ai/jobs');
       for (const job of aiJobs) handlers.aiUpdate?.({ job });
+      const packs = await listPacks();
+      const packsKey = JSON.stringify(packs.map((p) => [p.name, p.status, p.bundlePath]));
+      if (packsKey !== lastPacks) {
+        lastPacks = packsKey;
+        handlers.packsChanged?.({ packs });
+      }
       if (s.project.id !== bootstrap.projectId) {
         bootstrap.projectId = s.project.id;
         handlers.projectOpened?.({ projectId: s.project.id, path: s.project.path, name: s.project.name });
@@ -222,9 +235,14 @@ async function httpBridge(): Promise<Bridge> {
         case 'windowCommand':
           return false as never;
         case 'listPacks':
+          return listPacks() as never;
         case 'reloadPacks':
-          // Browser mode: built-in packs only.
-          return [] as never;
+          await call('POST', '/api/packs/reload', {});
+          return listPacks() as never;
+        case 'installPack':
+          return call<PackSummary>('POST', '/api/packs/install', { path: (params as Requests['installPack']['params']).path }) as never;
+        case 'uninstallPack':
+          return call('POST', `/api/packs/${(params as Requests['uninstallPack']['params']).name}/uninstall`, {}).then(() => true) as never;
         case 'historyStatus':
         case 'historyPush':
         case 'historyMove':

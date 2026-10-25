@@ -985,6 +985,8 @@ async function packSummaries(ctx: MainContext): Promise<PackSummary[]> {
     enabled: p.source === 'builtin' || (p.source === 'installed' && enabled.has(p.name)),
     templates: p.templates,
     dir: p.dir,
+    bundlePath: p.bundlePath,
+    manifest: p.manifest,
   }));
 }
 
