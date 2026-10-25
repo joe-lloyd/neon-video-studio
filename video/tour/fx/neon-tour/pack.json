@@ -1,0 +1,69 @@
+{
+  "name": "neon-tour",
+  "label": "Neon Tour",
+  "version": "1.0.0",
+  "description": "Title, chapter label, explainer stage and thumbnail in Neon Video Studio's own look: near-black, neon pink and cyan, mono timecodes and a timeline ruler.",
+  "author": "Joe Lloyd",
+  "category": "Neon Tour",
+  "tags": ["neon", "tour", "title", "diagram", "thumbnail"],
+  "entry": "index.tsx",
+  "templates": [
+    {
+      "name": "NeonTitle",
+      "label": "Neon title",
+      "description": "Full-frame title card: the Neon mark draws itself in over a grid and a sweeping playhead.",
+      "defaultDurationSeconds": 6,
+      "category": "Titles",
+      "icon": "Type",
+      "fields": [
+        { "key": "title", "type": "text", "default": "Neon Video Studio" },
+        { "key": "subtitle", "type": "text", "default": "A video editor you can drive by hand or by agent" },
+        { "key": "footer", "type": "text", "default": "", "description": "Small mono line at the bottom. Empty hides it." }
+      ]
+    },
+    {
+      "name": "NeonChapter",
+      "label": "Neon chapter",
+      "description": "Chapter label with a pink number badge that slides in at the bottom left over footage.",
+      "defaultDurationSeconds": 3.5,
+      "category": "Titles",
+      "icon": "Tag",
+      "fields": [
+        { "key": "number", "type": "number", "default": 1, "min": 0, "max": 99 },
+        { "key": "title", "type": "text", "default": "Chapter" }
+      ]
+    },
+    {
+      "name": "NeonStage",
+      "label": "Neon stage",
+      "description": "One full-frame explainer: a chapter, a title and a scene built from Items.",
+      "defaultDurationSeconds": 10,
+      "category": "Explainers",
+      "icon": "LayoutDashboard",
+      "fields": [
+        { "key": "scene", "type": "select", "default": "flow", "options": ["flow", "hub", "code", "cards"] },
+        { "key": "chapter", "type": "text", "default": "", "description": "Small label top right. Empty hides it." },
+        { "key": "title", "type": "text", "default": "Neon Video Studio" },
+        {
+          "key": "items",
+          "type": "text",
+          "multiline": true,
+          "default": "Script: sections and lines\nVoice: narration\nTakes: the app on camera\nRender: the finished video",
+          "description": "One entry per line. flow and cards: 'Name: detail'. hub: the first line is the centre, the rest sit around it. code: the first line is the file name, the rest is the code."
+        }
+      ]
+    },
+    {
+      "name": "NeonThumbnail",
+      "label": "Neon thumbnail",
+      "description": "YouTube thumbnail layer: a dark panel on the left with the mark, a kicker and a large title, the footage showing through on the right. Static.",
+      "defaultDurationSeconds": 5,
+      "category": "Thumbnails",
+      "icon": "Image",
+      "fields": [
+        { "key": "title", "type": "text", "default": "Neon Video Studio" },
+        { "key": "kicker", "type": "text", "default": "Edit by hand or by agent" }
+      ]
+    }
+  ]
+}

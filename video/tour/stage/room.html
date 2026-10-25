@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Two machines in one room</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: radial-gradient(1200px 700px at 50% 0%, #2a0f22, #09090b 70%); font-family: Inter, -apple-system, sans-serif; color: #f4f4f5; }
+  .machine { position: absolute; top: 34px; width: 704px; }
+  .machine.a { left: 10px; } .machine.b { right: 10px; }
+  .label { height: 30px; display: flex; align-items: center; gap: 8px; font: 600 13px/1 "JetBrains Mono", Menlo, monospace; letter-spacing: 2px; color: #a1a1aa; text-transform: uppercase; }
+  .label b { color: #ff007f; } .machine.b .label b { color: #00f3ff; }
+  .frame { width: 704px; height: 704px; overflow: hidden; border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.6), 0 0 0 1px rgba(255,0,127,.35); }
+  .machine.b .frame { box-shadow: 0 20px 60px rgba(0,0,0,.6), 0 0 0 1px rgba(0,243,255,.35); }
+  iframe { border: 0; width: 1100px; height: 1100px; transform: scale(0.64); transform-origin: 0 0; background: #09090b; }
+</style>
+</head>
+<body>
+<div class="machine a"><div class="label"><b>●</b> <span id="la">Joe · hosting</span></div><div class="frame"><iframe id="a"></iframe></div></div>
+<div class="machine b"><div class="label"><b>●</b> <span id="lb">Sam · joined</span></div><div class="frame"><iframe id="b"></iframe></div></div>
+<script>
+  const q = new URLSearchParams(location.search);
+  document.getElementById("a").src = q.get("a");
+  document.getElementById("b").src = q.get("b");
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "neon-video-studio-tour",
+  "private": true,
+  "type": "module",
+  "description": "Builds the Neon Video Studio tour video. Installed on its own: pnpm --dir video/tour install --ignore-workspace",
+  "devDependencies": {
+    "playwright-core": "1.64.1"
+  }
+}

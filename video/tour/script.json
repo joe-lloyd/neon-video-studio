@@ -1,0 +1,356 @@
+{
+  "title": "Neon Video Studio",
+  "subtitle": "A video editor you can drive by hand or by agent",
+  "youtube": {
+    "title": "Neon Video Studio: a video editor an AI agent can drive",
+    "thumbTitle": "Neon Video Studio",
+    "thumbKicker": "Edit by hand or by agent",
+    "thumbFrom": "3.2"
+  },
+  "sections": [
+    {
+      "title": "What Neon is",
+      "intent": "Say what the app is, why it exists, and how it is built.",
+      "lines": [
+        {
+          "say": "This is Neon Video Studio. It's a desktop video editor I built, and every button in it is also a command, so an agent can edit a video while I watch.",
+          "show": "Title card.",
+          "fx": {
+            "name": "NeonTitle",
+            "props": {
+              "title": "Neon Video Studio",
+              "subtitle": "A video editor you can drive by hand or by agent",
+              "footer": "v0.17 · Mac · Windows · Linux"
+            }
+          }
+        },
+        {
+          "say": "I wanted one tool for cutting videos without bouncing between apps, and one that an agent could run from start to finish.",
+          "show": "The same title card holds.",
+          "fx": {
+            "name": "NeonTitle",
+            "props": {
+              "title": "Neon Video Studio",
+              "subtitle": "A video editor you can drive by hand or by agent",
+              "footer": "v0.17 · Mac · Windows · Linux"
+            }
+          }
+        },
+        {
+          "say": "Under the hood, a Bun process owns the project. The window is React. Frames come from Neon's own engine, and Yjs keeps every copy of the project in sync.",
+          "show": "Architecture: Bun main process in the middle, React window, motion engine, Yjs and the CLI around it.",
+          "fx": {
+            "name": "NeonStage",
+            "props": {
+              "scene": "hub",
+              "chapter": "How it's built",
+              "title": "One project, many hands",
+              "items": "Bun main process: owns the project, serves the API\nReact window: timeline, preview, panels\n@neon/motion: frames for preview and export\nYjs: every copy stays in sync\nneon-cli: the same API from a terminal"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "title": "Projects",
+      "intent": "The projects overview: recent projects, new project, folders.",
+      "take": "overview",
+      "lines": [
+        {
+          "say": "Projects open from this overview. Each project is a folder with its media inside, so I can copy it to another machine and open it there.",
+          "show": "Start page with four recent projects."
+        },
+        {
+          "say": "A new project takes a name, a format and a frame rate. Vertical and square formats are there for shorts.",
+          "show": "Type a name, open the format list."
+        },
+        {
+          "say": "I'll open the launch trailer for my Git client.",
+          "show": "Click Git Gud launch trailer; the editor opens."
+        }
+      ]
+    },
+    {
+      "title": "Editing the timeline",
+      "intent": "Tracks, drag, trim, snap, split, placing media, undo, shortcuts.",
+      "take": "timeline",
+      "lines": [
+        {
+          "say": "The timeline has video, audio and FX tracks. Clips draw their waveform, so I can see where someone is talking.",
+          "show": "Sweep over the tracks and the waveforms."
+        },
+        {
+          "say": "Drag a clip to move it. It snaps to the playhead and to the edges of other clips.",
+          "show": "Drag the last clip away and back until it snaps."
+        },
+        {
+          "say": "Drag an edge to trim. Trimming the start slides into the footage.",
+          "show": "Trim the start of the third clip."
+        },
+        {
+          "say": "The S key splits whatever sits under the playhead.",
+          "show": "Move the playhead, press S."
+        },
+        {
+          "say": "Add at playhead puts media in the first free spot on the track, so it never lands on top of another clip.",
+          "show": "Media panel, add at playhead; the shot lands after the last clip."
+        },
+        {
+          "say": "Undo takes back only my own edits. That matters once an agent or another person is editing the same project.",
+          "show": "Undo twice."
+        },
+        {
+          "say": "The question mark key lists every shortcut.",
+          "show": "Shortcuts dialog."
+        }
+      ]
+    },
+    {
+      "title": "Templates and the inspector",
+      "intent": "Templates are React clips; inspector is schema driven; canvas editing; animations.",
+      "take": "templates",
+      "lines": [
+        {
+          "say": "Titles, lower thirds and captions are React components. They sit on FX tracks like any other clip.",
+          "show": "FX panel with live previews."
+        },
+        {
+          "say": "Each card in the FX panel is a live preview. Click one and it lands at the playhead.",
+          "show": "Click Lower Third."
+        },
+        {
+          "say": "The inspector builds its fields from the component's schema. I change the text and the preview follows.",
+          "show": "Type a new title in the inspector."
+        },
+        {
+          "say": "I can drag it on the canvas too. It snaps to the centre and the thirds.",
+          "show": "Drag the lower third on the preview."
+        },
+        {
+          "say": "Every element can animate in and out with a fade, a slide or a pop.",
+          "show": "Set the in animation to pop and play."
+        }
+      ]
+    },
+    {
+      "title": "FX packs",
+      "intent": "What a pack is, installing one, using its components.",
+      "lines": [
+        {
+          "say": "When the built-in set isn't enough, I write an FX pack. It's a folder with a pack.json that describes every field, and an index.tsx with the components.",
+          "show": "Card: the files of a pack.",
+          "fx": {
+            "name": "NeonStage",
+            "props": {
+              "scene": "code",
+              "chapter": "FX packs",
+              "title": "A pack is a folder",
+              "items": "neon-tour/pack.json\n{\n  \"name\": \"neon-tour\",\n  \"label\": \"Neon Tour\",\n  \"templates\": [{\n    \"name\": \"NeonTitle\",\n    \"fields\": [{ \"key\": \"title\", \"type\": \"text\" }]\n  }]\n}\n// index.tsx exports NeonTitle, a React component"
+            }
+          }
+        },
+        {
+          "say": "The Library lists installed packs and the examples that ship with the source. Install copies a pack in and compiles it.",
+          "show": "FX Library, install Soft Shapes.",
+          "take": "packs"
+        },
+        {
+          "say": "Its components show up straight away, with previews. The titles and diagrams in this video come from a pack like this one, in Neon's colours.",
+          "show": "Components list with Soft Shapes and Neon Tour; add Soft Title.",
+          "take": "packs"
+        },
+        {
+          "say": "A project keeps a copy of every pack it uses, so it still renders on a machine that never installed them.",
+          "show": "The Soft Title clip playing.",
+          "take": "packs"
+        }
+      ]
+    },
+    {
+      "title": "Script and prompter",
+      "intent": "Script view, statuses, notes, prompter that re-records one line.",
+      "take": "script",
+      "lines": [
+        {
+          "say": "My videos start as a script. The Script view holds sections of lines, each with what I say and what the picture shows.",
+          "show": "Script view of the trailer."
+        },
+        {
+          "say": "A section is a draft, waiting on me, or approved. Notes pin to a line, and an agent reads and answers them from the CLI.",
+          "show": "Notes margin; an agent reply appears."
+        },
+        {
+          "say": "In the editor, the prompter shows the line under the playhead.",
+          "show": "Prompter panel follows the playhead."
+        },
+        {
+          "say": "Record line counts me in, plays that stretch of the timeline and records just that line. The new take replaces the old one only once it has saved.",
+          "show": "Hover Re-record line."
+        }
+      ]
+    },
+    {
+      "title": "Screen demos and AI",
+      "intent": "Recording, local AI engines, silence trimming, enhance, zooms.",
+      "take": "ai",
+      "lines": [
+        {
+          "say": "For screen demos, the screen button records the display and my microphone into one file. This machine hasn't granted screen recording, so here I'm using a recording I already have.",
+          "show": "Hover the screen button; a narrated recording sits on V1."
+        },
+        {
+          "say": "The AI panel runs local engines. The pills show what this machine has: ffmpeg, Apple Vision and yt-dlp are ready, and speech recognition isn't installed.",
+          "show": "AI panel engine pills."
+        },
+        {
+          "say": "Silence trimming needs no model. It finds the pauses and shortens each one, and the cuts land as normal edits I can undo.",
+          "show": "Run Trim silences; the clip splits and closes up."
+        },
+        {
+          "say": "Enhance gives a clearer voice at broadcast loudness. It writes a new file and keeps the original in the media library.",
+          "show": "Run Enhance; job progress, new asset."
+        },
+        {
+          "say": "With whisper.cpp installed, the same panel cuts the ums, and the transcript becomes an editor: select words, press delete, and they're gone from the video.",
+          "show": "The install box for speech recognition."
+        },
+        {
+          "say": "A zoom eases in on the part that matters, and it stays on that moment through later cuts.",
+          "show": "Add a zoom from the inspector and play through it."
+        }
+      ]
+    },
+    {
+      "title": "Thumbnails",
+      "intent": "Thumb tab: timeline frame background, layers from packs.",
+      "take": "thumb",
+      "lines": [
+        {
+          "say": "The Thumb tab builds the YouTube thumbnail from the same components. The background is a frame of the timeline.",
+          "show": "Thumb tab, background at playhead."
+        },
+        {
+          "say": "Layers stack on top, and this title comes from my pack. The CLI builds the same thumbnail, which is how this video got its own.",
+          "show": "Add the Neon thumbnail layer; the layer list."
+        }
+      ]
+    },
+    {
+      "title": "Render and publish",
+      "intent": "Render panel, presets, a running render, YouTube publishing.",
+      "take": "render",
+      "lines": [
+        {
+          "say": "Render exports an H.264 MP4 through the same engine as the preview. Presets run from a quick draft up to 4K, vertical and square.",
+          "show": "Render panel, preset list."
+        },
+        {
+          "say": "The render runs in a separate worker, so I can keep editing while it goes.",
+          "show": "Start a draft render; progress bar."
+        },
+        {
+          "say": "Once I sign in with Google, the same panel uploads to YouTube with the title, description, tags, visibility, a schedule and the project thumbnail.",
+          "show": "YouTube upload form."
+        }
+      ]
+    },
+    {
+      "title": "Driving it from the CLI",
+      "intent": "neon-cli side by side with the app; Live panel; plans; stills.",
+      "lines": [
+        {
+          "say": "Everything so far is also a command. neon-cli talks to the running app over a local API, and every change it makes shows up live in the window.",
+          "show": "Diagram: agent, neon-cli, control API, app window.",
+          "fx": {
+            "name": "NeonStage",
+            "props": {
+              "scene": "flow",
+              "chapter": "The CLI",
+              "title": "Same edits, from a terminal",
+              "items": "Agent: plans the edit\nneon-cli: commands and plans\nControl API: local port and token\nNeon window: changes appear live"
+            }
+          }
+        },
+        {
+          "say": "Here's a terminal next to the app. neon-cli timeline prints the edit as text, with the id of every clip.",
+          "show": "Terminal: neon-cli timeline.",
+          "take": "agent"
+        },
+        {
+          "say": "The agent inserts a lower third. It lands on the timeline, and the Live panel logs it as a CLI edit.",
+          "show": "Terminal insert; the clip flashes; Live panel entry.",
+          "take": "agent"
+        },
+        {
+          "say": "Bigger changes go in a plan file. Apply runs every step as one undo step, or rolls the lot back if one fails.",
+          "show": "Terminal apply plan.json; several clips appear.",
+          "take": "agent"
+        },
+        {
+          "say": "And the still command renders a frame to a PNG, so the agent can look at its own work before it renders.",
+          "show": "Terminal still; the PNG path prints.",
+          "take": "agent"
+        }
+      ]
+    },
+    {
+      "title": "Editing together",
+      "intent": "Rooms: host, join, live edits both ways, peer playheads.",
+      "take": "room",
+      "lines": [
+        {
+          "say": "Rooms put two people on one project. One machine hosts, and the other joins with the room code. There's no server in the middle.",
+          "show": "Two windows; the second joins the first's room."
+        },
+        {
+          "say": "Edits from either side show up on both, and each person can see where the other one's playhead is.",
+          "show": "Edit on the left, it appears on the right; peer playhead."
+        }
+      ]
+    },
+    {
+      "title": "How this video was made",
+      "intent": "Close: this video was made by an agent through neon-cli.",
+      "lines": [
+        {
+          "say": "This video went down the same path. An agent wrote the script, and a local voice read it.",
+          "show": "Pipeline diagram.",
+          "fx": {
+            "name": "NeonStage",
+            "props": {
+              "scene": "flow",
+              "chapter": "This video",
+              "title": "Made by an agent, through neon-cli",
+              "items": "Script: sections and lines\nVoice: Kokoro, on this machine\nTakes: the real app in a browser\nneon-cli: edit, thumbnail, render"
+            }
+          }
+        },
+        {
+          "say": "A script drove the app in a browser and recorded each take. Then neon-cli built this edit with its chapters, zooms and thumbnail, and rendered it.",
+          "show": "The same diagram highlights the last steps.",
+          "fx": {
+            "name": "NeonStage",
+            "props": {
+              "scene": "flow",
+              "chapter": "This video",
+              "title": "Made by an agent, through neon-cli",
+              "items": "Script: sections and lines\nVoice: Kokoro, on this machine\nTakes: the real app in a browser\nneon-cli: edit, thumbnail, render"
+            }
+          }
+        },
+        {
+          "say": "Neon Video Studio is on GitHub, with builds for Mac, Windows and Linux on the releases page.",
+          "show": "End card with the repository.",
+          "fx": {
+            "name": "NeonTitle",
+            "props": {
+              "title": "Neon Video Studio",
+              "subtitle": "github.com/joe-lloyd/neon-video-studio",
+              "footer": "Releases for Mac · Windows · Linux"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
