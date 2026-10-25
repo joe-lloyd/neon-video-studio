@@ -72,7 +72,8 @@ async function prepareEditor(page: Page, root: Root = page, opts: { side?: numbe
   await root.locator(".titlebar").waitFor({ timeout: 30_000 });
   await root.addStyleTag({ content: HIDE_WINDOW_BUTTONS });
   const close = root.locator('[title="Close (Esc)"]');
-  if (await close.isVisible().catch(() => false)) await close.click();
+  // DOM clicks: inside a scaled iframe the pointer hit test misses.
+  if (await close.isVisible().catch(() => false)) await close.evaluate((b: HTMLElement) => b.click());
   await page.waitForTimeout(500);
   if (root === page) {
     const side = await centre(page.locator(".side-resize"));
@@ -80,7 +81,7 @@ async function prepareEditor(page: Page, root: Root = page, opts: { side?: numbe
     const tl = await centre(page.locator(".timeline-resize"));
     await quietDrag(page, { x: tl.x + 200, y: tl.y }, { x: tl.x + 200, y: tl.y + (opts.timeline ?? 20) });
   }
-  await root.locator('[title="Fit timeline"]').click();
+  await root.locator('[title="Fit timeline"]').evaluate((b: HTMLElement) => b.click());
   await page.waitForTimeout(800);
 }
 
@@ -520,16 +521,20 @@ const agent: TakeFn = async (ctx) => {
   const page = await openApp(ctx, url);
   const app = page.frame({ url: /localhost:5173/ }) ?? page.frames()[1]!;
   await prepareEditor(page, app);
-  await tab(app, "activity").click();
+  await tab(app, "activity").evaluate((b: HTMLElement) => b.click());
+  // The setup's own entries are not part of the scene.
+  await app.getByRole("button", { name: "Clear", exact: true }).evaluate((b: HTMLElement) => b.click());
   await page.evaluate(() => (window as unknown as { term: { clear(): void } }).term.clear());
   const term = {
     type: (cmd: string) => page.evaluate((c) => (window as unknown as { term: { type(c: string): Promise<void> } }).term.type(c), cmd),
     print: (text: string) => page.evaluate((s) => (window as unknown as { term: { print(s: string): void } }).term.print(s), text),
   };
+  // Each command starts on a clean screen; output paths are shown relative to the scratch folder the plan lives in.
   const run = async (cmd: string, args: string[]) => {
+    await page.evaluate(() => (window as unknown as { term: { clear(): void } }).term.clear());
     await term.type(cmd);
     await t.pause(0.3);
-    await term.print(neonText(DEMO_HOME, ...args));
+    await term.print(neonText(DEMO_HOME, ...args).split(`${SCRATCH}/`).join(""));
   };
   const t = await ctx.take("agent", page);
   await t.line("10.2", async () => {
@@ -542,7 +547,7 @@ const agent: TakeFn = async (ctx) => {
   });
   await t.line("10.4", async () => {
     const plan = { ops: [
-      { route: "/api/timeline/insert", body: { kind: "component", componentName: "Callout", props: { text: "Lanes", x: 0.3, y: 0.4 }, at: "13s", duration: "3s" } },
+      { route: "/api/timeline/insert", body: { kind: "component", componentName: "Callout", props: { text: "Lanes", x: 0.3, y: 0.4 }, at: "8s", duration: "3s" } },
       { route: "/api/timeline/insert", body: { kind: "component", componentName: "KeyCombo", props: { combo: "Cmd+Shift+P" }, at: "19s", duration: "2s" } },
       { route: "/api/timeline/update", body: { id: "$0.id", patch: { animateIn: { type: "pop", durationFrames: 12 } } } },
     ] };
@@ -556,7 +561,29 @@ const agent: TakeFn = async (ctx) => {
   await t.finish(0.6);
 };
 
+/**
+ * Where a point inside one of the stage's scaled iframes lands on the page. Playwright's boxes for
+ * elements in a transformed iframe ignore the scale, so this maps client rects by hand.
+ */
+async function inFrame(page: Page, frameId: string, target: Locator, fx = 0.5, fy = 0.5) {
+  const outer = (await page.locator(`iframe#${frameId}`).boundingBox())!;
+  const inner = await target.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height, vw: window.innerWidth };
+  });
+  const s = outer.width / inner.vw;
+  return { x: outer.x + (inner.x + inner.w * fx) * s, y: outer.y + (inner.y + inner.h * fy) * s };
+}
+async function clickIn(t: Take, frameId: string, target: Locator) {
+  const p = await inFrame(t.page, frameId, target);
+  await t.moveTo(p, 550);
+  await t.page.evaluate(({ x, y }) => (window as unknown as { __dirPulse: (x: number, y: number) => void }).__dirPulse(x, y), p);
+  await t.page.mouse.click(p.x, p.y);
+  await t.pause(0.25);
+}
+
 const room: TakeFn = async (ctx) => {
+  demo("room", "leave");
   await seedTrailer();
   await freshInstance(PEER_HOME);
   const url = `file://${join(STAGE, "room.html")}?a=${encodeURIComponent(appUrl())}&b=${encodeURIComponent(appUrl(PEER_HOME, 5174))}`;
@@ -568,31 +595,34 @@ const room: TakeFn = async (ctx) => {
   await prepareEditor(page, b);
   // Display names, so each playhead says whose it is.
   for (const [frame, name] of [[a, "Joe"], [b, "Sam"]] as const) {
-    await tab(frame, "peers").click();
+    await tab(frame, "peers").evaluate((el: HTMLElement) => el.click());
     const input = frame.locator(".field", { has: frame.locator("label", { hasText: "Your display name" }) }).locator("input");
     await input.fill(name);
     await input.blur();
   }
   await page.waitForTimeout(800);
   const t = await ctx.take("room", page);
-  let code = "";
   await t.line("11.1", async () => {
-    await t.click(a.getByRole("button", { name: /Host room/ }));
+    await clickIn(t, "a", a.getByRole("button", { name: /Host room/ }));
     await t.pause(1.2);
-    code = neonAt<{ roomCode: string }>(DEMO_HOME, "room", "info").roomCode;
+    const info = neonAt<{ roomCode: string; lanUrl: string }>(DEMO_HOME, "room", "info");
     await t.cue("joins");
-    const lan = neonAt<{ lanUrl: string }>(DEMO_HOME, "room", "info").lanUrl.replace(/\/\/[^:]+:/, "//127.0.0.1:");
-    await t.type(b.locator(".field", { has: b.locator("label", { hasText: /^Room code$/ }) }).locator("input").first(), code, 45);
-    await b.locator(".field", { has: b.locator("label", { hasText: /Host URL/ }) }).locator("input").fill(lan);
-    await t.click(b.getByRole("button", { name: /^Join/ }));
+    const codeField = b.locator(".field", { has: b.locator("label", { hasText: /^Room code$/ }) }).locator("input").first();
+    await clickIn(t, "b", codeField);
+    await codeField.pressSequentially(info.roomCode, { delay: 45 });
+    // Both machines are this one, so the host's address is loopback.
+    await b.locator(".field", { has: b.locator("label", { hasText: /Host URL/ }) }).locator("input").fill(info.lanUrl.replace(/\/\/[^:]+:/, "//127.0.0.1:"));
+    await clickIn(t, "b", b.getByRole("button", { name: /^Join/ }));
     await t.pause(2.5);
   });
   await t.line("11.2", async () => {
+    await b.locator('[title="Fit timeline"]').evaluate((el: HTMLElement) => el.click());
     const lower = clip(a, "Lower Third");
-    const from = await grab(lower);
-    await t.drag(from, { x: from.x - 70, y: from.y }, 1200);
+    const from = await inFrame(page, "a", lower, 0.5, 0.28);
+    await t.drag(from, { x: from.x - 60, y: from.y }, 1200);
     await t.cue("playhead");
-    const at = await rulerX(b, 4);
+    const ruler = b.locator(".tl-ruler");
+    const at = await inFrame(page, "b", ruler, 0.25, 0.5);
     await t.moveTo(at, 500);
     await page.mouse.click(at.x, at.y);
     await t.pause(1);
