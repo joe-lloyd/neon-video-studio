@@ -102,13 +102,14 @@ async function httpBridge(): Promise<Bridge> {
     if (!json.ok) throw new Error(json.error?.message ?? 'request failed');
     return json.data;
   };
-  const status = await call<AppStatus>('GET', '/api/status');
-  const room: RoomState =
-    status.room.role === 'host'
-      ? { role: 'host', roomCode: status.room.roomCode, signaling: status.room.signalingUrls, lanUrl: status.room.lanUrl ?? '' }
-      : status.room.role === 'guest'
-        ? { role: 'guest', roomCode: status.room.roomCode, hostUrl: status.room.lanUrl ?? '' }
+  const roomState = (info: RoomInfo): RoomState =>
+    info.role === 'host'
+      ? { role: 'host', roomCode: info.roomCode, signaling: info.signalingUrls, lanUrl: info.lanUrl ?? '' }
+      : info.role === 'guest'
+        ? { role: 'guest', roomCode: info.roomCode, hostUrl: info.lanUrl ?? '' }
         : { role: 'none' };
+  const status = await call<AppStatus>('GET', '/api/status');
+  const room = roomState(status.room);
   const bootstrap: Bootstrap = {
     version: status.version,
     port: params.port,
@@ -134,6 +135,7 @@ async function httpBridge(): Promise<Bridge> {
   // Poll renders, room and packs since we have no push channel in HTTP mode.
   let lastRenders = '';
   let lastPacks = '';
+  let lastRoom = JSON.stringify(room);
   setInterval(async () => {
     try {
       const s = await call<AppStatus>('GET', '/api/status');
@@ -154,6 +156,14 @@ async function httpBridge(): Promise<Bridge> {
       if (s.project.id !== bootstrap.projectId) {
         bootstrap.projectId = s.project.id;
         handlers.projectOpened?.({ projectId: s.project.id, path: s.project.path, name: s.project.name });
+      }
+      // A room hosted or joined from this window, the CLI or a peer: the store connects on roomUpdate.
+      // Joining swaps the project, so this comes after projectOpened, or the old document would
+      // sync into the room.
+      const nextRoom = roomState(s.room);
+      if (JSON.stringify(nextRoom) !== lastRoom) {
+        lastRoom = JSON.stringify(nextRoom);
+        handlers.roomUpdate?.({ room: nextRoom, info: s.room });
       }
     } catch {
       /* app gone */
