@@ -543,7 +543,10 @@ const agent: TakeFn = async (ctx) => {
   await t.line("10.3", async () => {
     await run(`neon-cli timeline insert --component LowerThird \\\n  --props '{"title":"Joe Lloyd","subtitle":"Built this"}' --at 2s`, ["timeline", "insert", "--component", "LowerThird", "--props", '{"title":"Joe Lloyd","subtitle":"Built this"}', "--at", "2s"]);
     await t.cue("live");
-    await zoomTo(t, page.locator(".app"), 3.4, 1.35);
+    const entry = await inFrame(page, "app", app.locator(".side .panel").first(), 0.5, 0.12);
+    t.callout("Logged as a CLI edit", entry.x / 1440, entry.y / 810, 3.2);
+    const lower = await inFrame(page, "app", clip(app, "Lower Third").first(), 0.5, 0.3);
+    await t.moveTo(lower, 700);
   });
   await t.line("10.4", async () => {
     const plan = { ops: [
