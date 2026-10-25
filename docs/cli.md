@@ -545,3 +545,33 @@ neon-cli record cancel                 # discard a live take, keep previous take
 the same placement and speech detection to imported audio. `lineId` is a
 script-line id. Recorded clips store that id in `scriptLineId` so reordering
 or renaming a line does not lose its take.
+
+### Process a selection of voice clips
+
+Click a track label (VO, A1, V1, etc.) to select every clip on that row. Shift/Ctrl/Command-click
+adds that row to the selection. In the AI panel, **Enhance voice** and **Denoise** process all
+selected audio/video clips as one job. Other AI tools target the first clip, as indicated in the panel.
+Clips sharing one source recording reuse one processed copy, while unselected clips keep their audio.
+Clip positions, source trims, durations, and script links are preserved.
+
+The same selection can be submitted through the API/CLI using exact clip IDs:
+
+```sh
+neon-cli api POST /api/ai/enhance '{"clipIds":["clip_first","clip_second"],"lufs":-16}'
+neon-cli api POST /api/ai/denoise '{"clipIds":["clip_first","clip_second"],"engine":"auto"}'
+```
+
+The response is one queued AI job. Its result reports `clipsUpdated`, `assetsProcessed`, and
+per-source `results`. Cancellation stops after the current source; sources already completed keep
+their processed audio. A processing failure reports how many sources completed.
+
+### Track volume and cancelling audio jobs
+
+The slider under each audio/video track label controls the whole row (0–200%). It multiplies
+individual clip volumes, which remain editable separately. Double-click resets the track to 100%.
+The CLI equivalent is `neon-cli tracks update VO --volume 1.25` (125%); omitting a track volume in
+older projects means 100%. Track gain applies to both preview and exports.
+
+Cancelling an AI job stops its running engine and prevents subsequent edits. Earlier completed
+stages or sources are retained; cancellation does not undo them. See [audio-processing.md](audio-processing.md)
+for the exact Denoise and Enhance voice chains and their current limitations.

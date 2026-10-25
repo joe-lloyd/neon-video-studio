@@ -29,6 +29,7 @@ export const TrackSchema = z.object({
   kind: z.enum(['video', 'audio', 'overlay']),
   order: z.number(),
   muted: z.boolean(),
+  volume: z.number().min(0).max(2).optional(),
   locked: z.boolean(),
   hidden: z.boolean(),
 });
@@ -291,6 +292,7 @@ export const AiBreathsRequestSchema = AiTargetSchema.extend({
   apply: z.boolean().default(true),
 });
 export const AiDenoiseRequestSchema = AiTargetSchema.extend({
+  clipIds: z.array(z.string()).min(1).optional(),
   engine: z.enum(['auto', 'rnnoise', 'afftdn', 'deepfilter']).default('auto'),
   strength: z.number().min(0).max(1).default(0.7),
 });
@@ -460,6 +462,7 @@ export const UpdateTrackRequestSchema = z.object({
   patch: z.object({
     name: z.string().optional(),
     muted: z.boolean().optional(),
+    volume: z.number().min(0).max(2).optional(),
     locked: z.boolean().optional(),
     hidden: z.boolean().optional(),
     order: z.number().optional(),
@@ -555,6 +558,7 @@ export const UiControlRequestSchema = z.object({
 });
 
 export const AiEnhanceRequestSchema = AiTargetSchema.extend({
+  clipIds: z.array(z.string()).min(1).optional(),
   /** Target integrated loudness (EBU R128). */
   lufs: z.number().min(-36).max(-8).default(-16),
   denoise: z.boolean().default(true),
@@ -665,3 +669,9 @@ export const CaptureStopRequestSchema = z.object({
   /** Track id, name or id prefix. */
   track: z.string().min(1).optional(),
 });
+
+export const StudioVoiceRequestSchema = z.object({
+  clipId: z.string().min(1).optional(),
+  clipIds: z.array(z.string().min(1)).min(1).optional(),
+}).refine(value => Boolean(value.clipId) !== Boolean(value.clipIds), 'Specify either clipId or clipIds');
+export const StudioVoiceApplyRequestSchema = z.object({ previewJobId: z.string().min(1), strength: z.number().min(0).max(1).default(0.75) });

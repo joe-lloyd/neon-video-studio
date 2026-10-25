@@ -15,3 +15,4 @@ export * from './matte.ts';
 export * from './reframe.ts';
 export * from './broll.ts';
 export * from './capture.ts';
+export * from './studio-voice.ts';

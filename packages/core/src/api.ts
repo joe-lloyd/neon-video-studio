@@ -47,7 +47,7 @@ export interface StillResult {
   height: number;
 }
 
-export type AiOperation = 'transcribe' | 'fillers' | 'silence' | 'breaths' | 'denoise' | 'enhance' | 'matte' | 'reframe' | 'broll' | 'clean' | 'pace' | 'transcript-cut' | 'setup' | 'rip';
+export type AiOperation = 'transcribe' | 'fillers' | 'silence' | 'breaths' | 'denoise' | 'enhance' | 'studio-voice' | 'studio-voice-apply' | 'matte' | 'reframe' | 'broll' | 'clean' | 'pace' | 'transcript-cut' | 'setup' | 'rip';
 export type AiJobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface AiJob {
@@ -67,7 +67,19 @@ export interface AiJob {
   log: string[];
 }
 
+export interface StudioVoiceClipPreview {
+  fps: number; projectId: string; clipId: string; sourceAssetId: string; dryAssetId: string; wetAssetId: string;
+  startFrame: number; durationFrames: number; trimBefore: number; speed: number;
+  appliedAssetId?: string;
+}
+
+export interface StudioVoicePreview extends StudioVoiceClipPreview {
+  /** Selected clips, sharing audition assets when they use the same source. */
+  clips?: StudioVoiceClipPreview[];
+}
+
 export interface AiCapabilities {
+  studioVoice?: { available: boolean; provider: 'voicefixer'; device?: string };
   whisper: { available: boolean; binary?: string; model?: string };
   rnnoise: { available: boolean; model?: string };
   deepfilter: { available: boolean; binary?: string };
@@ -277,6 +289,8 @@ export const API_ROUTES = {
   aiBreaths: '/api/ai/breaths',
   aiDenoise: '/api/ai/denoise',
   aiEnhance: '/api/ai/enhance',
+  aiStudioVoice: '/api/ai/studio-voice',
+  aiStudioVoiceApply: '/api/ai/studio-voice-apply',
   aiMatte: '/api/ai/matte',
   aiReframe: '/api/ai/reframe',
   aiBroll: '/api/ai/broll',
