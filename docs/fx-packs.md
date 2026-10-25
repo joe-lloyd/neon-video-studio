@@ -103,80 +103,36 @@ say what the value means and its units:
 | `boolean` | boolean | — | toggle |
 | `select` | string | `options: string[]` (≥ 1; `default` must be one of them) | dropdown |
 
-A complete example, excerpted from the shipped `examples/packs/[removed]/pack.json`:
+A minimal test fixture lives in `test/fixtures/plain-title`. Its manifest is:
 
 ```json
 {
-  "name": "[removed]",
-  "label": "[removed]",
+  "name": "plain-title",
+  "label": "Plain title fixture",
   "version": "1.0.0",
-  "description": "Example FX set: mint/teal tonal palette, pills that square up on exit, procedural blobs, springy overshoot easings, and matte flatness (no glows or shadows).",
-  "author": "Joe Lloyd",
-  "category": "Expressive",
-  "tags": ["expressive", "blob", "pill", "spring"],
   "entry": "index.tsx",
   "templates": [
     {
-      "name": "RemovedComponent",
-      "label": "Soft Tag",
-      "description": "Matte pill tag with the circle-to-pill clip reveal. Flat by design — no glow.",
-      "defaultDurationSeconds": 4,
-      "category": "Badges",
-      "icon": "Tag",
+      "name": "FixtureTitle",
+      "label": "Fixture title",
+      "defaultDurationSeconds": 1,
       "fields": [
-        { "key": "text", "type": "text", "default": "New" },
-        { "key": "color", "type": "color", "default": "#7fd1c7" },
-        { "key": "textColor", "type": "color", "default": "#0f3b37" },
-        { "key": "size", "type": "number", "default": 40, "min": 12, "max": 160 },
-        { "key": "corner", "type": "select", "default": "top-right", "options": ["top-left", "top-right", "bottom-left", "bottom-right"] }
-      ]
-    },
-    {
-      "name": "RemovedComponent",
-      "label": "Soft Morph Loader",
-      "description": "Logo-mark loader: a blob morphing through a shape sequence with rotation snaps.",
-      "defaultDurationSeconds": 5,
-      "category": "Loaders",
-      "icon": "Loader2",
-      "fields": [
-        { "key": "color", "type": "color", "default": "#7fd1c7" },
-        { "key": "size", "type": "number", "default": 220, "min": 40, "max": 800 },
-        { "key": "stepSeconds", "type": "number", "default": 1, "min": 0.5, "max": 3, "step": 0.1 }
+        {
+          "key": "title",
+          "type": "text",
+          "default": "Test title"
+        }
       ]
     }
   ]
 }
 ```
 
-The manifest is validated with `parsePackManifest()` from `@neon/core` (zod). You can check a
-manifest from the repo root without starting the app:
+### `index.tsx` export contract
 
-```bash
-node --experimental-strip-types --no-warnings -e \
-  "import('./packages/core/src/packs.ts').then(m => { m.parsePackManifest(JSON.parse(require('fs').readFileSync('examples/packs/[removed]/pack.json','utf8'))); console.log('manifest ok') })"
-```
-
-### `index.tsx` — the export contract
-
-The entry module must export **one named React component per template `name`**, and the export
-name must equal the template name exactly:
-
-```tsx
-// index.tsx
-export { RemovedComponent } from './RemovedComponent.tsx';
-export { RemovedComponent } from './RemovedComponent.tsx';
-export { RemovedComponent } from './RemovedComponent.tsx';
-export { RemovedComponent } from './RemovedComponent.tsx';
-export { RemovedComponent } from './RemovedComponent.tsx';
-```
-
-Each component receives the template's fields as props, already validated and filled with defaults
-(`{ text: string; color: string; size: number; corner: string; … }` for the `RemovedComponent` above).
-`select` fields arrive as `string`; narrow them yourself if you need a union. A template listed in
-`pack.json` but missing from the entry module is reported in the Library and renders a placeholder.
-
-Relative imports inside a pack carry their extension (`./tokens.ts`, `./RemovedComponent.tsx`), matching the
-rest of the repo.
+Export a React component for each template name declared in the manifest. The fixture exports
+`FixtureTitle`, which displays its `title` prop and the current frame number. Use relative imports
+with explicit extensions for files within a pack.
 
 ### Allowed imports
 
@@ -251,24 +207,9 @@ const cue = frame === null ? undefined : cueAt(cues, frame);
 
 ## Developing a pack inside this repo
 
-`examples/packs/[removed]` is a complete, working pack and the intended starting point:
-
-1. Copy it: `cp -r examples/packs/[removed] examples/packs/my-pack`, then edit `pack.json`
-   (`name` must be `my-pack`) and `package.json` (`"name": "@neon-packs/my-pack"`).
-2. It is a **workspace package** (`pnpm-workspace.yaml` includes `examples/packs/*`), so after
-   `pnpm install --ignore-scripts` the repo-wide `pnpm typecheck` covers it, and
-   `pnpm --filter @neon-packs/my-pack typecheck` checks it alone. The `tsconfig.json` extends the
-   repo base (`erasableSyntaxOnly`, `noUncheckedIndexedAccess`, `.ts`/`.tsx` import extensions).
-3. Start the app with `pnpm dev`, open **FX → Library**, and install the pack from the **Examples**
-   section.
-4. Edit the components. Click **Reload** on the pack card in the Library to recompile and refresh
-   the thumbnails — no app restart needed.
-5. Validate the manifest with the `node --experimental-strip-types …` one-liner above, or just
-   watch the Library card: a broken `pack.json` is shown with its first validation errors.
-
-The example pack's `package.json` lists `react`, `@neon/motion`, `@neon/core` and `@neon/fx-kit` as
-dev dependencies purely for type-checking; the app never installs them for the pack. Do not add
-other dependencies — they would type-check in the repo but fail once the pack is installed.
+Create a directory under `examples/packs/` with a `pack.json` manifest and an `index.tsx` entry.
+The app discovers these directories as installable examples when run from a source checkout.
+Use `test/fixtures/plain-title` as a minimal manifest and export-contract reference.
 
 ## CLI
 
@@ -277,7 +218,7 @@ Template names from every registered pack are ordinary `--component` values:
 ```bash
 neon-cli list templates                 # name, label, default duration, description; pack/category included
 neon-cli list templates --json          # includes the JSON Schema of every template's props (for agents)
-neon-cli templates RemovedComponent            # defaults + JSON Schema for one template
+neon-cli templates TitleCard            # defaults + JSON Schema for one template
 ```
 
 Installed packs are discovered from `~/.neon-video/packs` by the CLI as well, so it can validate
@@ -292,9 +233,9 @@ neon-cli timeline insert --component Callout --props '{"text":"Click Save","x":0
 neon-cli timeline insert --component NeonBadge --props '{"text":"50% OFF","corner":"top-left"}' --at 2s
 neon-cli timeline insert --component KineticList --props '{"title":"Agenda","items":"One\nTwo\nThree"}' --at 4s --duration 8s
 
-# installed example pack: [removed] (enable it in the project first)
-neon-cli timeline insert --component RemovedComponent --props '{"title":"Make it expressive"}' --at 0s
-neon-cli timeline insert --component RemovedComponent --props '{"color":"#7fd1c7"}' --at 5s
+# test fixture from a source checkout
+neon-cli packs install test/fixtures/plain-title
+neon-cli timeline insert --component FixtureTitle --props '{"title":"Hello"}' --at 0s
 ```
 
 ## Ships with
@@ -328,11 +269,3 @@ neon-cli timeline insert --component KeyCombo --props '{"combo":"Mod+Shift+P","p
 neon-cli timeline insert --component StepBadge --props '{"step":2,"total":5,"title":"Open Settings"}' --at 13s
 neon-cli timeline insert --component ClickPulse --props '{"x":0.87,"y":0.57}' --at 17s
 ```
-
-**[removed]** (example pack, `examples/packs/[removed]/`): a soft, rounded
-set — mint/teal tonal palette, matte flatness (no glows), pills that square to 12px on exit,
-procedural blob shapes and springy overshoot-and-settle easings. `RemovedComponent` (word-stagger display title),
-`RemovedComponent` (frosted pill with center-out reveal), `RemovedComponent` (circle-to-pill clip reveal),
-`RemovedComponent` (spinning organic shape), `RemovedComponent` (blob morphing through a shape sequence with
-60° rotation snaps). Shared tokens — palette, easings, blob geometry — live in `tokens.ts` and show
-how a pack keeps its own design system in a relative file.

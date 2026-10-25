@@ -368,11 +368,11 @@ so a project opens with its packs on any machine.
 ```bash
 neon-cli packs                       # built-in, installed and example packs + whether they're in this project
 neon-cli packs install ./my-pack     # validate, copy to ~/.neon-video/packs and the project, compile, add to the project
-neon-cli packs install examples/packs/[removed]   # the shipped example (from a source checkout)
-neon-cli packs add [removed]   # enable an installed pack for this project · packs remove … disables it
-neon-cli packs uninstall [removed]   # removes the library copy; projects keep theirs
+neon-cli packs install test/fixtures/plain-title   # test fixture from a source checkout
+neon-cli packs add plain-title   # enable an installed pack for this project · packs remove … disables it
+neon-cli packs uninstall plain-title   # removes the library copy; projects keep theirs
 neon-cli packs reload                # re-scan + recompile after editing a pack in place
-neon-cli timeline insert --component RemovedComponent --props '{"title":"Hello"}' --at 2s
+neon-cli timeline insert --component FixtureTitle --props '{"title":"Hello"}' --at 2s
 ```
 
 ## Script, notes and prompter

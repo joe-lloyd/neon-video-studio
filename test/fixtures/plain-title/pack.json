@@ -1,0 +1,20 @@
+{
+  "name": "plain-title",
+  "label": "Plain title fixture",
+  "version": "1.0.0",
+  "entry": "index.tsx",
+  "templates": [
+    {
+      "name": "FixtureTitle",
+      "label": "Fixture title",
+      "defaultDurationSeconds": 1,
+      "fields": [
+        {
+          "key": "title",
+          "type": "text",
+          "default": "Test title"
+        }
+      ]
+    }
+  ]
+}
