@@ -5,7 +5,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Frame, Locator, Page } from "playwright-core";
 import type { Take } from "./director.ts";
-import { appUrl, demo, freshInstance, PEER_HOME, seedAll, seedTrailer, seedWalkthrough, VIDEO } from "./demo.ts";
+import { appUrl, demo, freshInstance, PEER_HOME, seedAll, seedTrailer, seedWalkthrough, TRAILER, VIDEO } from "./demo.ts";
 import { DEMO_HOME, neonAt, neonText } from "./neon.ts";
 import type { Ctx, TakeFn } from "./record.ts";
 
@@ -291,9 +291,8 @@ const templates: TakeFn = async (ctx) => {
 
 const packs: TakeFn = async (ctx) => {
   await seedTrailer();
-  // Soft Shapes starts uninstalled so the Library offers it; Neon Tour is already installed.
-  execFileSync("rm", ["-rf", join(DEMO_HOME, "packs", "soft-shapes")]);
-  demo("packs", "install", join(VIDEO, "fx", "neon-tour"));
+  // Neon Tour starts uninstalled, so the Library shows it arriving.
+  execFileSync("rm", ["-rf", join(DEMO_HOME, "packs", "neon-tour"), join(TRAILER, "packs", "neon-tour")]);
   demo("packs", "reload");
   const page = await openApp(ctx);
   await prepareEditor(page);
@@ -303,29 +302,27 @@ const packs: TakeFn = async (ctx) => {
   await page.waitForTimeout(1500);
   const t = await ctx.take("packs", page);
   await t.line("5.2", async () => {
-    await zoomTo(t, page.locator(".side"), 7.5, 1.5);
+    await zoomTo(t, page.locator(".side"), 8, 1.5);
     await t.click(page.getByRole("tab", { name: "Library" }));
-    await t.cue("examples");
-    const soft = page.locator(".pack-card, .list-item, div", { hasText: "Soft Shapes" }).filter({ has: page.getByRole("button", { name: "Install" }) }).last();
-    await t.moveTo(soft, 600);
-    await t.cue("install");
-    await t.click(soft.getByRole("button", { name: "Install" }));
-    await t.pause(1.5);
+    await t.cue("folder");
+    await t.moveTo(page.getByRole("button", { name: /Install folder/ }), 600);
+    await t.cue("running");
+    demo("packs", "install", join(VIDEO, "fx", "neon-tour"));
+    await page.getByText("Neon Tour", { exact: true }).first().waitFor({ timeout: 8000 });
+    await t.moveTo(page.getByText("Neon Tour", { exact: true }).first(), 600);
   });
   await t.line("5.3", async () => {
     await zoomTo(t, page.locator(".side"), 7, 1.5);
     await t.click(page.getByRole("tab", { name: "Components" }));
     await t.type(page.getByPlaceholder(/Search components/), "neon", 80);
     await t.pause(0.4);
-    await t.moveTo(page.locator(".fx-card", { hasText: "Neon title" }).first(), 600);
+    await t.moveTo(page.locator(".fx-card", { hasText: "Neon stage" }).first(), 600);
     await t.cue("colours");
-    await page.getByPlaceholder(/Search components/).fill("");
-    await t.type(page.getByPlaceholder(/Search components/), "soft title", 70);
-    await t.click(page.locator(".fx-card", { hasText: "Soft Title" }).first());
+    await t.click(page.locator(".fx-card", { hasText: "Neon title" }).first());
   });
   await t.line("5.4", async () => {
     await page.keyboard.press("Space");
-    await t.pause(2.5);
+    await t.pause(3);
     await page.keyboard.press("Space");
   });
   await t.finish(0.5);

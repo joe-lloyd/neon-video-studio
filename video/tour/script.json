@@ -150,13 +150,13 @@
           }
         },
         {
-          "say": "The Library lists installed packs and the examples that ship with the source. Install copies a pack in and compiles it.",
-          "show": "FX Library, install Soft Shapes.",
+          "say": "The Library lists the packs on this machine. Install folder adds one, and so does neon-cli packs install, which I'm running here.",
+          "show": "FX Library; the Neon Tour pack appears as the CLI installs it.",
           "take": "packs"
         },
         {
-          "say": "Its components show up straight away, with previews. The titles and diagrams in this video come from a pack like this one, in Neon's colours.",
-          "show": "Components list with Soft Shapes and Neon Tour; add Soft Title.",
+          "say": "Its components show up straight away, with previews. The titles and diagrams in this video come from this pack, in Neon's colours.",
+          "show": "Components list filtered to the Neon Tour pack; add Neon title.",
           "take": "packs"
         },
         {
