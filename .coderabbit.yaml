@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-# CodeRabbit reviews every pull request into main. It also reads CLAUDE.md and
+# CodeRabbit reviews every non-draft pull request into main. It also reads CLAUDE.md and
 # AGENTS.md as review guidelines. Reference: https://docs.coderabbit.ai/reference/configuration
 language: en-GB
 tone_instructions: "Be direct and brief. Lead with bugs, regressions and missing tests. Skip style nitpicks that a formatter or linter would catch."
