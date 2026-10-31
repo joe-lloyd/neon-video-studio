@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # Neon Video Studio — notes for AI assistants
 
 - pnpm workspace; install with `pnpm install --ignore-scripts`. `minimumReleaseAge: 10080` (7 days) is enforced in pnpm-workspace.yaml — a freshly published version will silently resolve to an older one.
